@@ -1,0 +1,203 @@
+; cache: the SH-4's caches by address range, and a catcher for the exceptions a bad pointer
+; raises. Only cache_inv and cache_purge are called.
+
+          .SECTION  P,CODE,ALIGN=4
+          .EXPORT   _cache_inv, _cache_purge, _icache_inv, _exc_vect_init
+
+; the operand cache lines over size bytes from adrs dropped (ocbi), and the line after them
+; written back
+_cache_inv:                             ; ( void *adrs, Uint32 size )
+          mov       #31,r0
+          not       r0,r0
+          and       r0,r4
+          mov       r4,r0
+          shlr2     r5
+          shlr2     r5
+          shlr      r5
+inv_line:
+          ocbi      @r0
+          add       #32,r0
+          dt        r5
+          bf        inv_line
+          nop
+          ocbp      @r0
+          rts
+          nop
+
+; the operand cache lines over size bytes from adrs written back and dropped (ocbp)
+_cache_purge:                           ; ( void *adrs, Uint32 size )
+          mov       #31,r0
+          not       r0,r0
+          and       r0,r4
+          mov       r4,r0
+          shlr2     r5
+          shlr2     r5
+          shlr      r5
+          add       #1,r5
+purge_line:
+          ocbp      @r0
+          add       #32,r0
+          dt        r5
+          bf        purge_line
+          nop
+          rts
+          nop
+
+; the whole instruction cache dropped: CCR.ICI is set from the uncached mirror (P2) with
+; interrupts blocked
+_icache_inv:
+          stc       sr,r1
+          mov.l     r1,@-r15
+          mov.l     sr_bl,r2
+          or        r2,r1
+          ldc       r1,sr
+          mov.l     ccr_adr,r1
+          mov.l     ccr_ici,r2
+          mov.l     ic_run_p2,r3
+          jmp       @r3
+          nop
+sr_bl:    .DATA.L   H'10000000
+ccr_adr:  .DATA.L   H'FF00001C
+ccr_ici:  .DATA.L   H'00000800
+ic_run_p2: .DATA.L  ic_run+H'A0000000
+ic_ret:
+          mov.l     @r15+,r2
+          ldc       r2,sr
+          rts
+          nop
+ic_run:
+          mov.l     @r1,r0
+          or        r2,r0
+          mov.l     r0,@r1
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          not       r2,r2
+          and       r2,r0
+          mov.l     r0,@r1
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          mov.l     ic_ret_adr,r3       ; back to the cached copy
+          jmp       @r3
+          nop
+          .DATA.W   0
+ic_ret_adr: .DATA.L ic_ret
+
+; the catchers set in the exception table: illegal instruction (0x180), illegal slot
+; instruction (0x1A0), TLB protection (0x0A0) and address errors on read (0x0E0) and write (0x100)
+_exc_vect_init:
+          sts.l     pr,@-r15
+          mov.l     exc_illegal_adr,r4
+          mov.w     code_illegal,r5
+          bsr       exc_vect_set
+          nop
+          mov.l     exc_slot_adr,r4
+          mov.w     code_slot,r5
+          bsr       exc_vect_set
+          nop
+          mov.l     exc_tlb_prot_adr,r4
+          mov.w     code_tlb_prot,r5
+          bsr       exc_vect_set
+          nop
+          mov.l     exc_adr_r_adr,r4
+          mov.w     code_adr_r,r5
+          bsr       exc_vect_set
+          nop
+          lds.l     @r15+,pr
+          mov.l     exc_adr_w_adr,r4
+          mov.w     code_adr_w,r5
+
+; the handler r4 put in the table for the exception code r5: vbr + 0x1C0 + code / 8
+exc_vect_set:
+          mov.w     h_fe00,r3
+          mov.w     h_200,r1
+          add       r3,r5
+          shar      r5
+          shar      r5
+          shar      r5
+          add       r1,r5
+          cmp/pz    r5
+          bt/s      vect_pos
+          stc       vbr,r6
+          add       #3,r5
+vect_pos:
+          shar      r5
+          shar      r5
+          shll2     r5
+          add       r6,r5
+          rts
+          mov.l     r4,@r5
+exc_ret:                                ; a catcher returns through pr
+          rts
+          nop
+code_illegal:  .DATA.W  H'0180
+code_slot:     .DATA.W  H'01A0
+code_tlb_prot: .DATA.W  H'00A0
+code_adr_r:    .DATA.W  H'00E0
+code_adr_w:    .DATA.W  H'0100
+h_fe00:        .DATA.W  H'FE00
+h_200:         .DATA.W  H'0200
+exc_illegal_adr:  .DATA.L  exc_illegal
+exc_slot_adr:     .DATA.L  exc_slot
+exc_tlb_prot_adr: .DATA.L  exc_tlb_prot
+exc_adr_r_adr:    .DATA.L  exc_adr_r
+exc_adr_w_adr:    .DATA.L  exc_adr_w
+
+; each catcher notes its number and the stack, unblocks interrupts and goes on
+exc_illegal:
+          mov       #0,r0
+          bra       exc_stop
+          nop
+exc_slot:
+          mov       #1,r0
+          bra       exc_stop
+          nop
+exc_tlb_prot:
+          mov       #3,r0
+          bra       exc_stop
+          nop
+exc_adr_r:
+          mov       #4,r0
+          bra       exc_stop
+          nop
+exc_adr_w:
+          mov       #5,r0
+          bra       exc_stop
+          nop
+exc_stop:
+          mov.l     exc_no_adr,r7
+          mov.l     r0,@r7
+          mov       r15,r0
+          mov.l     r0,@-r15
+          mov.l     exc_sp_adr,r7
+          mov.l     r15,@r7
+          stc       sr,r1
+          mov.l     sr_unblock,r0       ; BL and the interrupt mask cleared
+          and       r0,r1
+          ldc       r1,sr
+          mov.l     exc_ret_adr,r3
+          jmp       @r3
+          nop
+exc_no_adr:  .DATA.L  exc_no
+exc_sp_adr:  .DATA.L  exc_sp
+exc_ret_adr: .DATA.L  exc_ret
+sr_unblock:  .DATA.L  H'6FFFFF0F
+
+          .SECTION  D,DATA,ALIGN=4
+exc_sp:   .DATA.L   0                   ; the stack when the last exception came
+exc_no:   .DATA.L   0                   ; which catcher took it
+
+          .END

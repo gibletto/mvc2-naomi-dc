@@ -1,0 +1,14 @@
+; mpsmp_: the Maple driver's semaphore, a byte that tas takes and the pointer the driver reaches it by.
+
+          .SECTION  PSG,CODE,ALIGN=4
+          .EXPORT   __mp_Semaphore
+          .EXPORT   __mp_SemaphoreAddress
+
+          .ALIGN    4
+__mp_SemaphoreAddress:
+          .DATA.L   __mp_Semaphore
+
+__mp_Semaphore:
+          .DATA.B   0
+
+          .END

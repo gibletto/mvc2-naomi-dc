@@ -1,0 +1,1757 @@
+; nlobjmva: libnlobj's model drawing with the shadow volume (MV), in assembler: the routines that
+; walk a model's strips and triangles, and the pieces they share.
+
+          .SECTION  P,CODE,ALIGN=32
+          .EXPORT   _nlObjPutMVAsm
+          .EXPORT   _nl_objputmv_strip
+          .EXPORT   _nl_objputmv_triangle
+          .EXPORT   _nl_objputmv_strip_nc
+          .EXPORT   _nl_objputmv_triangle_nc
+          .EXPORT   _nl_objput_mv_get_and_calc
+          .EXPORT   _nl_objput_mv_calc_p0p1_A
+          .EXPORT   _nl_objput_mv_send_p2
+          .EXPORT   _nl_objput_mv_cont_strip_C
+          .EXPORT   _nl_objput_mv_xchg_p0p1
+          .EXPORT   _nl_objput_mv_calcsend_p0p2
+          .EXPORT   _nl_objput_mv_calcsend_p0p1
+          .EXPORT   _nl_objput_mv_send_edge_A
+          .EXPORT   _nl_objput_mv_restore_p1_A
+          .EXPORT   _nl_objput_mv_send_p0
+          .EXPORT   _nl_objput_mv_restore_p0_C
+          .EXPORT   _nl_objput_mv_calc_p0p2_C
+          .EXPORT   _nl_objput_mv_send_edge_B
+          .IMPORT   _kmiCurrentVertexBuff, _nl_focusX2, _nl_focusY2, _nl_or_GP, _nl_projectMatrixHeight, _nl_projectMatrixLeft
+          .IMPORT   _nl_projectMatrixTop, _nl_projectMatrixWidth, _nl_scale_factor
+
+; nlObjPutMVAsm: draws a model's parts into the store queue. Each part's bounding sphere is
+; transformed and tested against the screen, which says whether the part is wholly in view, needs
+; clipping to the near plane, or is out; the TA header goes out once, and the part's strips or
+; triangle lists follow as x y 1/w points with colour words.
+; r4 model, r5 polygon parameters (header words, near limit at +12, colour at +32), r6 culling mode
+; (-1 takes the part's own), r7 non-zero if the TA header is to be written. The stack frame holds
+; 1/scale, focus x2 and y2, project width and height, then the three header words.
+_nlObjPutMVAsm:
+          add       #24,r4
+          mov.l     scale_factor_ptr,r1
+          fldi1     fr1
+          fmov      fr15,@-r15
+          fmov      @r1,fr0
+          fmov      fr14,@-r15
+          fmov      fr13,@-r15
+          fdiv      fr0,fr1
+          fmov      fr12,@-r15
+          mov.l     r14,@-r15
+          mov.l     r13,@-r15
+          mov.l     r12,@-r15
+          mov.l     r11,@-r15
+          mov.l     r10,@-r15
+          mov.l     r9,@-r15
+          mov.l     r8,@-r15
+          mov       r7,r13
+          sts.l     pr,@-r15
+          add       #-32,r15
+          fldi1     fr7
+          mov       #0,r0
+          fabs      fr0
+          fmov      fr0,@(r0,r15)
+          mov.l     focus_x2_ptr,r0
+          fmov      fr7,@r1
+          mov.l     @r0,r1
+          mov.l     proj_width_ptr,r2
+          mov.l     r1,@(4,r15)
+          mov.l     @r2,r1
+          mov.l     proj_height_ptr,r0
+          mov.l     focus_y2_ptr,r2
+          mov.l     r1,@(12,r15)
+          mov.l     @r2,r3
+          mov.l     @r0,r1
+          mov.l     r3,@(8,r15)
+          mov.l     @r5+,r12
+          mov.l     r1,@(16,r15)
+          mov.l     r12,@(20,r15)
+          mov.l     @r5+,r12
+          mov.l     @r5+,r1
+          mov.l     r12,@(24,r15)
+          mov.l     r1,@(28,r15)
+          mov.l     @r5,r12
+          add       #20,r5
+          mov.l     kmi_buff_ptr,r10
+          mov.l     @r5,r7
+          mov.l     @r10,r10
+          mov       #4,r2
+          shll8     r2
+          mov.l     @(4,r10),r5
+          shll16    r2
+          add       #-1,r2
+          and       r5,r2
+          mov       r6,r8
+          mov       #-32,r6
+          shll8     r6
+          shll16    r6
+          or        r2,r6
+          add       #16,r4
+          .ALIGN    4
+
+; one part per round: its bounding sphere is transformed and compared with the screen
+part_loop:
+          fldi1     fr7
+          mov       r4,r0
+          add       #48,r0
+          pref      @r0
+          mov       r15,r3
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4+,fr6
+          ftrv      xmtrx,fv4
+          fmov      @r3+,fr1
+          fmov      @r4+,fr0
+          fmul      fr1,fr0
+          lds       r12,fpul
+          mov       #-2,r0
+          fadd      fr0,fr7
+          fsts      fpul,fr1
+          fcmp/gt   fr1,fr7
+          fsub      fr0,fr7
+          and       r0,r12
+          bf/s      part_bounds
+          fsub      fr0,fr7
+          fcmp/gt   fr1,fr7
+          bf/s      part_bounds
+          add       #1,r12
+part_skip:
+          add       #44,r4
+          mov.l     @r4+,r0
+          add       r0,r4
+          mov.l     @r4,r0
+          tst       r0,r0
+          add       #16,r4
+          bf        part_loop
+          bra       finish
+          nop
+          .ALIGN    4
+part_bounds:
+          fmov      @r3+,fr1
+          mov.l     proj_left_ptr,r0
+          fmov      @r0,fr7
+          fmul      fr4,fr7
+          fneg      fr0
+          fmul      fr0,fr1
+          fsub      fr7,fr5
+          fmov      @r3+,fr3
+          mov.l     proj_top_ptr,r0
+          fcmp/gt   fr1,fr5
+          fmov      @r0,fr7
+          fmul      fr0,fr3
+          bf/s      part_skip
+          fmul      fr4,fr7
+          fsub      fr7,fr6
+          fmov      @r3+,fr0
+          fcmp/gt   fr3,fr6
+          fmov      @r3+,fr7
+          fmul      fr4,fr0
+          bf/s      part_skip
+          fsub      fr1,fr0
+          fcmp/gt   fr0,fr5
+          fmul      fr4,fr7
+          bt/s      part_skip
+          fsub      fr3,fr7
+          fcmp/gt   fr7,fr6
+          bt        part_skip
+          add       #48,r4
+          mov.l     @r4+,r0
+          mov       r0,r1
+          tst       r13,r13
+          bt        part_kind
+          mov       r8,r0
+          mov.l     or_gp_ptr,r2
+          cmp/eq    #-1,r0
+          mov.l     @r2,r2
+          mov       r1,r0
+          mov.l     @(20,r15),r3
+          and       #3,r0
+          bt/s      hdr_facing
+          cmp/pz    r2
+          bra       hdr_put
+          mov       #0,r0
+hdr_facing:
+          bt        hdr_put
+          xor       #1,r0
+hdr_put:
+          mov       #27,r2
+          shld      r2,r0
+          mov.l     r3,@r6
+          add       #32,r5
+          mov.l     r0,@(4,r6)
+          pref      @r6
+          add       #32,r6
+          mov.l     r0,@(24,r15)
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          mov       r6,r11
+          mov       #-1,r2
+          add       #-1,r13
+
+; the part's flags: bit 3 triangle lists, otherwise strips; r12 bit 0 is set if the sphere crosses the near plane
+part_kind:
+          rotcr     r12
+          mov       r1,r0
+          add       r12,r12
+          bf/s      part_noclip
+          tst       #8,r0
+          bf        part_tri_nc
+          bra       strip_nc_prep
+          and       #3,r0
+part_tri_nc:
+          bra       tri_nc_prep
+          and       #3,r0
+part_noclip:
+          bf        part_tri
+          bra       strip_prep
+          and       #3,r0
+part_tri:
+          bra       tri_prep
+          and       #3,r0
+or_gp_ptr:
+          .DATA.L   _nl_or_GP
+
+; after a part: writes a second header (the stacked words, bit 6 set)
+close_strip:
+          tst       r13,r13
+          bt        close_done
+close_put:
+          pref      @r6
+          add       #32,r6
+          mov.l     @(20,r15),r0
+          add       #64,r5
+          mov.l     @(24,r15),r1
+          mov.l     @(28,r15),r2
+          pref      @r6
+          add       #-96,r6
+          mov.l     r0,@r6
+          or        #64,r0
+          mov.l     r1,@(4,r6)
+          or        r1,r2
+          pref      @r6
+          add       #32,r6
+          mov.l     r0,@r6
+          mov.l     r2,@(4,r6)
+          pref      @r6
+          add       #96,r6
+close_done:
+          mov.l     @r4,r0
+          tst       r0,r0
+          add       #16,r4
+          bt        finish
+          bra       part_loop
+          nop
+
+; after the last list of a part: if nothing was sent since the header, the header is taken back
+list_end:
+          tst       r13,r13
+          bt/s      list_end_next
+          mov.l     @r4,r0
+          cmp/eq    r6,r11
+          bf        close_put
+          add       #-32,r6
+          add       #-32,r5
+list_end_next:
+          tst       r0,r0
+          add       #16,r4
+          bt        finish
+          bra       part_loop
+          nop
+
+; leaves the buffer pointer in kmiCurrentVertexBuff and restores the registers
+finish:
+          tst       r13,r13
+          add       #1,r13
+          bf        finish_save
+          cmp/eq    r6,r11
+          add       #-16,r4
+          bf        close_put
+          add       #-32,r5
+finish_save:
+          mov.l     r5,@(4,r10)
+          add       #32,r15
+          lds.l     @r15+,pr
+          mov.l     @r15+,r8
+          mov.l     @r15+,r9
+          mov.l     @r15+,r10
+          mov.l     @r15+,r11
+          mov.l     @r15+,r12
+          mov.l     @r15+,r13
+          mov.l     @r15+,r14
+          fmov      @r15+,fr12
+          fmov      @r15+,fr13
+          fmov      @r15+,fr14
+          fmov      @r15+,fr15
+          rts
+          nop
+          .ALIGN    32
+
+; the globals the entry reads, in the order it needs them
+kmi_buff_ptr:
+          .DATA.L   _kmiCurrentVertexBuff
+scale_factor_ptr:
+          .DATA.L   _nl_scale_factor
+focus_x2_ptr:
+          .DATA.L   _nl_focusX2
+focus_y2_ptr:
+          .DATA.L   _nl_focusY2
+proj_width_ptr:
+          .DATA.L   _nl_projectMatrixWidth
+proj_height_ptr:
+          .DATA.L   _nl_projectMatrixHeight
+proj_top_ptr:
+          .DATA.L   _nl_projectMatrixTop
+proj_left_ptr:
+          .DATA.L   _nl_projectMatrixLeft
+
+; strips wholly in view: r3 is the vertex count, r4 the model. Each vertex is fetched (inline, or by the
+; offset in its second word), transformed, divided by w and sent to the queue, alternating between two
+; places by the parity of r9
+strip_prep:
+          mov       #1,r9
+          mov.l     @r4+,r3
+          fschg
+          lds       r9,fpul
+_nl_objputmv_strip:
+          add       #-2,r3
+          mov       r0,r9
+          add       #1,r9
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_have_v0
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_have_v0:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          float     fpul,fr7
+          ftrv      xmtrx,fv4
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_have_v1
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_have_v1:
+          fldi1     fr7
+          fdiv      fr4,fr7
+          pref      @r14
+          mov       r9,r0
+          tst       #1,r0
+          mov       #40,r0
+          bf        strip_slot0
+          mov       #16,r0
+strip_slot0:
+          add       r6,r0
+          fmul      fr7,fr6
+          fmul      fr7,fr5
+          fmov      fr6,@-r0
+          fmov      fr4,@-r0
+          fmov      @r14+,fr8
+          fmov      @r14+,fr10
+          float     fpul,fr11
+          ftrv      xmtrx,fv8
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_have_v2
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_have_v2:
+          fldi1     fr11
+          fdiv      fr8,fr11
+          pref      @r14
+          mov       r9,r0
+          tst       #1,r0
+          mov       #16,r0
+          bf        strip_slot1
+          mov       #40,r0
+strip_slot1:
+          add       r6,r0
+          fmul      fr11,fr10
+          fmul      fr11,fr9
+          fmov      fr10,@-r0
+          fmov      fr8,@-r0
+          mov       r6,r0
+          shar      r0
+          mov.l     r0,@r6
+strip_loop:
+          add       #1,r9
+          fmov      @r14+,fr12
+          dt        r3
+          fmov      @r14+,fr14
+          float     fpul,fr15
+          mov       r4,r14
+          bt/s      strip_have_vn
+          ftrv      xmtrx,fv12
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_have_vn
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_have_vn:
+          fldi1     fr15
+          fdiv      fr12,fr15
+          add       #32,r6
+          pref      @r6
+          add       #-32,r6
+          pref      @r14
+          fschg
+          mov       #28,r0
+          fmul      fr15,fr14
+          add       r6,r0
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          fmov      fr14,@-r0
+          fmov      fr13,@-r0
+          pref      @r0
+          tst       r3,r3
+          mov.l     @r4,r0
+          bt        strip_end
+          mov       r9,r0
+          tst       #1,r0
+          mov       #40,r0
+          bt        strip_slotn
+          mov       #16,r0
+strip_slotn:
+          add       r6,r0
+          fmov      fr15,@-r0
+          add       #64,r6
+          fmov      fr14,@-r0
+          add       #64,r5
+          fmov      fr13,@-r0
+          bra       strip_loop
+          fschg
+strip_end:
+          cmp/pl    r0
+          add       #64,r6
+          bt        strip_next_hdr
+          bra       close_strip
+strip_next_hdr:
+          add       #64,r5
+          tst       #128,r0
+          add       #4,r4
+          bt/s      strip_hdr_kind
+          mov.l     @r4+,r3
+          bra       _nl_objputmv_strip
+          fschg
+strip_hdr_kind:
+          tst       #16,r0
+          fschg
+          bf        _nl_objputmv_strip
+          bra       _nl_objputmv_triangle
+          nop
+          .ALIGN    32
+
+; the same for triangle lists, three vertices at a time
+tri_prep:
+          mov       #1,r9
+          mov.l     @r4+,r3
+          fschg
+          lds       r9,fpul
+_nl_objputmv_triangle:
+          mov       r0,r9
+          add       #1,r9
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        tri_have_v0
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_have_v0:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          float     fpul,fr7
+          ftrv      xmtrx,fv4
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        tri_have_v1
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_have_v1:
+          fldi1     fr7
+          fdiv      fr4,fr7
+          pref      @r14
+          mov       r9,r0
+          tst       #1,r0
+          mov       #40,r0
+          bf        tri_slot0
+          mov       #16,r0
+tri_slot0:
+          add       r6,r0
+          fmul      fr7,fr6
+          fmul      fr7,fr5
+          fmov      fr6,@-r0
+          fmov      fr4,@-r0
+          fmov      @r14+,fr8
+          fmov      @r14+,fr10
+          float     fpul,fr11
+          ftrv      xmtrx,fv8
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        tri_have_v2
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_have_v2:
+          fldi1     fr11
+          fdiv      fr8,fr11
+          pref      @r14
+          mov       r9,r0
+          tst       #1,r0
+          mov       #16,r0
+          bf        tri_slot1
+          mov       #40,r0
+tri_slot1:
+          add       r6,r0
+          fmul      fr11,fr10
+          fmul      fr11,fr9
+          fmov      fr10,@-r0
+          fmov      fr8,@-r0
+          mov       r6,r0
+          shar      r0
+          mov.l     r0,@r6
+          add       #1,r9
+          fmov      @r14+,fr12
+          dt        r3
+          fmov      @r14+,fr14
+          float     fpul,fr15
+          mov       r4,r14
+          bt/s      tri_have_vn
+          ftrv      xmtrx,fv12
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        tri_have_vn
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_have_vn:
+          fldi1     fr15
+          fdiv      fr12,fr15
+          add       #32,r6
+          pref      @r6
+          add       #-32,r6
+          pref      @r14
+          fschg
+          mov       #28,r0
+          fmul      fr15,fr14
+          add       r6,r0
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          fmov      fr14,@-r0
+          fmov      fr13,@-r0
+          pref      @r0
+          tst       r3,r3
+          mov.l     @r4,r0
+          bt        tri_end
+          add       #64,r6
+          add       #64,r5
+          add       #1,r9
+          bra       tri_have_v0
+          fschg
+tri_end:
+          cmp/pl    r0
+          add       #64,r6
+          bt        tri_next_hdr
+          bra       close_strip
+tri_next_hdr:
+          add       #64,r5
+          tst       #128,r0
+          add       #4,r4
+          bt/s      tri_hdr_kind
+          mov.l     @r4+,r3
+          bra       _nl_objputmv_triangle
+          fschg
+tri_hdr_kind:
+          tst       #16,r0
+          fschg
+          bt        _nl_objputmv_triangle
+          bra       _nl_objputmv_strip
+          nop
+          .ALIGN    32
+
+; strips that may cross the near plane: fr1 is its limit. Vertices in front of it are sent and an
+; edge that crosses it is cut. p0 and p1 are the last two vertices (fr4..fr6 and fr8..fr10), p2 the
+; new one (fr12..fr14); r8 and r2 are -1, or the colour words of a vertex made by a cut. The states
+; below differ in which of the vertices of the current triangle are kept.
+strip_nc_prep:
+          lds       r12,fpul
+          mov       #1,r9
+          mov.l     @r4+,r3
+          fschg
+          fsts      fpul,fr1
+          lds       r9,fpul
+_nl_objputmv_strip_nc:
+          add       #-2,r3
+          mov       r0,r9
+          add       #1,r9
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_nc_have_v0
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_nc_have_v0:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          float     fpul,fr7
+          ftrv      xmtrx,fv4
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_nc_have_v1
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_nc_have_v1:
+          pref      @r14
+          flds      fr7,fpul
+          mov       #1,r0
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fsts      fpul,fr4
+          lds       r0,fpul
+          fmov      @r14+,fr8
+          fmov      @r14+,fr10
+          float     fpul,fr11
+          ftrv      xmtrx,fv8
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        strip_nc_have_v2
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+strip_nc_have_v2:
+          pref      @r14
+          flds      fr11,fpul
+          mov       #1,r0
+          fldi1     fr11
+          fdiv      fr8,fr11
+          fsts      fpul,fr8
+          lds       r0,fpul
+          fcmp/gt   fr4,fr1
+          bf        strip_nc_p0_out
+          mov       r9,r0
+          tst       #1,r0
+          mov       #40,r0
+          bf        strip_nc_put_p0
+          mov       #16,r0
+strip_nc_put_p0:
+          fmov      fr6,fr14
+          add       r6,r0
+          fmul      fr15,fr14
+          fmov      fr4,fr12
+          fmul      fr15,fr13
+          fmov      fr14,@-r0
+          fmov      fr12,@-r0
+          fcmp/gt   fr8,fr1
+          bf        strip_nc_p1_cut
+          mov       r9,r0
+          tst       #1,r0
+          mov       #16,r0
+          bf        strip_nc_put_p1
+          mov       #40,r0
+strip_nc_put_p1:
+          fmov      fr10,fr14
+          add       r6,r0
+          fmul      fr15,fr14
+          fmov      fr8,fr12
+          fmul      fr15,fr13
+          fmov      fr14,@-r0
+          fmov      fr12,@-r0
+          mov       r6,r0
+          shar      r0
+          mov.l     r0,@r6
+          mov       #-1,r0
+          cmp/eq    r0,r8
+          bt        strip_nc_state_a
+          cmp/eq    r0,r2
+          bf        strip_nc_state_a
+          bt        strip_nc_state_a2
+strip_nc_p1_cut:
+          fschg
+          add       #1,r9
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          add       #-1,r9
+          mov       r6,r0
+          shar      r0
+          fschg
+          mov.l     r0,@r6
+          mov       #-1,r0
+          cmp/eq    r0,r8
+          bf        strip_nc_p1_cut_r2
+          bra       strip_nc_state_b
+strip_nc_p1_cut_r2:
+          nop
+          cmp/eq    r0,r2
+          bt        strip_nc_p1_cut_set
+          bra       strip_nc_state_b
+strip_nc_p1_cut_set:
+          nop
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          bra       strip_nc_state_b
+          lds       r0,fpul
+strip_nc_p0_out:
+          fcmp/gt   fr8,fr1
+          bf        strip_nc_both_out
+          mov       r9,r0
+          tst       #1,r0
+          mov       #16,r0
+          bf        strip_nc_p0_out_put
+          mov       #40,r0
+strip_nc_p0_out_put:
+          fmov      fr10,fr14
+          add       r6,r0
+          fmul      fr15,fr14
+          fmov      fr8,fr12
+          fmul      fr15,fr13
+          fmov      fr14,@-r0
+          fmov      fr12,@-r0
+          fschg
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          mov       r6,r0
+          shar      r0
+          mov.l     r0,@r6
+          mov       #-1,r0
+          fschg
+          cmp/eq    r0,r8
+          bf        strip_nc_p0_out_r2
+          bra       strip_nc_state_c
+strip_nc_p0_out_r2:
+          nop
+          cmp/eq    r2,r0
+          bt        strip_nc_p0_out_set
+          bra       strip_nc_state_c
+strip_nc_p0_out_set:
+          nop
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          bra       strip_nc_state_c
+          lds       r0,fpul
+strip_nc_both_out:
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          mov       r6,r0
+          shar      r0
+          bf        strip_nc_both_out_r2
+          bra       strip_nc_skip
+strip_nc_both_out_r2:
+          mov.l     r0,@r6
+          mov       r2,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_both_out_go
+          bra       strip_nc_skip
+strip_nc_both_out_go:
+          nop
+          bra       strip_nc_skip2
+          nop
+strip_nc_state_a:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        strip_nc_a_cut
+          bsr       _nl_objput_mv_send_p2
+          add       #32,r6
+          tst       r3,r3
+          bf        strip_nc_a_more
+          bra       strip_nc_end
+strip_nc_a_more:
+          nop
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_a
+          fmov      fr14,fr10
+strip_nc_a_cut:
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_a_cut_chk
+          bsr       _nl_objput_mv_send_edge_A
+          mov       r9,r0
+strip_nc_a_cut_chk:
+          tst       r3,r3
+          bf        strip_nc_a_cut_more
+          bra       strip_nc_end
+strip_nc_a_cut_more:
+          nop
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_a_cut_xchg
+          bsr       _nl_objput_mv_restore_p1_A
+          mov       r9,r0
+strip_nc_a_cut_xchg:
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_b
+          fmov      fr14,fr10
+strip_nc_state_a2:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        strip_nc_a2_cut
+          bsr       _nl_objput_mv_send_p2
+          add       #32,r6
+          tst       r3,r3
+          bf        strip_nc_a2_more
+          bra       strip_nc_end
+strip_nc_a2_more:
+          nop
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_a2
+          fmov      fr14,fr10
+strip_nc_a2_cut:
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          tst       r3,r3
+          lds       r0,fpul
+          bf        strip_nc_a2_cut_more
+          bra       strip_nc_end
+strip_nc_a2_cut_more:
+          nop
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_b
+          fmov      fr14,fr10
+strip_nc_state_b:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        strip_nc_b_cut
+          bsr       _nl_objput_mv_send_p2
+          add       #32,r6
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_b_chk
+          mov       r9,r0
+          bsr       _nl_objput_mv_send_edge_A
+          add       #1,r0
+strip_nc_b_chk:
+          tst       r3,r3
+          bf        strip_nc_b_more
+          bra       strip_nc_end
+strip_nc_b_more:
+          nop
+          mov       r9,r0
+          bsr       _nl_objput_mv_cont_strip_C
+          add       #1,r0
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_b_xchg
+          bsr       _nl_objput_mv_restore_p0_C
+          mov       r9,r0
+strip_nc_b_xchg:
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_c
+          fmov      fr14,fr10
+strip_nc_b_cut:
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_b_cut_chk
+          mov       r9,r0
+          bsr       _nl_objput_mv_send_edge_A
+          add       #1,r0
+strip_nc_b_cut_chk:
+          tst       r3,r3
+          bt        strip_nc_end
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_skip
+          fmov      fr14,fr10
+strip_nc_state_c:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        strip_nc_c_cut
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_c_chk1
+          bsr       _nl_objput_mv_send_edge_A
+          mov       r9,r0
+strip_nc_c_chk1:
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_c_put
+          bsr       _nl_objput_mv_restore_p1_A
+          mov       r9,r0
+strip_nc_c_put:
+          bsr       _nl_objput_mv_send_p0
+          add       #32,r6
+          tst       r3,r3
+          bt        strip_nc_end
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_a
+          fmov      fr14,fr10
+strip_nc_c_cut:
+          fmov      fr14,fr6
+          fmov      fr12,fr4
+          fschg
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_c_cut_chk
+          bsr       _nl_objput_mv_send_edge_A
+          mov       r9,r0
+strip_nc_c_cut_chk:
+          tst       r3,r3
+          bt        strip_nc_end
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_c_cut_xchg
+          bsr       _nl_objput_mv_restore_p1_A
+          mov       r9,r0
+strip_nc_c_cut_xchg:
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_b
+          fmov      fr14,fr10
+strip_nc_skip:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bt        strip_nc_skip_end
+          fmov      fr10,fr6
+          fmov      fr8,fr4
+          fmov      fr14,fr10
+          fmov      fr12,fr8
+          tst       r3,r3
+          bf        strip_nc_skip
+          bra       strip_nc_end
+          fschg
+strip_nc_skip_end:
+          bsr       _nl_objput_mv_calc_p0p2_C
+          fschg
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          bsr       _nl_objput_mv_send_p0
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        strip_nc_skip_end_chk
+          bsr       _nl_objput_mv_send_edge_B
+          add       #32,r6
+strip_nc_skip_end_chk:
+          tst       r3,r3
+          bt        strip_nc_end
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_c
+          fmov      fr14,fr10
+strip_nc_skip2:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bt        strip_nc_skip2_end
+          fmov      fr10,fr6
+          fmov      fr8,fr4
+          fmov      fr14,fr10
+          fmov      fr12,fr8
+          tst       r3,r3
+          bf        strip_nc_skip2
+          bra       strip_nc_end
+          fschg
+strip_nc_skip2_end:
+          bsr       _nl_objput_mv_calc_p0p2_C
+          fschg
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          lds       r0,fpul
+          bsr       _nl_objput_mv_send_p0
+          add       #32,r6
+          tst       r3,r3
+          bt        strip_nc_end
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_xchg_p0p1
+          fschg
+          bra       strip_nc_state_c
+          fmov      fr14,fr10
+strip_nc_end:
+          mov.l     @r4,r0
+          cmp/pl    r0
+          bt        strip_nc_next_hdr
+          bra       list_end
+strip_nc_next_hdr:
+          tst       #128,r0
+          add       #4,r4
+          bt/s      strip_nc_hdr_kind
+          mov.l     @r4+,r3
+          bra       _nl_objputmv_strip_nc
+          fschg
+strip_nc_hdr_kind:
+          tst       #16,r0
+          fschg
+          bt        strip_nc_hdr_tri
+          bra       _nl_objputmv_strip_nc
+strip_nc_hdr_tri:
+          nop
+          bra       tri_nc_start
+          nop
+          .ALIGN    32
+
+; the same for triangle lists
+tri_nc_prep:
+          lds       r12,fpul
+          mov       #1,r9
+          mov.l     @r4+,r3
+          fschg
+          fsts      fpul,fr1
+          lds       r9,fpul
+tri_nc_start:
+          mov       r0,r9
+          add       #1,r9
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        _nl_objputmv_triangle_nc
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+_nl_objputmv_triangle_nc:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          float     fpul,fr7
+          ftrv      xmtrx,fv4
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        tri_nc_have_v1
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_nc_have_v1:
+          pref      @r14
+          flds      fr7,fpul
+          mov       #1,r0
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fsts      fpul,fr4
+          lds       r0,fpul
+          fmov      @r14+,fr8
+          fmov      @r14+,fr10
+          float     fpul,fr11
+          ftrv      xmtrx,fv8
+          mov       r4,r14
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        tri_nc_have_v2
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_nc_have_v2:
+          pref      @r14
+          flds      fr11,fpul
+          mov       #1,r0
+          fldi1     fr11
+          fdiv      fr8,fr11
+          fsts      fpul,fr8
+          lds       r0,fpul
+          fcmp/gt   fr4,fr1
+          bf        tri_nc_p0_out
+          mov       r9,r0
+          tst       #1,r0
+          mov       #40,r0
+          bf        tri_nc_put_p0
+          mov       #16,r0
+tri_nc_put_p0:
+          fmov      fr6,fr14
+          add       r6,r0
+          fmul      fr15,fr14
+          fmov      fr4,fr12
+          fmul      fr15,fr13
+          fmov      fr14,@-r0
+          fmov      fr12,@-r0
+          fcmp/gt   fr8,fr1
+          bf        tri_nc_p1_cut
+          mov       r9,r0
+          tst       #1,r0
+          mov       #16,r0
+          bf        tri_nc_put_p1
+          mov       #40,r0
+tri_nc_put_p1:
+          fmov      fr10,fr14
+          add       r6,r0
+          fmul      fr15,fr14
+          fmov      fr8,fr12
+          fmul      fr15,fr13
+          fmov      fr14,@-r0
+          fmov      fr12,@-r0
+          mov       r6,r0
+          shar      r0
+          mov.l     r0,@r6
+          mov       #-1,r0
+          cmp/eq    r0,r8
+          bt        tri_nc_state_a
+          cmp/eq    r0,r2
+          bf        tri_nc_state_a
+          bt        tri_nc_state_a2
+tri_nc_p1_cut:
+          fschg
+          add       #1,r9
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          add       #-1,r9
+          mov       r6,r0
+          shar      r0
+          fschg
+          mov.l     r0,@r6
+          mov       #-1,r0
+          cmp/eq    r0,r8
+          bt        tri_nc_state_b
+          cmp/eq    r0,r2
+          bf        tri_nc_state_b
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          bra       tri_nc_state_b
+          lds       r0,fpul
+tri_nc_p0_out:
+          fcmp/gt   fr8,fr1
+          bf        tri_nc_both_out
+          mov       r9,r0
+          tst       #1,r0
+          mov       #16,r0
+          bf        tri_nc_p0_out_put
+          mov       #40,r0
+tri_nc_p0_out_put:
+          fmov      fr10,fr14
+          add       r6,r0
+          fmul      fr15,fr14
+          fmov      fr8,fr12
+          fmul      fr15,fr13
+          fmov      fr14,@-r0
+          fmov      fr12,@-r0
+          fschg
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          mov       r6,r0
+          shar      r0
+          mov.l     r0,@r6
+          mov       #-1,r0
+          fschg
+          cmp/eq    r8,r0
+          bt        tri_nc_state_c
+          cmp/eq    r2,r0
+          bf        tri_nc_state_c
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          bra       tri_nc_state_c
+          lds       r0,fpul
+tri_nc_both_out:
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bf        tri_nc_both_out_r2
+          bra       tri_nc_skip
+tri_nc_both_out_r2:
+          nop
+          mov       r2,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_both_out_go
+          bra       tri_nc_skip
+tri_nc_both_out_go:
+          nop
+          bra       tri_nc_skip2
+          nop
+tri_nc_state_a:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        tri_nc_a_cut
+          bsr       _nl_objput_mv_send_p2
+          add       #32,r6
+          tst       r3,r3
+          add       #1,r9
+          bf        tri_nc_a_more
+          bra       tri_nc_end
+tri_nc_a_more:
+          nop
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_a_cut:
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_a_cut_chk
+          bsr       _nl_objput_mv_send_edge_A
+          mov       r9,r0
+tri_nc_a_cut_chk:
+          tst       r3,r3
+          add       #1,r9
+          bf        tri_nc_a_cut_more
+          bra       tri_nc_end
+tri_nc_a_cut_more:
+          nop
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_state_a2:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        tri_nc_a2_cut
+          bsr       _nl_objput_mv_send_p2
+          add       #32,r6
+          tst       r3,r3
+          add       #1,r9
+          bf        tri_nc_a2_more
+          bra       tri_nc_end
+tri_nc_a2_more:
+          nop
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_a2_cut:
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          lds       r0,fpul
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_state_b:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        tri_nc_b_cut
+          bsr       _nl_objput_mv_send_p2
+          add       #32,r6
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_b_chk
+          mov       r9,r0
+          bsr       _nl_objput_mv_send_edge_A
+          add       #1,r0
+tri_nc_b_chk:
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_b_cut:
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_b_cut_chk
+          mov       r9,r0
+          bsr       _nl_objput_mv_send_edge_A
+          add       #1,r0
+tri_nc_b_cut_chk:
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_state_c:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bf        tri_nc_c_cut
+          bsr       _nl_objput_mv_calcsend_p0p2
+          fschg
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_c_chk1
+          bsr       _nl_objput_mv_send_edge_A
+          mov       r9,r0
+tri_nc_c_chk1:
+          bsr       _nl_objput_mv_cont_strip_C
+          mov       r9,r0
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_c_put
+          bsr       _nl_objput_mv_restore_p1_A
+          mov       r9,r0
+tri_nc_c_put:
+          bsr       _nl_objput_mv_send_p0
+          add       #32,r6
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_c_cut:
+          fmov      fr14,fr6
+          fmov      fr12,fr4
+          fschg
+          bsr       _nl_objput_mv_calcsend_p0p1
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_c_cut_chk
+          bsr       _nl_objput_mv_send_edge_A
+          mov       r9,r0
+tri_nc_c_cut_chk:
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_skip:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bt        tri_nc_skip_end
+          fschg
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_skip_end:
+          bsr       _nl_objput_mv_calc_p0p2_C
+          fschg
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          bsr       _nl_objput_mv_send_p0
+          add       #32,r6
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt        tri_nc_skip_end_chk
+          bsr       _nl_objput_mv_send_edge_B
+          add       #32,r6
+tri_nc_skip_end_chk:
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_skip2:
+          bsr       _nl_objput_mv_get_and_calc
+          add       #1,r9
+          bt        tri_nc_skip2_end
+          fschg
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_skip2_end:
+          bsr       _nl_objput_mv_calc_p0p2_C
+          fschg
+          bsr       _nl_objput_mv_calc_p0p1_A
+          fmov      fr5,fr13
+          flds      fr14,fpul
+          sts       fpul,r8
+          flds      fr13,fpul
+          mov       #1,r0
+          sts       fpul,r2
+          lds       r0,fpul
+          bsr       _nl_objput_mv_send_p0
+          add       #32,r6
+          tst       r3,r3
+          add       #1,r9
+          bt        tri_nc_end
+          bra       _nl_objputmv_triangle_nc
+          fschg
+tri_nc_end:
+          mov.l     @r4,r0
+          cmp/pl    r0
+          bt        tri_nc_next_hdr
+          bra       list_end
+tri_nc_next_hdr:
+          tst       #128,r0
+          add       #4,r4
+          bt/s      tri_nc_hdr_kind
+          mov.l     @r4+,r3
+          bra       tri_nc_start
+          fschg
+tri_nc_hdr_kind:
+          tst       #16,r0
+          fschg
+          bf        tri_nc_hdr_strip
+          bra       tri_nc_start
+tri_nc_hdr_strip:
+          nop
+          bra       _nl_objputmv_strip_nc
+          nop
+          .ALIGN    32
+
+; takes the next vertex as p2 (fr12..fr15, 1/w in fr15); T is set when it is in front of the near plane
+_nl_objput_mv_get_and_calc:
+          fmov      @r14+,fr12
+          dt        r3
+          fmov      @r14+,fr14
+          float     fpul,fr15
+          mov       r4,r14
+          bt/s      get_calc_fetched
+          ftrv      xmtrx,fv12
+          mov.l     @r4,r0
+          add       #32,r4
+          tst       #1,r0
+          bf        get_calc_fetched
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+get_calc_fetched:
+          pref      @r14
+          fcmp/gt   fr15,fr1
+          flds      fr15,fpul
+          mov       #1,r0
+          fldi1     fr15
+          fdiv      fr12,fr15
+          fsts      fpul,fr12
+          rts
+          lds       r0,fpul
+          .ALIGN    16
+
+; the point where edge p0-p1 meets the near plane, into the slot picked by r9's parity
+_nl_objput_mv_calc_p0p1_A:
+          fmov      fr4,fr12
+          fsub      fr8,fr12
+          fmov      fr1,fr0
+          fsub      fr8,fr0
+          fmov      fr6,fr3
+          fsub      fr10,fr3
+          fmov      fr5,fr2
+          fsub      fr9,fr2
+          fmov      fr10,fr14
+          fdiv      fr12,fr0
+          fmov      fr9,fr13
+          lds       r7,fpul
+          fsts      fpul,fr15
+          mov       #1,r0
+          lds       r0,fpul
+          mov       r9,r0
+          tst       #1,r0
+          mov       #12,r0
+          bt        calc_p0p1_slot
+          mov       #36,r0
+calc_p0p1_slot:
+          fmac      fr0,fr3,fr14
+          fmac      fr0,fr2,fr13
+          fmul      fr15,fr14
+          fmul      fr15,fr13
+          fmov      fr15,@(r0,r6)
+          add       #-4,r0
+          fmov      fr14,@(r0,r6)
+          add       #-4,r0
+          rts
+          fmov      fr13,@(r0,r6)
+
+; sends p2 (it becomes the new p0) and moves the queue on
+_nl_objput_mv_send_p2:
+          pref      @r6
+          mov       r6,r0
+          fmov      fr14,fr6
+          fmul      fr15,fr14
+          fmov      fr12,fr4
+          fmul      fr15,fr13
+          add       #-4,r0
+          fschg
+          fmov      fr15,@-r0
+          add       #32,r6
+          fmov      fr14,@-r0
+          add       #64,r5
+          fmov      fr13,@-r0
+          rts
+          pref      @r0
+          .ALIGN    4
+
+; copies p2 into the other slot to go on with the strip
+_nl_objput_mv_cont_strip_C:
+          tst       #1,r0
+          mov       #36,r0
+          bt        cont_strip_slot
+          mov       #12,r0
+cont_strip_slot:
+          fmov      fr15,@(r0,r6)
+          add       #-4,r0
+          fmov      fr14,@(r0,r6)
+          add       #-4,r0
+          rts
+          fmov      fr13,@(r0,r6)
+
+; swaps p0 and p1
+_nl_objput_mv_xchg_p0p1:
+          fmov      fr4,fr12
+          fmov      fr6,fr14
+          fmov      fr8,fr4
+          fmov      fr10,fr6
+          rts
+          fmov      fr12,fr8
+
+; the point where edge p0-p2 meets the near plane, sent
+_nl_objput_mv_calcsend_p0p2:
+          add       #32,r6
+          pref      @r6
+          fsub      fr12,fr4
+          fmov      fr1,fr0
+          fsub      fr12,fr0
+          fmov      fr6,fr3
+          fsub      fr14,fr3
+          fmov      fr5,fr2
+          fsub      fr13,fr2
+          fdiv      fr4,fr0
+          fmov      fr15,fr7
+          fmov      fr14,fr6
+          fmov      fr13,fr5
+          fmov      fr12,fr4
+          lds       r7,fpul
+          fsts      fpul,fr15
+          mov       #1,r0
+          lds       r0,fpul
+          fmac      fr0,fr3,fr14
+          fmac      fr0,fr2,fr13
+          mov       r6,r0
+          fmul      fr15,fr14
+          add       #-4,r0
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          add       #32,r6
+          fmov      fr14,@-r0
+          add       #64,r5
+          fmov      fr13,@-r0
+          rts
+          pref      @r0
+          .ALIGN    4
+
+; the point where edge p0-p1 meets the near plane, sent
+_nl_objput_mv_calcsend_p0p1:
+          pref      @r6
+          fmov      fr4,fr12
+          fsub      fr8,fr12
+          fmov      fr1,fr0
+          fsub      fr8,fr0
+          fmov      fr6,fr3
+          fsub      fr10,fr3
+          fmov      fr5,fr2
+          fsub      fr9,fr2
+          fmov      fr10,fr14
+          fdiv      fr12,fr0
+          fmov      fr9,fr13
+          lds       r7,fpul
+          fsts      fpul,fr15
+          mov       #1,r0
+          lds       r0,fpul
+          fmac      fr0,fr3,fr14
+          fmac      fr0,fr2,fr13
+          mov       r6,r0
+          fmul      fr15,fr14
+          add       #-4,r0
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          add       #32,r6
+          fmov      fr14,@-r0
+          add       #64,r5
+          fmov      fr13,@-r0
+          rts
+          pref      @r0
+          .ALIGN    8
+
+; sends the cut vertex words kept in r7, r8 and r2 into the slot picked by r0's parity
+_nl_objput_mv_send_edge_A:
+          tst       #1,r0
+          mov       #16,r0
+          bt        send_edge_slot
+          mov       #40,r0
+send_edge_slot:
+          add       r6,r0
+          mov.l     r7,@-r0
+          add       #32,r6
+          mov.l     r8,@-r0
+          add       #64,r5
+          pref      @r6
+          add       #32,r6
+          mov.l     r2,@-r0
+          rts
+          pref      @r0
+
+; puts p1 back into the slot
+_nl_objput_mv_restore_p1_A:
+          tst       #1,r0
+          mov       #16,r0
+          bt        restore_p1_slot
+          mov       #40,r0
+restore_p1_slot:
+          fmov      fr11,fr15
+          add       r6,r0
+          fmov      fr10,fr14
+          fmul      fr15,fr14
+          fmov      fr9,fr13
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          fmov      fr14,@-r0
+          rts
+          fmov      fr13,@-r0
+
+; sends p0
+_nl_objput_mv_send_p0:
+          pref      @r6
+          mov       r6,r0
+          fmov      fr7,fr15
+          add       #-4,r0
+          fmov      fr6,fr14
+          fmul      fr15,fr14
+          fmov      fr5,fr13
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          add       #32,r6
+          fmov      fr14,@-r0
+          add       #64,r5
+          fmov      fr13,@-r0
+          rts
+          pref      @r0
+          .ALIGN    32
+
+; puts p0 back into the slot
+_nl_objput_mv_restore_p0_C:
+          tst       #1,r0
+          mov       #40,r0
+          bt        restore_p0_slot
+          mov       #16,r0
+restore_p0_slot:
+          fmov      fr7,fr15
+          add       r6,r0
+          fmov      fr6,fr14
+          fmul      fr15,fr14
+          fmov      fr5,fr13
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          fmov      fr14,@-r0
+          rts
+          fmov      fr13,@-r0
+
+; the point where edge p0-p2 meets the near plane, into the slot picked by r9's parity
+_nl_objput_mv_calc_p0p2_C:
+          fsub      fr12,fr4
+          fmov      fr1,fr0
+          fsub      fr12,fr0
+          fmov      fr6,fr3
+          fsub      fr14,fr3
+          fmov      fr5,fr2
+          fsub      fr13,fr2
+          fdiv      fr4,fr0
+          fmov      fr15,fr7
+          fmov      fr14,fr6
+          fmov      fr13,fr5
+          fmov      fr12,fr4
+          lds       r7,fpul
+          fsts      fpul,fr15
+          mov       #1,r0
+          lds       r0,fpul
+          mov       r9,r0
+          tst       #1,r0
+          mov       #40,r0
+          bt        calc_p0p2_slot
+          mov       #16,r0
+calc_p0p2_slot:
+          fmac      fr0,fr3,fr14
+          fmac      fr0,fr2,fr13
+          fmul      fr15,fr14
+          add       r6,r0
+          fmul      fr15,fr13
+          fmov      fr15,@-r0
+          fmov      fr14,@-r0
+          rts
+          fmov      fr13,@-r0
+
+; sends the cut vertex words kept in r7, r8 and r2
+_nl_objput_mv_send_edge_B:
+          pref      @r6
+          mov       r6,r0
+          add       #-4,r0
+          mov.l     r7,@-r0
+          add       #32,r6
+          mov.l     r8,@-r0
+          add       #64,r5
+          mov.l     r2,@-r0
+          rts
+          pref      @r0
+
+          .END

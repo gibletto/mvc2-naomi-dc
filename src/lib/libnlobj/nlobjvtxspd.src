@@ -1,0 +1,1561 @@
+; nlobjvtxspd: libnlobj's vertex-colour bridge (the model drawing from vertex colours) in
+; assembler. It draws the strip lists the model reader hands over: it transforms each vertex,
+; cuts the triangles that cross the near plane and sends the polygons to the TA through the
+; store queue. The offset colour it sends is 0; nlobjvtxspdofst is the twin that sends the
+; vertex's own.
+
+          .SECTION  P,CODE,ALIGN=32
+          .EXPORT   _nlObjPut_vtxcolbridge_spd
+          .EXPORT   _nlObjPut_vtxcolbridge_spd_x
+          .IMPORT   _gpwbuf
+
+; In: r4 the strip list, r5 the bytes sent so far (counted up), r6 the store queue pointer,
+; r7 the 1/w of a vertex cut on the near plane (float), r10 + r11 the place r5 is stored at the
+; end, r12 the near plane's depth (float bits; bit 0 set: cutting is on). A float in the caller's
+; frame, 80 bytes above r15 once the registers are saved, flips the cull mode when it is negative.
+; The first entry saves fr12-fr15; _x is for a caller that has.
+; Out: r4 on the word that ended the list, which is in r8; T set when it is not negative.
+; A vertex record is 32 bytes: x, y, z, (unused), base colour, offset colour, u, v; or 8 bytes:
+; a word with bit 0 clear and the offset of the 32 from the end of the 8.
+_nlObjPut_vtxcolbridge_spd:
+          mov       r15,r1
+          fmov      fr15,@-r15
+          fmov      fr14,@-r15
+          fmov      fr13,@-r15
+          fmov      fr12,@-r15
+_nlObjPut_vtxcolbridge_spd_x:
+          fmov      fr11,@-r15          ; entered with fr12-fr15 already saved
+          fmov      fr10,@-r15
+          fmov      fr9,@-r15
+          fmov      fr8,@-r15
+          sts.l     pr,@-r15
+          mov.l     gpwbuf_adr,r0       ; &gpwbuf stays on the stack: r9 is reused
+          mov.l     r0,@-r15
+          mov.l     @r4+,r0             ; the list's first word
+
+; The list loop: r0 is the next word. Positive, it is the flags of a strip (below);
+; any other word ends the list.
+next_strip:
+          cmp/pl    r0                  ; positive: a strip
+          mov.l     @r15,r9
+          bt/s      strip_head
+          cmp/pz    r0                  ; T for the caller: not negative
+list_end:
+          mov       r0,r8               ; the ending word goes back in r8
+          mov       r11,r0
+          mov.l     r5,@(r0,r10)        ; bytes sent, to the caller's counter
+          add       #4,r15              ; drop &gpwbuf
+          lds.l     @r15+,pr
+          fmov      @r15+,fr8
+          fmov      @r15+,fr9
+          fmov      @r15+,fr10
+          fmov      @r15+,fr11
+          fmov      @r15+,fr12
+          fmov      @r15+,fr13
+          fmov      @r15+,fr14
+          rts
+          fmov      @r15+,fr15
+          .ALIGN    32
+
+; A strip starts with its polygon header, the first 16 bytes of the TA's 32, built from
+; gpwbuf with the shading and cull mode the flags ask for. Flags: bits 0-1 cull mode,
+; 3 a list of triangles, 4 a strip, 6 gouraud, 7 (on the word after a strip) another strip
+; follows under the same flags.
+strip_head:
+          mov       r0,r1
+          mov       #-5,r2
+          mov.l     @r9+,r3             ; polygon control word
+          and       #64,r0              ; flag 6 becomes the shading bit
+          shld      r2,r0
+          mov       #-3,r2
+          and       r2,r3
+          or        r0,r3
+          add       #32,r4
+          mov       #-49,r2             ; colour type 0: packed
+          and       r2,r3
+          mov       r1,r0
+          mov       r15,r2
+          add       #40,r2
+          lds       r3,fpul
+          mov.l     @(40,r2),r2         ; the caller's float: negative flips the cull
+          cmp/pz    r2
+          mov       #27,r2
+          bt/s      cull_set
+          and       #3,r0               ; flags 0-1: cull mode
+          xor       #1,r0
+cull_set:
+          shld      r2,r0               ; into bits 27-28 of the ISP/TSP word
+          mov       #3,r3
+          fschg
+          shld      r2,r3
+          pref      @r4                 ; the first vertex into the cache
+          not       r3,r3
+          mov.l     @r9+,r2             ; ISP/TSP instruction word
+          and       r3,r2
+          fsts      fpul,fr0
+          or        r0,r2
+          lds       r2,fpul
+          add       #-32,r4
+          fsts      fpul,fr1
+          add       #16,r6
+          fmov      @r9+,fr2            ; TSP instruction and texture words
+          fmov      fr2,@-r6            ; TSP and texture words, bytes 8-15
+          add       #32,r5
+          fmov      fr0,@-r6            ; control and ISP words, bytes 0-7
+          fschg
+          pref      @r6                 ; fire the store queue
+          add       #32,r6
+          rotcr     r12                 ; T = r12 bit 0, cutting on (cleared for the plain path)
+          mov       r1,r0
+          bt/s      cut_path
+          shll      r12
+          tst       #8,r0               ; flag 3: a list of triangles
+          bt        plain_strip
+          bsr       put_tris
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+plain_strip:
+          bsr       put_strip
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+
+; Cutting on the near plane is on: a strip (flag 4) goes to put_strip_clip, a list of
+; triangles (flag 3) to put_tris_clip.
+cut_path:
+          mov       #0,r1
+          tst       #64,r0
+          addc      r1,r12              ; r12 bit 0: flat shading (flag 6 clear)
+          tst       #16,r0              ; flag 4: a strip
+          bt/s      cut_not_strip
+          tst       #8,r0
+          bsr       put_strip_clip
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+cut_not_strip:
+          bt        bad_flags
+          bsr       put_tris_clip
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+          .ALIGN    4
+bad_flags:
+          bra       bad_flags           ; neither flag 3 nor 4: hang
+          nop
+recip_255:
+          .FDATA.S  F'0.0039215684      ; about 1/255, not read by this module
+          .ALIGN    32
+
+; The vertices save_vtx keeps, in 32-byte slots by r11 & 3; 256 bytes are reserved, the last
+; 128 are never used.
+clip_buf:
+          .RES.B    256
+gpwbuf_adr:
+          .DATA.L   _gpwbuf
+          .ALIGN    32
+
+; put_strip: one strip, not cut. fv4 and fv8 are the two vertices in hand: one is
+; transformed while the other is read, then they swap, in double-width moves. A vertex
+; goes out as 32 bytes, stored backwards through the store queue: control word,
+; x, y, 1/w, u, v, base colour, offset colour. The control word is the queue's own
+; address, which has the top bits of a vertex; shifted right once it also has bit 28,
+; the last vertex of a strip.
+; In: r4 on the strip's vertex count.
+put_strip:
+          mov.l     @r4+,r3             ; the strip's vertex count
+          add       #32,r6
+          fschg
+          mov.l     @r4,r0              ; bit 0 of the first word set: the vertex is here, 32 bytes
+          mov       r4,r14
+          tst       #1,r0
+          add       #32,r4
+          bf        strip_v0
+          mov.l     @(4,r14),r14        ; clear: an offset to its data, from the end of these 8 bytes
+          add       #-24,r4
+          add       r4,r14
+strip_v0:
+          fmov      @r14+,fr4           ; x, y
+          fmov      @r14+,fr6           ; z
+          fldi1     fr7
+          fmov      @r14+,fr2           ; base and offset colours
+          fmov      @r14,fr0            ; u, v
+          ftrv      xmtrx,fv4           ; fr4 w, fr5 x, fr6 y, fr7 depth
+strip_loop:
+          fldi0     fr3                 ; offset colour 0
+          fldi1     fr7
+          fdiv      fr4,fr7             ; 1/w
+          fmov      fr2,@-r6            ; A's colours
+          dt        r3
+          mov.l     @r4+,r0
+          bt/s      strip_a_last        ; A was the last
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov       r6,r2               ; A's control word
+          bt/s      strip_load_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+strip_load_b:
+          add       #32,r4
+          fmov      @r14+,fr8
+          pref      @r4
+          fmov      @r14+,fr10
+          fldi1     fr11
+          fmul      fr7,fr6             ; A's y and x times 1/w
+          fmov      @r14+,fr2
+          fmul      fr7,fr5
+          fmov      fr0,@-r6            ; A's u, v
+          ftrv      xmtrx,fv8           ; B transformed meanwhile
+          fmov      fr6,@-r6
+          add       #-32,r4
+          fmov      fr4,@-r6
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          dt        r3
+          pref      @r6
+          add       #64,r6
+          fldi0     fr3
+          fmov      fr2,@-r6            ; B's colours
+          mov       r6,r2
+          fldi1     fr11
+          fdiv      fr8,fr11            ; 1/w of B
+          mov.l     @r4+,r0
+          bt/s      strip_b_last        ; B was the last
+          mov.l     @r4+,r14
+          tst       #1,r0
+          bt/s      strip_load_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+strip_load_a:
+          add       #32,r4
+          fmov      @r14+,fr4
+          pref      @r4
+          fmov      @r14+,fr6
+          fldi1     fr7
+          fmul      fr11,fr10
+          fmov      @r14+,fr2
+          fmul      fr11,fr9
+          fmov      fr0,@-r6
+          ftrv      xmtrx,fv4
+          fmov      fr10,@-r6
+          add       #-32,r4
+          fmov      fr8,@-r6
+          add       #64,r5
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          pref      @r6
+          bra       strip_loop
+          add       #64,r6
+          .ALIGN    4
+
+; B was the last vertex: flag 7 on the word after it joins the next strip on.
+strip_b_last:
+          cmp/pl    r0
+          mov       r14,r3
+          bf        strip_b_end
+          tst       #128,r0
+          bt        strip_b_end
+          mov.l     @r4+,r0
+          mov       r6,r2
+          shar      r2                  ; B ends the strip
+          mov.l     @r4+,r14
+          tst       #1,r0
+          add       r4,r14
+          bt        strip_load_a
+          mov       r4,r14
+          add       #24,r4
+          bra       strip_load_a
+          add       #-8,r14
+
+; B ends the strip: it goes out as A, with the last-vertex bit.
+strip_b_end:
+          add       #32,r5
+          fmov      fr8,fr4
+          bra       strip_end
+          fmov      fr10,fr6
+
+; A was the last vertex.
+strip_a_last:
+          cmp/pl    r0
+          mov       r14,r3
+          bf        strip_end
+          tst       #128,r0
+          bt        strip_end
+          mov.l     @r4+,r0
+          mov       r6,r2
+          shar      r2                  ; A ends the strip
+          mov.l     @r4+,r14
+          tst       #1,r0
+          add       r4,r14
+          bt        strip_load_b
+          mov       r4,r14
+          add       #24,r4
+          bra       strip_load_b
+          add       #-8,r14
+strip_end:
+          fmul      fr7,fr6
+          mov       r6,r2
+          shar      r2                  ; the last vertex
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          add       #-8,r4
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; put_tris: a list of triangles, not cut. As put_strip, but the count is of triangles
+; (r9), r3 counts off three vertices at a time and each triangle's third ends its strip.
+put_tris:
+          mov.l     @r4+,r9
+          add       #32,r6
+          fschg
+          mov       #3,r3
+          mov.l     @r4,r0
+          mov       r4,r14
+          tst       #1,r0
+          add       #32,r4
+          bf        tri_v0
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+tri_v0:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          fldi1     fr7
+          fmov      @r14+,fr2
+          fmov      @r14,fr0
+          ftrv      xmtrx,fv4
+tri_loop:
+          fldi0     fr3
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fmov      fr2,@-r6
+          dt        r3
+          mov.l     @r4+,r0
+          bt/s      tri_a_last
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov       r6,r2
+          bt/s      tri_load_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+tri_load_b:
+          add       #32,r4
+          fmov      @r14+,fr8
+          pref      @r4
+          fmov      @r14+,fr10
+          fldi1     fr11
+          fmul      fr7,fr6
+          fmov      @r14+,fr2
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          ftrv      xmtrx,fv8
+          fmov      fr6,@-r6
+          add       #-32,r4
+          fmov      fr4,@-r6
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          dt        r3
+          pref      @r6
+          add       #64,r6
+          fldi0     fr3
+          fmov      fr2,@-r6
+          mov       r6,r2
+          fldi1     fr11
+          fdiv      fr8,fr11
+          mov.l     @r4+,r0
+          bt/s      tri_b_last
+          mov.l     @r4+,r14
+          tst       #1,r0
+          bt/s      tri_load_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+tri_load_a:
+          add       #32,r4
+          fmov      @r14+,fr4
+          pref      @r4
+          fmov      @r14+,fr6
+          fldi1     fr7
+          fmul      fr11,fr10
+          fmov      @r14+,fr2
+          fmul      fr11,fr9
+          fmov      fr0,@-r6
+          ftrv      xmtrx,fv4
+          fmov      fr10,@-r6
+          add       #-32,r4
+          fmov      fr8,@-r6
+          add       #64,r5
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          pref      @r6
+          bra       tri_loop
+          add       #64,r6
+tri_b_last:
+          dt        r9
+          mov       r6,r2
+          bt/s      tri_b_end
+          shar      r2
+          tst       #1,r0
+          mov       #3,r3
+          bt/s      tri_load_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       tri_load_a
+          add       #-8,r14
+tri_b_end:
+          add       #32,r5
+          fmov      fr8,fr4
+          bra       tri_end
+          fmov      fr10,fr6
+tri_a_last:
+          dt        r9
+          mov       r6,r2
+          bt/s      tri_end
+          shar      r2
+          tst       #1,r0
+          mov       #3,r3
+          bt/s      tri_load_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       tri_load_b
+          add       #-8,r14
+tri_end:
+          fmul      fr7,fr6
+          fmov      fr0,@-r6
+          fmul      fr7,fr5
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          add       #-8,r4
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; put_strip_clip: one strip, cut on the near plane. Vertices in front go out as in
+; put_strip until one has its depth below r12. Then the triangle is rebuilt in clip_buf:
+; save_vtx saves a transformed vertex in the slot r11 & 3, r9 collects which of the last
+; three were behind (the oldest in the top bit), and put_saved and put_cut write a saved
+; vertex and the point where an edge meets the plane. fv12 is the matrix's depth row, for
+; testing a vertex with one fipr.
+put_strip_clip:
+          mov.l     r10,@-r15
+          mov.l     r11,@-r15
+          sts.l     pr,@-r15
+          mov.l     @r4+,r3             ; the strip's vertex count
+          fschg
+          fmov      fr3,fr0             ; fv12 from the matrix's depth row
+          fmov      fr7,fr12
+          fmov      fr11,fr2
+          fmov      fr15,fr14
+          fschg
+          fmov      fr1,fr12
+          fmov      fr3,fr14
+
+; A strip: its first two vertices.
+clip_strip:
+          mov       #0,r11
+          bsr       xform_vtx           ; r9 collects the behind bits
+          mov       #0,r9
+          bf        clip_v0_in          ; T: behind?
+          bra       clip_v0_behind      ; behind: clip_v0_in's rotcl is the delay slot
+
+; v0 is in front: send it.
+clip_v0_in:
+          rotcl     r9
+          bsr       send_vtx
+          add       #1,r11
+          bsr       xform_vtx
+          nop
+          bf        clip_v1_in
+          bra       clip_v1_behind      ; behind: clip_v1_in's rotcl is the delay slot
+
+; v1 is in front too: send it.
+clip_v1_in:
+          rotcl     r9
+          bsr       send_vtx
+          add       #1,r11
+
+; Run on through the strip, testing each vertex as it is transformed.
+clip_run:
+          add       #32,r6
+          mov.l     @r4,r0
+          fschg
+          tst       #1,r0
+          mov       r4,r14
+          bf/s      clip_run_a
+          add       #32,r4
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+clip_run_a:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          fldi1     fr7
+          fmov      @r14+,fr2
+          fmov      @r14,fr0
+          ftrv      xmtrx,fv4
+clip_loop:
+          fldi0     fr3                 ; offset colour 0
+          fmov      fr2,@-r6
+          flds      fr7,fpul
+          fldi1     fr7
+          fdiv      fr4,fr7
+          sts       fpul,r0
+          cmp/hi    r0,r12              ; behind?
+          bt        clip_a_behind
+          dt        r3
+          mov.l     @r4+,r0
+          add       #1,r11
+          bt/s      clip_a_last
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov       r6,r2
+          bt/s      clip_load_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+clip_load_b:
+          add       #64,r4
+          fmov      @r14+,fr8
+          pref      @r4
+          fmov      @r14+,fr10
+          add       #-64,r4
+          fldi1     fr11
+          fmul      fr7,fr6
+          fmov      @r14+,fr2
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          ftrv      xmtrx,fv8
+          fmov      fr6,@-r6
+          fmov      fr4,@-r6
+          add       #32,r5
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          pref      @r6
+          add       #64,r6
+          fldi0     fr3
+          fmov      fr2,@-r6
+          flds      fr11,fpul
+          fldi1     fr11
+          fdiv      fr8,fr11
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          bt        clip_b_behind
+          dt        r3
+          mov.l     @r4+,r0
+          add       #1,r11
+          bt/s      clip_b_last
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov       r6,r2
+          bt/s      clip_load_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+clip_load_a:
+          fmov      @r14+,fr4
+          add       #64,r4
+          fmov      @r14+,fr6
+          pref      @r4
+          fldi1     fr7
+          fmul      fr11,fr10
+          fmov      @r14+,fr2
+          fmul      fr11,fr9
+          fmov      fr0,@-r6
+          ftrv      xmtrx,fv4
+          fmov      fr10,@-r6
+          add       #-64,r4
+          fmov      fr8,@-r6
+          add       #32,r5
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          pref      @r6
+          bra       clip_loop
+          add       #64,r6
+
+; The strip is over: flag 7 on the next word is another strip.
+clip_more:
+          mov.l     @r4+,r0
+          cmp/pl    r0
+          bf/s      clip_exit
+          tst       #128,r0             ; flag 7: another strip
+          bf/s      clip_strip
+          mov.l     @r4+,r3
+          add       #-4,r4
+
+; Give back what was saved; r4 on the word that ended the strip, cutting on again.
+clip_exit:
+          lds.l     @r15+,pr
+          mov       #1,r0
+          mov.l     @r15+,r11
+          add       #-4,r4
+          mov.l     @r15+,r10
+          rts
+          or        r0,r12              ; cutting on again
+clip_b_behind:
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          fmov      fr8,fr4
+          bra       clip_behind
+          fmov      fr10,fr6
+clip_a_behind:
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+
+; A vertex is behind: its half-written packet is dropped and the triangle rebuilt.
+clip_behind:
+          rotcl     r9
+          fschg
+          mov       r14,r2
+          fsts      fpul,fr4
+          bra       clip_reload
+          add       #-24,r6             ; drop A's packet
+          .ALIGN    4
+clip_b_last:
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          fmov      fr8,fr4
+          bra       clip_last
+          fmov      fr10,fr6
+clip_a_last:
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+clip_last:
+          fmul      fr7,fr6
+          mov       r6,r2
+          shar      r2
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          add       #-8,r4
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          bra       clip_more
+          add       #32,r6
+
+; v0 is behind: look at v1.
+clip_v0_behind:
+          dt        r3
+          add       #1,r11
+          bsr       xform_vtx
+          dt        r3
+          bf/s      clip_v0_cut
+          rotcl     r9
+
+; v0 and v1 are behind: skip the vertices that stay behind, each tested with a fipr.
+clip_skip:
+          mov.l     @r4,r0
+          mov       r4,r14
+          tst       #1,r0
+          add       #32,r4
+          bf/s      clip_skip_load
+          fldi1     fr7
+          add       #-24,r4
+          mov.l     @(4,r14),r14
+          add       r4,r14
+clip_skip_load:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr5
+clip_skip_loop:
+          fmov      @r14+,fr6
+          mov       #32,r1              ; step past an inline record: 32 bytes
+          mov.l     @r4,r0
+          add       #32,r4
+          pref      @r4
+          fipr      fv12,fv4            ; depth of the vertex
+          tst       #1,r0
+          add       #-32,r4
+          bf/s      clip_skip_test
+          mov       r4,r14
+          mov       #8,r1               ; or past a reference: 8
+          mov.l     @(4,r14),r14
+          add       #8,r14
+          add       r4,r14
+clip_skip_test:
+          flds      fr7,fpul
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          add       #1,r11
+          bf/s      clip_found
+          rotcl     r9
+          dt        r3
+          fldi1     fr7
+          bt        clip_more
+          add       r1,r4
+          fmov      @r14+,fr4
+          bra       clip_skip_loop
+          fmov      @r14+,fr5
+
+; v0 in front, v1 behind: save v1, read v0 again and send the point where v0-v1 meets
+; the plane. The records are walked back: an inline vertex has bit 0 set in its last word
+; (v), a reference has it clear in its offset.
+clip_v1_behind:
+          bsr       save_vtx
+          dt        r3
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_v1_bk1
+          add       #-24,r4
+clip_v1_bk1:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_v1_bk2
+          add       #-24,r4
+clip_v1_bk2:
+          bsr       xform_vtx
+          nop
+          bsr       save_vtx
+          mov       #0,r11
+          mov       #1,r11
+          clrt
+          bsr       put_cut
+          mov       #0,r0
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        clip_v1_go
+          add       #24,r4
+clip_v1_go:
+          bra       clip_next
+          nop
+
+; v0 behind, v1 in front: the same, then v1 follows the cut point.
+clip_v0_cut:
+          bsr       save_vtx
+          mov       #1,r11
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_v0_bk1
+          add       #-24,r4
+clip_v0_bk1:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_v0_bk2
+          add       #-24,r4
+clip_v0_bk2:
+          bsr       xform_vtx
+          nop
+          bsr       save_vtx
+          mov       #0,r11
+          mov       #1,r11
+          clrt
+          bsr       put_cut
+          mov       #0,r0
+          clrt
+          bsr       put_saved
+          mov       #1,r0
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        clip_v0_go
+          add       #24,r4
+clip_v0_go:
+          bra       clip_next
+          nop
+
+; A vertex in front ends a run of behind ones.
+clip_found:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_found_bk1
+          add       #-24,r4
+clip_found_bk1:
+          bsr       xform_vtx
+          nop
+
+; Save the vertex just transformed, then read the two before it again into their slots.
+clip_reload:
+          bsr       save_vtx
+          nop
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_reload_bk1
+          add       #-24,r4
+clip_reload_bk1:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_reload_bk2
+          add       #-24,r4
+clip_reload_bk2:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        clip_reload_bk3
+          add       #-24,r4
+clip_reload_bk3:
+          bsr       xform_vtx
+          nop
+          bsr       save_vtx
+          add       #-2,r11
+          bsr       xform_vtx
+          nop
+          bsr       save_vtx
+          add       #1,r11
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        clip_flat
+          add       #24,r4
+clip_flat:
+          add       #1,r11
+          mov       r12,r0
+          tst       #1,r0
+          bt/s      clip_case
+          mov       r9,r0
+          bsr       flat_shade
+          nop
+          bra       clip_case
+          mov       r9,r0
+
+; The next vertex of the strip: transform, save, and flat shade if the polygon is.
+clip_next:
+          bsr       xform_vtx
+          add       #1,r11
+          bsr       save_vtx
+          rotcl     r9
+          mov       r12,r0
+          tst       #1,r0
+          bt/s      clip_case
+          mov       r9,r0
+          bsr       flat_shade
+          nop
+          mov       r9,r0
+
+; r9 & 7 are the behind bits of the last three vertices (a, b, c; c the newest), the
+; table's entry is 4 bytes.
+clip_case:
+          and       #7,r0
+          shll2     r0
+          braf      r0                  ; r0 = behind bits * 4
+          nop
+          nop
+          nop
+          bra       clip_c              ; 001: c
+          nop
+          bra       clip_b              ; 010: b
+          nop
+          bra       clip_bc             ; 011: b and c
+          nop
+          bra       clip_a              ; 100: a
+          nop
+          bra       clip_ac             ; 101: a and c
+          nop
+          bra       clip_ab             ; 110: a and b
+          nop
+          nop
+          nop
+
+; The six cases write the cut points and saved vertices the triangle still needs; the
+; strip goes on (clip_next) while r3 has vertices left, else it is over (clip_more).
+clip_c:
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       put_saved
+          add       #-1,r0
+          mov       r11,r0
+          dt        r3
+          bsr       put_cut
+          add       #-1,r0
+          bf        clip_next
+          bra       clip_more
+          nop
+clip_b:
+          clrt
+          bsr       put_saved
+          mov       r11,r0
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-1,r0
+          dt        r3
+          bsr       put_saved
+          mov       r11,r0
+          bf        clip_next
+          bra       clip_more
+          nop
+clip_bc:
+          mov       r11,r0
+          sett
+          bsr       put_cut
+          add       #-2,r0
+          dt        r3
+          bt        clip_strip_over
+          bra       clip_skip
+          nop
+clip_a:
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       put_saved
+          add       #-1,r0
+          dt        r3
+          bsr       put_saved
+          mov       r11,r0
+          bt        clip_strip_over
+          bra       clip_run
+          add       #1,r11
+clip_strip_over:
+          bra       clip_more
+          nop
+clip_ac:
+          mov       r11,r0
+          dt        r3
+          bsr       put_cut
+          add       #-1,r0
+          bf        clip_next
+          bra       clip_more
+          nop
+clip_ab:
+          mov       r11,r0
+          tst       #1,r0
+          bt        clip_ab_even
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-1,r0
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-1,r0
+          bra       clip_ab_end
+          nop
+clip_ab_even:
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       put_cut
+          add       #-1,r0
+clip_ab_end:
+          dt        r3
+          bsr       put_saved
+          mov       r11,r0
+          bf        clip_next
+          bra       clip_more
+          nop
+          .ALIGN    32
+
+; xform_vtx: transform the vertex record at r4, which steps past it. Out: fr4 depth,
+; fr5 x and fr6 y (before the divide), fr7 1/w, fr2 base colour, fr3 offset colour (0 here),
+; r2 on the vertex's u,v; T set when it is behind the plane (depth below r12).
+xform_vtx:
+          mov.l     @r4,r0
+          fschg
+          tst       #1,r0
+          mov       r4,r14
+          bf/s      xform_load
+          add       #32,r4
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+xform_load:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr6
+          fldi1     fr7
+          fmov      @r14+,fr2
+          fldi0     fr3                 ; offset colour 0
+          ftrv      xmtrx,fv4           ; fr4 w, fr5 x, fr6 y, fr7 depth
+          add       #64,r4
+          mov       r14,r2              ; r2 on the u,v
+          pref      @r4                 ; two records ahead into the cache
+          add       #-64,r4
+          flds      fr7,fpul
+          fldi1     fr7
+          fdiv      fr4,fr7             ; 1/w
+          sts       fpul,r0
+          fschg
+          fsts      fpul,fr4            ; fr4 = the depth, as save_vtx keeps it
+          rts
+          cmp/hi    r0,r12              ; T: depth below r12
+          .ALIGN    32
+
+; send_vtx: send the vertex xform_vtx left (u,v from r2). r3 counts down; the vertex that
+; takes it to 0 ends the strip.
+send_vtx:
+          fschg
+          add       #32,r6
+          fmov      @r2,fr0
+          fmul      fr7,fr6
+          fmov      fr2,@-r6
+          fmul      fr7,fr5
+          add       #32,r5
+          fmov      fr0,@-r6
+          mov       r6,r2
+          fmov      fr6,@-r6
+          dt        r3                  ; the last vertex?
+          fmov      fr4,@-r6
+          bf        send_ctrl
+          shar      r2                  ; bit 28
+          sett
+send_ctrl:
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; save_vtx: keep the vertex xform_vtx left in slot r11 & 3 of clip_buf: depth, x, y, 1/w,
+; u, v, base colour, offset colour. Written from the end of the slot back.
+save_vtx:
+          mov       #5,r10
+          mov       r11,r0
+          and       #3,r0
+          fschg
+          shld      r10,r0
+          mov.l     save_vtx_buf,r10
+          fmov      @r2,fr0
+          add       r0,r10
+          fmov      fr2,@-r10
+          fmov      fr0,@-r10
+          fmov      fr6,@-r10
+          fmov      fr4,@-r10
+          rts
+          fschg
+save_vtx_buf:
+          .DATA.L   clip_buf+32         ; the end of slot 0
+
+; flat_shade: the two slots before r11's get the colours of slot r11's vertex.
+flat_shade:
+          mov       #5,r1
+          mov.l     flat_shade_buf,r10
+          mov       r11,r0
+          and       #3,r0
+          mov       r10,r2
+          shld      r1,r0
+          fschg
+          add       r0,r10
+          add       #-8,r10
+          mov       r11,r0
+          fmov      @r10,fr2
+          add       #-1,r0
+          mov       r2,r10
+          and       #3,r0
+          shld      r1,r0
+          add       r0,r2
+          mov       r11,r0
+          fmov      fr2,@-r2
+          add       #-2,r0
+          and       #3,r0
+          shld      r1,r0
+          add       r0,r10
+          fmov      fr2,@-r10
+          rts
+          fschg
+          .DATA.W   H'0000              ; pad to a long
+flat_shade_buf:
+          .DATA.L   clip_buf+32         ; the end of slot 0
+          .ALIGN    32
+
+; put_saved: send the vertex saved in slot r0 & 3, x and y times its 1/w. T set: it ends
+; the strip.
+put_saved:
+          and       #3,r0
+          mov       #5,r2
+          mov.l     put_saved_buf,r10
+          shld      r2,r0
+          fschg
+          add       r0,r10
+          fmov      @r10+,fr0
+          fmov      @r10+,fr2
+          add       #32,r6
+          fmov      @r10+,fr4
+          fmul      fr3,fr2
+          fmov      @r10+,fr6
+          fmul      fr3,fr1
+          fmov      fr6,@-r6
+          mov       r6,r2
+          fmov      fr4,@-r6
+          add       #32,r5
+          fmov      fr2,@-r6
+          bf/s      put_saved_ctrl
+          fmov      fr0,@-r6
+          shar      r2
+          sett
+put_saved_ctrl:
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+          .DATA.W   H'0000              ; pad to a long
+put_saved_buf:
+          .DATA.L   clip_buf            ; slot 0
+          .ALIGN    32
+
+; put_cut: send the point where the edge from slot r0 & 3 to slot r11 & 3 meets the plane:
+; t = (r12 - depth0) / (depth1 - depth0). Each colour byte, u, v, x and y are interpolated by t;
+; x and y then times r7 (the 1/w of a point on the plane). T set: it ends the strip.
+put_cut:
+          and       #3,r0
+          shll2     r0
+          mov.l     put_cut_buf,r10
+          shll2     r0
+          add       r0,r0
+          mov       r10,r2
+          add       r0,r10
+          mov       r11,r0
+          and       #3,r0
+          fmov      @r10,fr2
+          shll2     r0
+          shll2     r0
+          add       r0,r0
+          add       r0,r2
+          fmov      @r2,fr1
+          lds       r12,fpul
+          fsts      fpul,fr0
+          fsub      fr2,fr0
+          add       #24,r10
+          fsub      fr2,fr1
+          add       #24,r2
+          fdiv      fr1,fr0             ; t
+          lds       r7,fpul
+          fsts      fpul,fr1            ; fr1 = 1/w of the cut
+          fschg
+          fmov      @r2,fr4
+          add       #-8,r2
+          fmov      @r10,fr2
+          add       #-8,r10
+          flds      fr4,fpul
+          sts       fpul,r0
+          shlr16    r0
+          mov       r0,r1
+          shlr8     r0
+          extu.b    r0,r0
+          lds       r0,fpul
+          float     fpul,fr8
+          flds      fr2,fpul
+          extu.b    r1,r1
+          sts       fpul,r0
+          shlr16    r0
+          lds       r1,fpul
+          mov       r0,r1
+          shlr8     r0
+          float     fpul,fr10
+          extu.b    r0,r0
+          lds       r0,fpul
+          float     fpul,fr9
+          fsub      fr9,fr8
+          fmac      fr0,fr8,fr9
+          extu.b    r1,r1
+          ftrc      fr9,fpul
+          sts       fpul,r8
+          shll8     r8
+          lds       r1,fpul
+          float     fpul,fr11
+          flds      fr4,fpul
+          fsub      fr11,fr10
+          sts       fpul,r0
+          fmac      fr0,fr10,fr11
+          shlr8     r0
+          ftrc      fr11,fpul
+          extu.b    r0,r0
+          sts       fpul,r1
+          or        r1,r8
+          lds       r0,fpul
+          float     fpul,fr8
+          flds      fr2,fpul
+          shll8     r8
+          sts       fpul,r0
+          shlr8     r0
+          flds      fr4,fpul
+          extu.b    r0,r0
+          sts       fpul,r1
+          extu.b    r1,r1
+          lds       r0,fpul
+          float     fpul,fr9
+          lds       r1,fpul
+          float     fpul,fr10
+          fsub      fr9,fr8
+          flds      fr2,fpul
+          fmac      fr0,fr8,fr9
+          sts       fpul,r1
+          ftrc      fr9,fpul
+          extu.b    r1,r1
+          sts       fpul,r0
+          or        r0,r8
+          lds       r1,fpul
+          float     fpul,fr11
+          fsub      fr11,fr10
+          shll8     r8
+          fmac      fr0,fr10,fr11
+          ftrc      fr11,fpul
+          sts       fpul,r1
+          or        r1,r8
+          fldi0     fr3                 ; offset colour 0
+          add       #32,r6
+          lds       r8,fpul
+          fsts      fpul,fr2
+          fmov      fr2,@-r6            ; colours
+          fmov      @r2,fr4
+          add       #-8,r2
+          fmov      @r10,fr2
+          add       #-8,r10
+          fsub      fr2,fr4
+          fsub      fr3,fr5
+          fmac      fr0,fr4,fr2
+          fmac      fr0,fr5,fr3
+          fmov      fr2,@-r6            ; u, v
+          fschg
+          fmov      fr1,@-r6            ; 1/w
+          fmov      @r2,fr5
+          add       #-4,r2
+          fmov      @r10,fr3
+          add       #-4,r10
+          fmov      @r2,fr4
+          fmov      @r10,fr2
+          fsub      fr3,fr5
+          fsub      fr2,fr4
+          mov       #-16,r2             ; the last-vertex control word if T
+          fmac      fr0,fr5,fr3
+          shll16    r2
+          fmac      fr0,fr4,fr2
+          shll8     r2
+          fmul      fr1,fr3             ; y and x times 1/w
+          add       #32,r5
+          fmul      fr1,fr2
+          fmov      fr3,@-r6
+          fmov      fr2,@-r6
+          bt        put_cut_ctrl
+          mov       r6,r2
+put_cut_ctrl:
+          mov.l     r2,@-r6
+          pref      @r6
+          rts
+          add       #32,r6
+          .DATA.W   H'0000              ; pad to a long
+put_cut_buf:
+          .DATA.L   clip_buf            ; slot 0
+          .ALIGN    32
+
+; put_tris_clip: a list of triangles, cut on the near plane. tri_behind says which vertices
+; of the next one are behind: none, it goes out whole (tri_plain); all, it is skipped;
+; otherwise its three vertices are saved and r9 picks one of six cases, each a strip of
+; three or four vertices from the saved vertices and cut points.
+put_tris_clip:
+          mov.l     r10,@-r15
+          mov.l     r11,@-r15
+          sts.l     pr,@-r15
+          mov.l     @r4+,r3
+tri_next:
+          bsr       tri_behind
+          mov       #0,r9
+          mov       r9,r0
+          cmp/eq    #0,r0
+          bt        tri_plain
+          cmp/eq    #7,r0
+          bt        tri_skip
+          bsr       xform_vtx
+          mov       #0,r11
+          bsr       save_vtx
+          nop
+          bsr       xform_vtx
+          mov       #1,r11
+          bsr       save_vtx
+          nop
+          bsr       xform_vtx
+          mov       #2,r11
+          bsr       save_vtx
+          nop
+          mov       r12,r0
+          tst       #1,r0
+          bt/s      tri_case
+          shll2     r9
+          bsr       flat_shade
+          nop
+
+; r9 = the behind bits * 4 (v0 in the top bit), the table's entry is 4 bytes.
+tri_case:
+          braf      r9
+          nop
+          nop
+          nop
+          bra       tri_cut_v2          ; 001: v2 behind
+          nop
+          bra       tri_cut_v1          ; 010: v1
+          nop
+          bra       tri_cut_v1v2        ; 011: v1 and v2
+          nop
+          bra       tri_cut_v0          ; 100: v0
+          nop
+          bra       tri_cut_v0v2        ; 101: v0 and v2
+          nop
+          bra       tri_cut_v0v1        ; 110: v0 and v1
+          nop
+          nop
+          nop
+
+; Next triangle; at the end cutting is on again.
+tri_done:
+          dt        r3
+          bf        tri_next
+          mov       #1,r0
+          lds.l     @r15+,pr
+          or        r0,r12
+          mov.l     @r15+,r11
+          rts
+          mov.l     @r15+,r10
+tri_plain:
+          mov       r3,r9
+          bsr       xform_vtx
+          mov       #3,r3               ; send_vtx ends the strip on the third
+          bsr       send_vtx
+          nop
+          bsr       xform_vtx
+          nop
+          bsr       send_vtx
+          nop
+          bsr       xform_vtx
+          nop
+          bsr       send_vtx
+          nop
+          bra       tri_done
+          mov       r9,r3
+tri_skip:
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        tri_skip_2
+          add       #24,r4
+tri_skip_2:
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        tri_skip_3
+          add       #24,r4
+tri_skip_3:
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        tri_skip_end
+          add       #24,r4
+tri_skip_end:
+          bra       tri_done
+          nop
+
+; The six cases write what is left of the triangle as one strip: the saved vertices in front
+; and the cut points on the edges to the vertices behind, the last with T set.
+tri_cut_v2:
+          clrt
+          bsr       put_saved
+          mov       #0,r0
+          clrt
+          bsr       put_saved
+          mov       #1,r0
+          clrt
+          mov       #2,r11
+          bsr       put_cut
+          mov       #0,r0
+          sett
+          bsr       put_cut
+          mov       #1,r0
+          bra       tri_done
+          nop
+tri_cut_v1:
+          clrt
+          bsr       put_saved
+          mov       #0,r0
+          clrt
+          mov       #1,r11
+          bsr       put_cut
+          mov       #0,r0
+          clrt
+          mov       #2,r11
+          bsr       put_saved
+          mov       #2,r0
+          sett
+          bsr       put_cut
+          mov       #1,r0
+          bra       tri_done
+          nop
+tri_cut_v1v2:
+          clrt
+          bsr       put_saved
+          mov       #0,r0
+          clrt
+          mov       #1,r11
+          bsr       put_cut
+          mov       #0,r0
+          sett
+          mov       #2,r11
+          bsr       put_cut
+          mov       #0,r0
+          bra       tri_done
+          nop
+tri_cut_v0:
+          clrt
+          mov       #1,r11
+          bsr       put_cut
+          mov       #0,r0
+          clrt
+          bsr       put_saved
+          mov       #1,r0
+          clrt
+          mov       #2,r11
+          bsr       put_cut
+          mov       #0,r0
+          sett
+          bsr       put_saved
+          mov       #2,r0
+          bra       tri_done
+          nop
+tri_cut_v0v2:
+          clrt
+          mov       #1,r11
+          bsr       put_cut
+          mov       #0,r0
+          clrt
+          bsr       put_saved
+          mov       #1,r0
+          sett
+          mov       #2,r11
+          bsr       put_cut
+          mov       #1,r0
+          bra       tri_done
+          nop
+tri_cut_v0v1:
+          clrt
+          mov       #2,r11
+          bsr       put_cut
+          mov       #0,r0
+          clrt
+          bsr       put_cut
+          mov       #1,r0
+          sett
+          bsr       put_saved
+          mov       #2,r0
+          bra       tri_done
+          nop
+          .ALIGN    32
+
+; tri_behind: r9 = the behind bits of the three vertices at r4 (v0 in bit 2), by
+; transforming each; r4 is left on the first.
+tri_behind:
+          mov       r4,r1
+          mov.l     @r4,r0
+          tst       #1,r0
+          bf/s      behind_v0_inl
+          fmov      @r4+,fr4
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr4
+          fmov      @r0+,fr5
+          fmov      @r0+,fr6
+          bra       behind_v0_xf
+          fldi1     fr7
+behind_v0_inl:
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          fldi1     fr7
+          add       #24,r4
+behind_v0_xf:
+          pref      @r4
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv4
+          mov.l     @r4,r0
+          tst       #1,r0
+          bf/s      behind_v1_inl
+          fmov      @r4+,fr0
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr0
+          fmov      @r0+,fr1
+          fmov      @r0+,fr2
+          bra       behind_v1_xf
+          fldi1     fr3
+behind_v1_inl:
+          fmov      @r4+,fr1
+          fmov      @r4,fr2
+          fldi1     fr3
+          add       #24,r4
+behind_v1_xf:
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv0
+          flds      fr7,fpul
+          mov.l     @r4,r0
+          tst       #1,r0
+          bf/s      behind_v2_inl
+          fmov      @r4+,fr4
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr4
+          fmov      @r0+,fr5
+          fmov      @r0+,fr6
+          bra       behind_v2_xf
+          fldi1     fr7
+behind_v2_inl:
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          fldi1     fr7
+behind_v2_xf:
+          mov       r1,r4
+          sts       fpul,r0
+          ftrv      xmtrx,fv4
+          cmp/hi    r0,r12
+          flds      fr3,fpul
+          rotcl     r9
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          flds      fr7,fpul
+          rotcl     r9
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          rts
+          rotcl     r9
+          .DATA.W   H'0000              ; pad the section to a long
+
+          .END
+

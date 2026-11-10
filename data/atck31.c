@@ -1,0 +1,341 @@
+/* Spiral (character 31): the computer's attack lists.
+   What it does once a waiting list's CMD_NEXT has sent it to attack. PLAYER_WORK's cpu_adrs[1]
+   points here.
+
+   atck31_tbl     one record (CPU_DATA): the offsets of the three tables.
+   atck31_rate    the chance, out of 32, that a list's CMD_NEXT2 starts another attack list, by
+                  the level of play.
+   atck31_sel     for each of the computer's levels (cpu_lv), 32 picks; one is taken at random.
+   atck31_cmd     the lists: a pick is a number in this table.
+   atck31_cmd_NN  a list, in the commands of cpu_cmd.h. CMD_JUMP and the other jumps name a
+                  list of lib31.c. */
+#include "player.h"
+#include "cpu_cmd.h"
+
+extern const Uint8 *const atck31_sel[], *const atck31_cmd[];
+extern const Uint8 atck31_rate[], atck31_sel_0[], atck31_sel_1[], atck31_sel_2[], atck31_sel_3[],
+	atck31_sel_4[], atck31_sel_5[], atck31_sel_6[], atck31_sel_7[], atck31_cmd_00[], atck31_cmd_04[],
+	atck31_cmd_08[], atck31_cmd_12[], atck31_cmd_16[];
+
+const CPU_DATA atck31_tbl[] = {
+	{ ( Sint32 )atck31_rate, ( Sint32 )atck31_sel, ( Sint32 )atck31_cmd },
+};
+
+const Uint8 atck31_rate[] = {
+	  8,   8,   8,   8,   9,   9,  10,  10,  11,  11,  12,  12,  13,  13,  14,  14,
+	 15,  15,  16,  16,  17,  17,  18,  18,  19,  20,  21,  22,  24,  26,  28,  30,
+};
+
+const Uint8 *const atck31_sel[] = {
+	atck31_sel_0, atck31_sel_1, atck31_sel_2, atck31_sel_3, atck31_sel_4, atck31_sel_5,
+	atck31_sel_6, atck31_sel_7,
+};
+
+const Uint8 atck31_sel_0[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  12,  12,  12,  12,  12,  12,  12,  12,
+	 21,  21,  21,  21,  21,  21,  21,  21,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_1[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  12,  12,  12,  12,  12,  12,  12,  12,
+	 21,  21,  21,  21,  21,  21,  21,  21,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_2[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  21,  21,  21,  13,  13,  13,  14,  14,
+	 21,  21,  21,  15,  15,  15,  14,  14,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_3[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  21,  21,  21,  13,  13,  13,  14,  14,
+	 21,  21,  21,  15,  15,  15,  14,  14,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_4[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  21,  21,  21,  21,  16,  16,  17,  17,
+	 21,  21,  21,  21,  18,  18,  19,  19,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_5[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  21,  21,  21,  21,  16,  16,  17,  17,
+	 21,  21,  21,  21,  18,  18,  19,  19,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_6[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  21,  21,  21,  21,  16,  16,  17,  17,
+	 21,  21,  21,  21,  18,  18,  19,  19,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 atck31_sel_7[] = {
+	 12,  12,  12,  12,  20,  20,  20,  20,  21,  21,  21,  21,  16,  16,  17,  17,
+	 21,  21,  21,  21,  18,  18,  19,  19,  13,  14,  15,  16,  17,  18,  19,  20,
+};
+
+const Uint8 *const atck31_cmd[] = {
+	atck31_cmd_00, atck31_cmd_00, atck31_cmd_00, atck31_cmd_00, atck31_cmd_04, atck31_cmd_04,
+	atck31_cmd_04, atck31_cmd_04, atck31_cmd_08, atck31_cmd_08, atck31_cmd_08, atck31_cmd_08,
+	atck31_cmd_12, atck31_cmd_12, atck31_cmd_12, atck31_cmd_12, atck31_cmd_16, atck31_cmd_16,
+	atck31_cmd_16, atck31_cmd_16, atck31_cmd_16, atck31_cmd_16, atck31_cmd_16, atck31_cmd_16,
+	atck31_cmd_16, atck31_cmd_16, atck31_cmd_16, atck31_cmd_16, atck31_cmd_16, atck31_cmd_16,
+	atck31_cmd_16, atck31_cmd_16,
+};
+
+const Uint8 atck31_cmd_00[] = {
+	CMD_JUMP( 11 ),
+	CMD_JUMP( 39 ),
+	CMD_JUMP( 37 ),
+	IF_DIST( 96, 0, 96, 0 ),
+		IF_DIST( 48, 0, 48, 0 ),
+			IF_LEVEL( 24 ),
+				CMD_JUMP( 9 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					CMD_JUMP( 8 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						CMD_JUMP( 7 ),
+					CMD_ELSE,
+						CMD_JUMP( 10 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 24 ),
+				DASH_F( 128 ),
+				CMD_JUMP( 9 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					DASH_F( 128 ),
+					CMD_JUMP( 8 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						WALK_F( 128 ),
+						CMD_JUMP( 7 ),
+					CMD_ELSE,
+						WALK_F( 128 ),
+						CMD_JUMP( 10 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 24 ),
+			DASH_F( 288 ),
+			CMD_JUMP( 9 ),
+		CMD_ELSE,
+			IF_LEVEL( 16 ),
+				DASH_F( 288 ),
+				CMD_JUMP( 8 ),
+			CMD_ELSE,
+				IF_LEVEL( 8 ),
+					WALK_F( 288 ),
+					CMD_JUMP( 7 ),
+				CMD_ELSE,
+					WALK_F( 288 ),
+					CMD_JUMP( 10 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 atck31_cmd_04[] = {
+	CMD_JUMP( 11 ),
+	CMD_JUMP( 39 ),
+	CMD_JUMP( 37 ),
+	IF_DIST( 96, 0, 96, 0 ),
+		IF_DIST( 48, 0, 48, 0 ),
+			IF_LEVEL( 24 ),
+				JUMP_RND( 19, 19, 19, 57 ),
+				CMD_JUMP( 9 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					JUMP_RND( 19, 57, 57, 16 ),
+					CMD_JUMP( 8 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						JUMP_RND( 57, 57, 16, 16 ),
+						CMD_JUMP( 7 ),
+					CMD_ELSE,
+						CMD_JUMP( 16 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 24 ),
+				JUMP_RND( 19, 19, 19, 57 ),
+				CMD_JUMP( 9 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					JUMP_RND( 19, 57, 57, 16 ),
+					CMD_JUMP( 8 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						JUMP_RND( 57, 57, 16, 16 ),
+						CMD_JUMP( 7 ),
+					CMD_ELSE,
+						CMD_JUMP( 16 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 24 ),
+			JUMP_RND( 19, 19, 19, 57 ),
+			CMD_JUMP( 9 ),
+		CMD_ELSE,
+			IF_LEVEL( 16 ),
+				JUMP_RND( 19, 57, 57, 16 ),
+				CMD_JUMP( 8 ),
+			CMD_ELSE,
+				IF_LEVEL( 8 ),
+					JUMP_RND( 57, 57, 16, 16 ),
+					CMD_JUMP( 7 ),
+				CMD_ELSE,
+					CMD_JUMP( 16 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 atck31_cmd_08[] = {
+	CMD_JUMP( 11 ),
+	CMD_JUMP( 39 ),
+	CMD_JUMP( 37 ),
+	IF_DIST( 96, 0, 96, 0 ),
+		IF_DIST( 48, 0, 48, 0 ),
+			IF_LEVEL( 24 ),
+				JUMP_RND( 4, 4, 6, 6 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					JUMP_RND( 1, 3, 3, 6 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						JUMP_RND( 1, 1, 3, 3 ),
+					CMD_ELSE,
+						CMD_JUMP( 1 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 24 ),
+				JUMP_RND( 4, 4, 5, 5 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					JUMP_RND( 1, 55, 55, 5 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						JUMP_RND( 1, 1, 55, 55 ),
+					CMD_ELSE,
+						CMD_JUMP( 55 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 24 ),
+			JUMP_RND( 4, 4, 5, 5 ),
+		CMD_ELSE,
+			IF_LEVEL( 16 ),
+				JUMP_RND( 56, 56, 56, 4 ),
+			CMD_ELSE,
+				IF_LEVEL( 8 ),
+					JUMP_RND( 1, 1, 56, 56 ),
+				CMD_ELSE,
+					CMD_JUMP( 56 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 atck31_cmd_12[] = {
+	CMD_JUMP( 11 ),
+	CMD_JUMP( 39 ),
+	CMD_JUMP( 37 ),
+	IF_DIST( 104, 0, 104, 0 ),
+		IF_DIST( 69, 0, 69, 0 ),
+			IF_DIST( 40, 0, 40, 0 ),
+				IF_LEVEL( 24 ),
+					CMD_JUMP( 23 ),
+				CMD_ELSE,
+					IF_LEVEL( 16 ),
+						CMD_JUMP( 22 ),
+					CMD_ELSE,
+						IF_LEVEL( 8 ),
+							WAIT2( 10 ),
+							CMD_JUMP( 22 ),
+						CMD_ELSE,
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 24 ),
+					DASH_F( 48 ),
+					CMD_JUMP( 23 ),
+				CMD_ELSE,
+					IF_LEVEL( 16 ),
+						DASH_F( 48 ),
+						CMD_JUMP( 22 ),
+					CMD_ELSE,
+						IF_LEVEL( 8 ),
+							CMD_JUMP( 16 ),
+							CMD_JUMP( 22 ),
+						CMD_ELSE,
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 24 ),
+				DASH_F( 8 ),
+				JUMP_RND( 19, 19, 19, 57 ),
+				CMD_JUMP( 22 ),
+			CMD_ELSE,
+				IF_LEVEL( 16 ),
+					DASH_F( 8 ),
+					JUMP_RND( 19, 57, 57, 16 ),
+					CMD_JUMP( 22 ),
+				CMD_ELSE,
+					IF_LEVEL( 8 ),
+						DASH_F( 8 ),
+						JUMP_RND( 57, 16, 16, 16 ),
+						WAIT2( 10 ),
+						CMD_JUMP( 22 ),
+					CMD_ELSE,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 24 ),
+			DASH_F( 96 ),
+			JUMP_RND( 19, 19, 19, 57 ),
+			CMD_JUMP( 22 ),
+		CMD_ELSE,
+			IF_LEVEL( 16 ),
+				DASH_F( 96 ),
+				JUMP_RND( 19, 57, 57, 16 ),
+				CMD_JUMP( 22 ),
+			CMD_ELSE,
+				IF_LEVEL( 8 ),
+					DASH_F( 96 ),
+					JUMP_RND( 57, 16, 16, 16 ),
+					WAIT2( 10 ),
+					CMD_JUMP( 22 ),
+				CMD_ELSE,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 atck31_cmd_16[] = {
+	CMD_NEXT2,
+	CMD_EXIT,
+};

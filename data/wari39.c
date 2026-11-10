@@ -1,0 +1,612 @@
+/* Wolverine with bone claws (character 39): the computer's lists for cutting in.
+   What it does when something happens in the fight. PLAYER_WORK's cpu_adrs[2] points here; the
+   event checks of em_play.c start the modes.
+
+   wari39_tbl        a record (CPU_DATA) for each mode from 2 on: the offsets of its tables.
+   wari39_rate_MM    the chance, out of 32, that mode MM is started, by the level of play.
+   wari39_sel_MM     32 picks; one is taken at random.
+   wari39_cmd_MM     the mode's lists: a pick is a number in this table.
+   wari39_cmd_MM_NN  a list, in the commands of cpu_cmd.h. CMD_JUMP and the other jumps name
+                    a list of lib39.c. */
+#include "player.h"
+#include "pl39_def.h"
+#include "cpu_cmd.h"
+
+extern const Uint8 *const wari39_cmd_02[], *const wari39_cmd_03[], *const wari39_cmd_05[],
+	*const wari39_cmd_06[], *const wari39_cmd_07[], *const wari39_cmd_08[], *const wari39_cmd_09[],
+	*const wari39_cmd_10[], *const wari39_cmd_11[], *const wari39_cmd_12[];
+extern const Uint8 wari39_rate_02[], wari39_sel_02[], wari39_rate_03[], wari39_rate_04[],
+	wari39_sel_03[], wari39_rate_05[], wari39_sel_05[], wari39_rate_06[], wari39_sel_06[],
+	wari39_rate_07[], wari39_sel_07[], wari39_rate_08[], wari39_sel_08[], wari39_rate_09[],
+	wari39_sel_09[], wari39_rate_10[], wari39_sel_10[], wari39_rate_11[], wari39_sel_11[],
+	wari39_rate_12[], wari39_sel_12[], wari39_rate_13[], wari39_cmd_02_00[], wari39_cmd_02_01[],
+	wari39_cmd_02_02[], wari39_cmd_02_03[], wari39_cmd_02_04[], wari39_cmd_03_00[],
+	wari39_cmd_05_00[], wari39_cmd_05_01[], wari39_cmd_05_02[], wari39_cmd_05_03[],
+	wari39_cmd_06_00[], wari39_cmd_06_01[], wari39_cmd_06_02[], wari39_cmd_07_00[],
+	wari39_cmd_07_01[], wari39_cmd_07_02[], wari39_cmd_08_00[], wari39_cmd_08_01[],
+	wari39_cmd_09_00[], wari39_cmd_09_01[], wari39_cmd_09_02[], wari39_cmd_10_00[],
+	wari39_cmd_10_01[], wari39_cmd_10_02[], wari39_cmd_11_00[], wari39_cmd_11_01[],
+	wari39_cmd_11_02[], wari39_cmd_12_00[], wari39_cmd_12_01[], wari39_cmd_12_02[],
+	wari39_cmd_12_03[], wari39_cmd_12_04[];
+
+const CPU_DATA wari39_tbl[] = {
+	{ ( Sint32 )wari39_rate_02, ( Sint32 )wari39_sel_02, ( Sint32 )wari39_cmd_02 },	/* 2: a throw would catch the opponent */
+	{ ( Sint32 )wari39_rate_03, ( Sint32 )wari39_sel_03, ( Sint32 )wari39_cmd_03 },	/* 3: it guards a hit (the chance is the program's own) */
+	{ ( Sint32 )wari39_rate_04, ( Sint32 )wari39_sel_03, ( Sint32 )wari39_cmd_03 },	/* 4: never started: a guard in the air is mode 3 */
+	{ ( Sint32 )wari39_rate_05, ( Sint32 )wari39_sel_05, ( Sint32 )wari39_cmd_05 },	/* 5: after it has guarded on the ground */
+	{ ( Sint32 )wari39_rate_06, ( Sint32 )wari39_sel_06, ( Sint32 )wari39_cmd_06 },	/* 6: after it has guarded in the air */
+	{ ( Sint32 )wari39_rate_07, ( Sint32 )wari39_sel_07, ( Sint32 )wari39_cmd_07 },	/* 7: after it has been hit */
+	{ ( Sint32 )wari39_rate_08, ( Sint32 )wari39_sel_08, ( Sint32 )wari39_cmd_08 },	/* 8: never started */
+	{ ( Sint32 )wari39_rate_09, ( Sint32 )wari39_sel_09, ( Sint32 )wari39_cmd_09 },	/* 9: after it has got up */
+	{ ( Sint32 )wari39_rate_10, ( Sint32 )wari39_sel_10, ( Sint32 )wari39_cmd_10 },	/* 10: the opponent dashes */
+	{ ( Sint32 )wari39_rate_11, ( Sint32 )wari39_sel_11, ( Sint32 )wari39_cmd_11 },	/* 11: the opponent flies or super jumps */
+	{ ( Sint32 )wari39_rate_12, ( Sint32 )wari39_sel_12, ( Sint32 )wari39_cmd_12 },	/* 12: the opponent jumps */
+	{ ( Sint32 )wari39_rate_13, 0, 0 },	/* 13: an attack is coming: the chance alone, the lists are yok39.c's */
+};
+
+const Uint8 wari39_rate_02[] = {
+	  4,   5,   6,   7,   9,  11,  11,  13,  13,  15,  15,  17,  17,  19,  19,  21,
+	 21,  23,  23,  24,  24,  26,  26,  28,  28,  30,  30,  31,  31,  31,  31,  31,
+};
+
+const Uint8 wari39_sel_02[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   3,   3,   3,   4,   4,
+};
+
+const Uint8 *const wari39_cmd_02[] = {
+	wari39_cmd_02_00, wari39_cmd_02_01, wari39_cmd_02_02, wari39_cmd_02_03, wari39_cmd_02_04,
+};
+
+const Uint8 wari39_rate_03[] = {
+	  1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,
+	  3,   3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,
+};
+
+const Uint8 wari39_rate_04[] = {
+	 16,  16,  17,  17,  18,  19,  20,  21,  22,  23,  24,  25,  25,  25,  25,  25,
+	 25,  25,  25,  25,  25,  25,  25,  25,  25,  25,  25,  25,  25,  25,  25,  25,
+};
+
+const Uint8 wari39_sel_03[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+};
+
+const Uint8 *const wari39_cmd_03[] = {
+	wari39_cmd_03_00,
+};
+
+const Uint8 wari39_rate_05[] = {
+	 10,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,
+	 27,  28,  29,  30,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,
+};
+
+const Uint8 wari39_sel_05[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   2,   2,   2,   2,   2,   2,   2,   2,
+	  3,   3,   3,   3,   3,   3,   3,   3,   1,   1,   1,   1,   1,   1,   1,   1,
+};
+
+const Uint8 *const wari39_cmd_05[] = {
+	wari39_cmd_05_00, wari39_cmd_05_01, wari39_cmd_05_02, wari39_cmd_05_03,
+};
+
+const Uint8 wari39_rate_06[] = {
+	  4,   4,   4,   8,  12,  16,  18,  20,  22,  24,  26,  28,  30,  31,  31,  31,
+	 31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,
+};
+
+const Uint8 wari39_sel_06[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  2,   2,   2,   2,   2,   2,   2,   2,   1,   1,   1,   1,   1,   1,   1,   1,
+};
+
+const Uint8 *const wari39_cmd_06[] = {
+	wari39_cmd_06_00, wari39_cmd_06_01, wari39_cmd_06_02,
+};
+
+const Uint8 wari39_rate_07[] = {
+	  4,   4,   4,   8,  12,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,
+	 16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,
+};
+
+const Uint8 wari39_sel_07[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+};
+
+const Uint8 *const wari39_cmd_07[] = {
+	wari39_cmd_07_00, wari39_cmd_07_01, wari39_cmd_07_02,
+};
+
+const Uint8 wari39_rate_08[] = {
+	  4,   4,   4,   8,  12,  16,  18,  20,  22,  24,  26,  28,  30,  31,  31,  31,
+	 31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,
+};
+
+const Uint8 wari39_sel_08[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+};
+
+const Uint8 *const wari39_cmd_08[] = {
+	wari39_cmd_08_00, wari39_cmd_08_01,
+};
+
+const Uint8 wari39_rate_09[] = {
+	 20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  31,  31,  31,  31,
+	 31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,  31,
+};
+
+const Uint8 wari39_sel_09[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+};
+
+const Uint8 *const wari39_cmd_09[] = {
+	wari39_cmd_09_00, wari39_cmd_09_01, wari39_cmd_09_02,
+};
+
+const Uint8 wari39_rate_10[] = {
+	  1,   2,   3,   4,   5,   6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,
+	 10,  10,  11,  12,  13,  14,  15,  16,  16,  16,  16,  16,  16,  16,  16,  16,
+};
+
+const Uint8 wari39_sel_10[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,
+	  1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,
+};
+
+const Uint8 *const wari39_cmd_10[] = {
+	wari39_cmd_10_00, wari39_cmd_10_01, wari39_cmd_10_02,
+};
+
+const Uint8 wari39_rate_11[] = {
+	  8,   8,   8,   8,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,
+	 16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,  16,
+};
+
+const Uint8 wari39_sel_11[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,
+};
+
+const Uint8 *const wari39_cmd_11[] = {
+	wari39_cmd_11_00, wari39_cmd_11_01, wari39_cmd_11_02,
+};
+
+const Uint8 wari39_rate_12[] = {
+	  8,   8,   8,  12,  12,  12,  14,  14,  14,  16,  16,  16,  18,  18,  18,  20,
+	 20,  20,  22,  22,  22,  23,  23,  23,  24,  24,  24,  24,  24,  24,  24,  24,
+};
+
+const Uint8 wari39_sel_12[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   1,   1,   1,   1,   2,   2,   2,   2,
+	  3,   3,   3,   3,   3,   3,   3,   3,   4,   4,   4,   4,   4,   4,   4,   4,
+};
+
+const Uint8 *const wari39_cmd_12[] = {
+	wari39_cmd_12_00, wari39_cmd_12_01, wari39_cmd_12_02, wari39_cmd_12_03, wari39_cmd_12_04,
+};
+
+const Uint8 wari39_rate_13[] = {
+	  8,   9,  10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,
+	 24,  25,  26,  27,  28,  29,  30,  31,  31,  31,  31,  31,  31,  31,  31,  31,
+	  1,   1,   1,   1,   2,   2,   2,   2,   3,   3,   3,   3,   4,   4,   4,   4,
+	  5,   5,   5,   5,   6,   6,   6,   6,   7,   7,   7,   7,   8,   8,   8,   8,
+	  1,   1,   1,   1,   2,   2,   2,   2,   3,   3,   3,   3,   4,   4,   4,   4,
+	  5,   5,   5,   5,   6,   6,   6,   6,   7,   7,   7,   7,   8,   8,   8,   8,
+	  3,   3,   4,   4,   5,   5,   6,   6,   7,   7,   8,   8,   9,   9,  10,  10,
+	 11,  11,  12,  12,  13,  13,  14,  14,  15,  15,  15,  15,  18,  18,  18,  20,
+};
+
+const Uint8 wari39_cmd_02_00[] = {
+	LOCK_SET,
+	CMD_JUMP( 24 ),
+	CMD_JUMP( 36 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_02_01[] = {
+	LOCK_SET,
+	GUARD( 30 ),
+	IF_LEVEL( 29 ),
+		IF_RND( 24 ),
+			CMD_JUMP( 53 ),
+		CMD_ELSE,
+			GUARD( 30 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 23 ),
+			IF_RND( 16 ),
+				CMD_JUMP( 53 ),
+			CMD_ELSE,
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 12 ),
+					CMD_JUMP( 53 ),
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 6 ),
+						CMD_JUMP( 53 ),
+					CMD_ELSE,
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_02_02[] = {
+	CMD_JUMP( 24 ),
+	GUARD( 60 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_02_03[] = {
+	GUARD( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_02_04[] = {
+	IF_LEVEL( 6 ),
+		IF_ATCK_COME,
+			SP_CMD( pl39_sp_tornado, 0, PK_PUNCH, LV_LIGHT, 0 ),
+		CMD_ELSE,
+			GUARD( 30 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		GUARD( 30 ),
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_03_00[] = {
+	GUARD_CONT( 16 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_05_00[] = {
+	GUARD( 30 ),
+	IF_LEVEL( 29 ),
+		IF_RND( 24 ),
+			CMD_JUMP( 53 ),
+		CMD_ELSE,
+			GUARD( 30 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 23 ),
+			IF_RND( 16 ),
+				CMD_JUMP( 53 ),
+			CMD_ELSE,
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 12 ),
+					CMD_JUMP( 53 ),
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 6 ),
+						CMD_JUMP( 53 ),
+					CMD_ELSE,
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_05_01[] = {
+	CMD_JUMP( 61 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_05_02[] = {
+	IF_LEVEL( 29 ),
+		IF_RND( 31 ),
+			CMD_JUMP( 15 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		GUARD( 30 ),
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_05_03[] = {
+	CMD_JUMP( 24 ),
+	IF_EM_ATCK( ATCK_CROUCH_LK ),
+		CROUCH,
+		CANCEL_SET,
+			KICK( LV_LIGHT ),
+			KICK( LV_LIGHT ),
+			KICK( LV_LIGHT ),
+			CANCEL_CLR,
+		CMD_ENDIF,
+		GUARD( 30 ),
+	CMD_ELSE,
+		GUARD( 30 ),
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_06_00[] = {
+	CMD_JUMP( 24 ),
+	GUARD( 30 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_06_01[] = {
+	CMD_JUMP( 24 ),
+	CMD_JUMP( 19 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_06_02[] = {
+	CMD_JUMP( 61 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_07_00[] = {
+	GUARD( 30 ),
+	IF_LEVEL( 29 ),
+		IF_RND( 24 ),
+			CMD_JUMP( 53 ),
+		CMD_ELSE,
+			GUARD( 30 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 23 ),
+			IF_RND( 16 ),
+				CMD_JUMP( 53 ),
+			CMD_ELSE,
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 12 ),
+					CMD_JUMP( 53 ),
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 6 ),
+						CMD_JUMP( 53 ),
+					CMD_ELSE,
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_07_01[] = {
+	CMD_JUMP( 61 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_07_02[] = {
+	GUARD( 90 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_08_00[] = {
+	CMD_JUMP( 24 ),
+	CMD_JUMP( 19 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_08_01[] = {
+	CMD_JUMP( 24 ),
+	CMD_JUMP( 61 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_09_00[] = {
+	IF_LEVEL( 29 ),
+		IF_RND( 24 ),
+			CMD_JUMP( 53 ),
+		CMD_ELSE,
+			GUARD( 30 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 23 ),
+			IF_RND( 16 ),
+				CMD_JUMP( 53 ),
+			CMD_ELSE,
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 12 ),
+					CMD_JUMP( 53 ),
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 6 ),
+						CMD_JUMP( 53 ),
+					CMD_ELSE,
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_09_01[] = {
+	LOCK_SET,
+	TIMER2_SET( 40 ),
+	CROUCH,
+	TIMER_SET( 30 ),
+	IF_EM_ATCK( 51 ),
+		CMD_JUMP( 24 ),
+		SP_CMD( pl39_sp_tornado, 0, PK_PUNCH, LV_LIGHT, 0 ),
+	CMD_ELSE,
+		CMD_JUMP( 24 ),
+		PUNCH( LV_LIGHT ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_09_02[] = {
+	CMD_JUMP( 24 ),
+	IF_RND( 20 ),
+		GUARD( 60 ),
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_10_00[] = {
+	CMD_JUMP( 24 ),
+	IF_RND( 20 ),
+		TIMER2_SET( 60 ),
+	CMD_ENDIF,
+	WAIT2( 14 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_10_01[] = {
+	LOCK_SET,
+	TIMER2_SET( 60 ),
+	IF_RND( 20 ),
+		TIMER_SET( 60 ),
+		IF_EM_ATCK( ATCK_CROUCH_HK ),
+			CMD_JUMP( 24 ),
+			CROUCH,
+			KICK( LV_HEAVY ),
+		CMD_ELSE,
+			GUARD( 60 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT( 30 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_10_02[] = {
+	LOCK_SET,
+	IF_RND( 20 ),
+		TIMER2_SET( 40 ),
+	CMD_ENDIF,
+	CROUCH,
+	TIMER_SET( 120 ),
+	IF_EM_ATCK( 51 ),
+		CMD_JUMP( 24 ),
+		SP_CMD( pl39_sp_tornado, 0, PK_PUNCH, LV_LIGHT, 0 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_11_00[] = {
+	DASH_EM( 0 ),
+	TIMER_SET( 120 ),
+	IF_DIST( 48, 80, 0, 80 ),
+		SP_CMD( pl39_sp_tornado, 0, PK_PUNCH, LV_HEAVY, 0 ),
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_11_01[] = {
+	DASH_EM( 0 ),
+	TIMER_SET( 120 ),
+	IF_DIST( 48, 80, 0, 80 ),
+		SP_CMD( pl39_sp_drill, 0, PK_PUNCH, LV_LIGHT, LEVER_UP ),
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_11_02[] = {
+	DASH_EM( 0 ),
+	SJUMP( DIR_UP ),
+	SJUMP_FLAG_SET,
+		CMD_JUMP( 54 ),
+		JUMP_FLAG_CLR,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_12_00[] = {
+	IF_DIST( 80, 0, 80, 0 ),
+		JUMP( DIR_UP ),
+		JUMP_FLAG_SET,
+			CMD_JUMP( 24 ),
+			CMD_JUMP( 22 ),
+			JUMP_FLAG_CLR,
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_DIST( 104, 0, 104, 0 ),
+			JUMP( DIR_FORWARD ),
+			CMD_JUMP( 24 ),
+			CMD_JUMP( 38 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_12_01[] = {
+	CROUCH,
+	GUARD( 90 ),
+	CMD_JUMP( 14 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_12_02[] = {
+	WAIT( 60 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_12_03[] = {
+	CMD_JUMP( 24 ),
+	GUARD( 90 ),
+	CMD_EXIT,
+};
+
+const Uint8 wari39_cmd_12_04[] = {
+	LOCK_SET,
+	IF_DIST( 72, 0, 72, 0 ),
+		GUARD( 90 ),
+	CMD_ELSE,
+		IF_DIST( 104, 0, 104, 0 ),
+			JUMP( DIR_UP ),
+			IF_RND( 16 ),
+				CMD_JUMP( 19 ),
+			CMD_ELSE,
+				CMD_JUMP( 11 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};

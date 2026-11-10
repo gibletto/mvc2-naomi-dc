@@ -1,0 +1,99 @@
+; cache: the SH-4's caches by address range, as the test program has them (src/cache.src without
+; the exception catchers).
+
+          .SECTION  P,CODE,ALIGN=4
+          .EXPORT   _cache_inv, _cache_purge, _icache_inv
+
+; the operand cache lines over size bytes from adrs dropped (ocbi), and the line after them
+; written back
+_cache_inv:                             ; ( void *adrs, Uint32 size )
+          mov       #31,r0
+          not       r0,r0
+          and       r0,r4
+          mov       r4,r0
+          shlr2     r5
+          shlr2     r5
+          shlr      r5
+inv_line:
+          ocbi      @r0
+          add       #32,r0
+          dt        r5
+          bf        inv_line
+          nop
+          ocbp      @r0
+          rts
+          nop
+
+; the operand cache lines over size bytes from adrs written back and dropped (ocbp)
+_cache_purge:                           ; ( void *adrs, Uint32 size )
+          mov       #31,r0
+          not       r0,r0
+          and       r0,r4
+          mov       r4,r0
+          shlr2     r5
+          shlr2     r5
+          shlr      r5
+          add       #1,r5
+purge_line:
+          ocbp      @r0
+          add       #32,r0
+          dt        r5
+          bf        purge_line
+          nop
+          rts
+          nop
+
+; the whole instruction cache dropped: CCR.ICI is set from the uncached mirror (P2) with
+; interrupts blocked
+_icache_inv:
+          stc       sr,r1
+          mov.l     r1,@-r15
+          mov.l     sr_bl,r2
+          or        r2,r1
+          ldc       r1,sr
+          mov.l     ccr_adr,r1
+          mov.l     ccr_ici,r2
+          mov.l     ic_run_p2,r3
+          jmp       @r3
+          nop
+sr_bl:    .DATA.L   H'10000000
+ccr_adr:  .DATA.L   H'FF00001C
+ccr_ici:  .DATA.L   H'00000800
+ic_run_p2: .DATA.L  ic_run+H'A0000000
+ic_ret:
+          mov.l     @r15+,r2
+          ldc       r2,sr
+          rts
+          nop
+ic_run:
+          mov.l     @r1,r0
+          or        r2,r0
+          mov.l     r0,@r1
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          not       r2,r2
+          and       r2,r0
+          mov.l     r0,@r1
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          mov.l     ic_ret_adr,r3       ; back to the cached copy
+          jmp       @r3
+          nop
+          .DATA.W   0
+ic_ret_adr: .DATA.L ic_ret
+
+          .END

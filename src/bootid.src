@@ -1,0 +1,114 @@
+; bootid: the head of the program ROM, which the BIOS reads: what the game is, its ROMs' sums,
+; the coin settings, and where the two programs lie and start. It is linked at 0C020000, before
+; the program.
+
+          .SECTION  P,CODE,ALIGN=4
+          .SECTION  BOOTID,DATA,ALIGN=4
+
+ROM_32M:  .EQU      3                   ; a ROM's type in the sum tables
+ROM_64M:  .EQU      4
+ROM_NONE: .EQU      -1
+
+          .SDATA    "NAOMI           "                    ; the board
+          .SDATA    "CAPCOM.,LTD.                    "    ; the maker
+          .SDATA    "MARVEL VS CAPCOM2  JAPAN        "    ; the title in each region: Japan,
+          .SDATA    "MARVEL VS CAPCOM2  USA          "    ; USA,
+          .SDATA    "MARVEL VS CAPCOM2  EXPORT       "    ; export,
+          .SDATA    "MARVEL VS CAPCOM2  KOREA        "    ; Korea,
+          .SDATA    "MARVEL VS CAPCOM2  AUSTRALIA    "    ; Australia,
+          .SDATA    "MARVEL VS CAPCOM2               "    ; and three not used
+          .SDATA    "MARVEL VS CAPCOM2               "
+          .SDATA    "MARVEL VS CAPCOM2               "
+          .DATA.W   2000                ; the date
+          .DATA.B   2,25
+          .SDATA    "BBG0"              ; the game's ID (the backup data is kept under it)
+          .DATA.W   1                   ; the ROM board's mode
+          .DATA.W   0                   ; no ROM wait values of our own:
+          .DATAB.L  8,0                 ; the eight values
+
+; each ROM's type, the sum of its bytes and the sum of its words: IC11 (not summed), IC17 to IC32
+          .DATA.W   ROM_32M,H'0000,H'0000
+          .DATA.W   ROM_64M,H'363A,H'A972
+          .DATA.W   ROM_64M,H'77D4,H'7BDF
+          .DATA.W   ROM_64M,H'A662,H'1791
+          .DATA.W   ROM_64M,H'862A,H'DAFD
+          .DATA.W   ROM_64M,H'1A1F,H'6C5C
+          .DATA.W   ROM_64M,H'1F1D,H'822E
+          .DATA.W   ROM_64M,H'203E,H'EFC2
+          .DATA.W   ROM_64M,H'62C4,H'A4E4
+          .DATA.W   ROM_64M,H'448F,H'94A9
+          .DATA.W   ROM_64M,H'1C8E,H'DF93
+          .DATA.W   ROM_64M,H'7404,H'5519
+          .DATA.W   ROM_64M,H'0A49,H'E1F3
+          .DATA.W   ROM_64M,H'BC98,H'5BC3
+          .DATA.W   ROM_64M,H'60E5,H'C4CD
+          .DATA.W   ROM_32M,H'E629,H'EFB2
+          .DATA.W   ROM_32M,H'62B6,H'FD14
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+
+; the coin settings in each of the eight regions: whether they are forced, the flags, the chute
+; type, the setting, the two chutes' rates and the bonus, and the credits each sequence takes
+          .DATA.B   1,0,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,0,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,0,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,0,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,0,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,0,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,2,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+          .DATA.B   1,2,0,1,1,1,0,0,1,1,1,1,1,1,1,1
+
+; what each of the eight credit sequences is for
+          .SDATA    "CREDIT TO START                 "
+          .SDATA    "CREDIT TO CONTINUE              "
+          .DATAB.B  6*32,0
+
+; the program: where it lies in the ROM, where it is loaded and how much is read
+          .DATA.L   H'00001000,(STARTOF P),H'00250000
+          .DATA.L   -1,0,0              ; the end of the list
+          .DATAB.L  6*3,0
+; the test program
+          .DATA.L   H'003C0000,H'0C020000,H'00040000
+          .DATA.L   -1,0,0
+          .DATAB.L  6*3,0
+          .DATA.L   (STARTOF P)         ; where the program starts
+          .DATA.L   H'0C020000          ; where the test program starts
+
+          .DATA.B   H'FF                ; the regions it runs in: all
+          .DATA.B   2                   ; the players
+          .DATA.B   0                   ; the monitor's frequency
+          .DATA.B   1                   ; the monitor's direction: horizontal
+          .DATA.B   0                   ; no check of the ROM board's serial ID
+          .DATA.B   H'FF                ; the service button's setting
+
+; the sums again, as the newer ROM board's test counts them
+          .DATA.W   ROM_32M,H'0000,H'0000
+          .DATA.W   ROM_64M,H'54F6,H'38BD
+          .DATA.W   ROM_64M,H'C940,H'5AB3
+          .DATA.W   ROM_64M,H'61A1,H'5D5E
+          .DATA.W   ROM_64M,H'3EA8,H'E9FB
+          .DATA.W   ROM_64M,H'965E,H'BDDB
+          .DATA.W   ROM_64M,H'A8FD,H'B415
+          .DATA.W   ROM_64M,H'5D14,H'51DB
+          .DATA.W   ROM_64M,H'4A3F,H'E7B2
+          .DATA.W   ROM_64M,H'AF24,H'506B
+          .DATA.W   ROM_64M,H'E16E,H'E441
+          .DATA.W   ROM_64M,H'FC94,H'E0FB
+          .DATA.W   ROM_64M,H'CA4D,H'5CBB
+          .DATA.W   ROM_64M,H'811D,H'E744
+          .DATA.W   ROM_64M,H'C5F1,H'CD3B
+          .DATA.W   ROM_32M,H'E629,H'EFB2
+          .DATA.W   ROM_32M,H'7C8D,H'0D62
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+
+          .DATAB.B  72,H'FF             ; not used
+
+          .END

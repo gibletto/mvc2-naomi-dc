@@ -1,0 +1,1 @@
+-cpu=sh4 -endian=little -fpu=single -round=zero -pic=0 -optimize=1 -noloop -align16 -size -string=const -division=cpu -comment=nonest -sjis -define=__SHC__,__NAOMI_HW__

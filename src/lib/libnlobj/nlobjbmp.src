@@ -1,0 +1,1259 @@
+; nlobjbmp: libnlobj's model drawing with bump (embossed) shading, in assembler. It is nlobjvtx's walk
+; of strips and triangle lists, with the vertex colour replaced by the angle of the light on the
+; vertex's normal.
+
+          .SECTION  P,CODE,ALIGN=32
+          .EXPORT   _nlObjPut_bumpbridge
+          .IMPORT   _gpwbuf, _nlAtan256tbl
+
+; nlObjPut_bumpbridge: draws one model with bump (embossed) shading. The walk of strips and triangle
+; lists, the TA headers and the clipping are those of nlObjPut_vtxcolbridge; what differs is the
+; vertex, whose normal and the light become an angle (looked up in nlAtan256tbl) that goes into the
+; vertex's offset colour. The call's colour (fr0..fr3) is packed into r8, three floats from just
+; before the model data into r13; r4 is the model, r5 the vertex buffer, r6 the store queue.
+_nlObjPut_bumpbridge:
+          mov       #67,r0
+          shll8     r0
+          or        #127,r0
+          shll16    r0
+          lds       r0,fpul
+          fsts      fpul,fr7
+          fmul      fr7,fr0
+          add       #-20,r4
+          fmul      fr7,fr1
+          fmov      @r4+,fr4
+          fmul      fr7,fr2
+          fmov      @r4+,fr5
+          fmul      fr7,fr3
+          fmov      @r4+,fr6
+          ftrc      fr0,fpul
+          sts       fpul,r0
+          add       #8,r4
+          fldi1     fr0
+          ftrc      fr1,fpul
+          sts       fpul,r1
+          ftrc      fr2,fpul
+          sts       fpul,r2
+          ftrc      fr3,fpul
+          sts       fpul,r8
+          fdiv      fr6,fr0
+          shll8     r0
+          or        r0,r1
+          shll16    r1
+          shll8     r2
+          or        r2,r8
+          or        r1,r8
+          fmov      fr15,@-r15
+          fmov      fr10,@-r15
+          fmov      fr9,@-r15
+          fmul      fr6,fr12
+          fmov      fr8,@-r15
+          fmul      fr6,fr13
+          mov.l     r13,@-r15
+          mova      scale_save,r0
+          fmul      fr6,fr14
+          sts.l     pr,@-r15
+          fmov      fr0,@r0
+          fmul      fr7,fr5
+          fmul      fr7,fr4
+          ftrc      fr5,fpul
+          sts       fpul,r0
+          ftrc      fr4,fpul
+          shll16    r0
+          sts       fpul,r13
+          shll8     r0
+          or        r0,r13
+          mov.l     @r4+,r0
+next_strip:
+          cmp/pl    r0
+          mov.l     gpwbuf_ptr,r9
+          bt/s      strip_head
+          cmp/pz    r0
+          mov       r0,r8
+          mov       r11,r0
+          mov.l     r5,@(r0,r10)
+          mova      scale_save,r0
+          lds.l     @r15+,pr
+          fmov      @r0,fr0
+          mov.l     @r15+,r13
+          fmul      fr0,fr12
+          fmov      @r15+,fr8
+          fmul      fr0,fr13
+          fmov      @r15+,fr9
+          fmul      fr0,fr14
+          fmov      @r15+,fr10
+          rts
+          fmov      @r15+,fr15
+          .ALIGN    4
+
+; the colour multiplier of the call, kept here while the model is drawn
+scale_save:
+          .RES.L    1
+strip_head:
+          mov       r0,r1
+          mov.l     @r9+,r3
+          add       #32,r4
+          mov       #-49,r2
+          and       r2,r3
+          mov       r15,r2
+          add       #24,r2
+          mov.l     @(40,r2),r2
+          cmp/pz    r2
+          bt/s      facing_set
+          mov       #27,r2
+          and       #3,r0
+          xor       #1,r0
+facing_set:
+          lds       r3,fpul
+          shld      r2,r0
+          mov       #3,r3
+          fschg
+          shld      r2,r3
+          pref      @r4
+          not       r3,r3
+          mov.l     @r9+,r2
+          and       r3,r2
+          fsts      fpul,fr0
+          or        r0,r2
+          lds       r2,fpul
+          add       #-32,r4
+          fsts      fpul,fr1
+          add       #16,r6
+          fmov      @r9+,fr2
+          fmov      fr2,@-r6
+          add       #32,r5
+          fmov      fr0,@-r6
+          fschg
+          pref      @r6
+          add       #32,r6
+          rotcr     r12
+          mov       r1,r0
+          bt/s      clip_path
+          shll      r12
+          tst       #8,r0
+          bt        plain_strip
+          bsr       put_tris
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+plain_strip:
+          bsr       put_strip
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+          .ALIGN    4
+clip_path:
+          mov       #0,r1
+          tst       #64,r0
+          addc      r1,r12
+          tst       #16,r0
+          bt/s      clip_tris_chk
+          tst       #8,r0
+          bsr       put_strip_clip
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+clip_tris_chk:
+          bt        bad_flags
+          bsr       put_tris_clip
+          nop
+          bra       next_strip
+          mov.l     @r4+,r0
+          .ALIGN    4
+bad_flags:
+          bra       bad_flags
+          nop
+          .ALIGN    32
+
+; work area of the clipped drawing: four saved vertices, 32 bytes apart (the pointers after
+; vtx_clip_edge say where each routine takes them from).
+clip_vtx_buf:
+          .RES.B    256
+gpwbuf_ptr:
+          .DATA.L   _gpwbuf
+          .ALIGN    32
+
+; a strip of vertices wholly in front of the near plane: r3 is their count, r4 walks the model
+put_strip:
+          mov.l     @r4+,r3
+          add       #32,r6
+strip_vtx:
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4+,fr6
+          fldi1     fr7
+          fmov      @r4+,fr2
+          fmov      @r4+,fr0
+          fmov      @r4+,fr1
+          ftrv      xmtrx,fv4
+          fldi0     fr3
+          fmov      @r4+,fr10
+          mov       r13,r0
+          fmov      @r4+,fr8
+          shlr16    r0
+          fmov      @r4+,fr9
+          fipr      fv12,fv0
+          fmov      @r4+,fr2
+          fsub      fr15,fr15
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fmov      @r4+,fr0
+          shll16    r0
+          fldi0     fr11
+          fcmp/gt   fr11,fr3
+          fmov      @r4+,fr1
+          add       #32,r4
+          fipr      fv12,fv8
+          pref      @r4
+          bt        strip_dot_clamped
+          fldi0     fr3
+strip_dot_clamped:
+          fmov      fr3,fr8
+          fmul      fr8,fr8
+          fldi1     fr9
+          fipr      fv0,fv12
+          fldi0     fr10
+          fcmp/gt   fr11,fr10
+          mov       r13,r2
+          fsub      fr8,fr9
+          extu.b    r2,r2
+          bf        strip_sign_x
+          fneg      fr11
+strip_sign_x:
+          movt      r0
+          fcmp/gt   fr15,fr10
+          lds       r2,fpul
+          fsqrt     fr9
+          bf        strip_sign_y
+          fneg      fr15
+strip_sign_y:
+          movt      r1
+          fcmp/gt   fr11,fr15
+          fmov      fr15,fr10
+          shll2     r1
+          bf        strip_octant
+          fmov      fr11,fr15
+          or        #2,r0
+          fmov      fr10,fr11
+strip_octant:
+          or        r0,r1
+          float     fpul,fr10
+          shll      r1
+          mova      strip_octant_tbl,r0
+          mov.w     @(r0,r1),r1
+          mova      strip_k,r0
+          fmov      @r0+,fr0
+          fdiv      fr11,fr15
+          shlr      r1
+          fmov      @r0+,fr11
+          fmul      fr10,fr3
+          mov.l     @r0,r2
+          mov       r13,r0
+          shlr16    r0
+          fmul      fr10,fr9
+          shll16    r0
+          ftrc      fr3,fpul
+          or        r0,r1
+          sts       fpul,r0
+          add       #32,r4
+          ftrc      fr9,fpul
+          pref      @r4
+          shll16    r0
+          add       r0,r1
+          sts       fpul,r0
+          add       #-64,r4
+          fmac      fr0,fr15,fr11
+          shll8     r0
+          ftrc      fr11,fpul
+          fldi0     fr15
+          add       r0,r1
+          sts       fpul,r0
+          and       #255,r0
+          mov.b     @(r0,r2),r0
+          bf        strip_emit
+          neg       r0,r0
+strip_emit:
+          add       r1,r0
+          mov.l     r0,@-r6
+          fschg
+          mov.l     @r4+,r1
+          fmul      fr7,fr6
+          mov.l     @r4+,r2
+          fmul      fr7,fr5
+          mov.l     r8,@-r6
+          mov       r0,r14
+          mov.l     r2,@-r6
+          mov       r6,r0
+          mov.l     r1,@-r6
+          shar      r0
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          bt/s      strip_last
+          fschg
+          mov.l     r6,@r6
+          add       #32,r5
+          pref      @r6
+          bra       strip_vtx
+          add       #64,r6
+strip_last:
+          mov.l     r0,@r6
+          add       #32,r5
+          mov.l     @r4+,r0
+          pref      @r6
+          add       #64,r6
+          cmp/pl    r0
+          bf/s      strip_exit
+          tst       #128,r0
+          bf/s      strip_vtx
+          mov.l     @r4+,r3
+          add       #-4,r4
+strip_exit:
+          add       #-4,r4
+          rts
+          add       #-32,r6
+; (not reached: nothing branches here)
+          fldi1     fr7
+          add       #56,r4
+          fschg
+          pref      @r4
+          fdiv      fr4,fr7
+          mov.l     r14,@-r6
+          add       #32,r4
+          mov.l     r8,@-r6
+          fmul      fr7,fr6
+          pref      @r4
+          add       #-64,r4
+          fmul      fr7,fr5
+          fmov      @r4+,fr0
+          mov       r6,r0
+          fmov      fr0,@-r6
+          shar      r0
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          bt/s      strip_last
+          fschg
+          mov.l     r6,@r6
+          add       #32,r5
+          pref      @r6
+          bra       strip_vtx
+          add       #64,r6
+          .ALIGN    32
+
+; constants of the arctangent lookup above: 128.0 spreads the ratio over the table, 0.5 rounds it; the
+; address of the table is the third word; the fourth is not read
+strip_k:
+          .FDATA.S  F'128.0
+          .FDATA.S  F'0.5
+          .DATA.L   _nlAtan256tbl
+          .FDATA.S  F'0.5
+
+; the angle of each octant, indexed by the signs of the two components and which is larger
+strip_octant_tbl:
+          .DATA.W   H'0000
+          .DATA.W   H'0101
+          .DATA.W   H'0081
+          .DATA.W   H'0080
+          .DATA.W   H'01FF
+          .DATA.W   H'0100
+          .DATA.W   H'0180
+          .DATA.W   H'0181
+
+; the same for a list of triangles: r9 triangles of three vertices each
+put_tris:
+          mov.l     @r4+,r9
+          add       #32,r6
+          mov       #3,r3
+tris_vtx:
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4+,fr6
+          fldi1     fr7
+          fmov      @r4+,fr2
+          fmov      @r4+,fr0
+          fmov      @r4+,fr1
+          ftrv      xmtrx,fv4
+          fldi0     fr3
+          fmov      @r4+,fr10
+          mov       r13,r0
+          fmov      @r4+,fr8
+          shlr16    r0
+          fmov      @r4+,fr9
+          fipr      fv12,fv0
+          fmov      @r4+,fr2
+          fsub      fr15,fr15
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fmov      @r4+,fr0
+          shll16    r0
+          fldi0     fr11
+          fcmp/gt   fr11,fr3
+          fmov      @r4+,fr1
+          add       #32,r4
+          fipr      fv12,fv8
+          pref      @r4
+          bt        tris_dot_clamped
+          fldi0     fr3
+tris_dot_clamped:
+          fmov      fr3,fr8
+          fmul      fr8,fr8
+          fldi1     fr9
+          fipr      fv0,fv12
+          fldi0     fr10
+          fcmp/gt   fr11,fr10
+          mov       r13,r2
+          fsub      fr8,fr9
+          extu.b    r2,r2
+          bf        tris_sign_x
+          fneg      fr11
+tris_sign_x:
+          movt      r0
+          fcmp/gt   fr15,fr10
+          lds       r2,fpul
+          fsqrt     fr9
+          bf        tris_sign_y
+          fneg      fr15
+tris_sign_y:
+          movt      r1
+          fcmp/gt   fr11,fr15
+          fmov      fr15,fr10
+          shll2     r1
+          bf        tris_octant
+          fmov      fr11,fr15
+          or        #2,r0
+          fmov      fr10,fr11
+tris_octant:
+          or        r0,r1
+          float     fpul,fr10
+          shll      r1
+          mova      tris_octant_tbl,r0
+          mov.w     @(r0,r1),r1
+          mova      tris_k,r0
+          fmov      @r0+,fr0
+          fdiv      fr11,fr15
+          shlr      r1
+          fmov      @r0+,fr11
+          fmul      fr10,fr3
+          mov.l     @r0,r2
+          mov       r13,r0
+          shlr16    r0
+          fmul      fr10,fr9
+          shll16    r0
+          ftrc      fr3,fpul
+          or        r0,r1
+          sts       fpul,r0
+          add       #32,r4
+          ftrc      fr9,fpul
+          pref      @r4
+          shll16    r0
+          add       r0,r1
+          sts       fpul,r0
+          add       #-64,r4
+          fmac      fr0,fr15,fr11
+          shll8     r0
+          ftrc      fr11,fpul
+          fldi0     fr15
+          add       r0,r1
+          sts       fpul,r0
+          and       #255,r0
+          mov.b     @(r0,r2),r0
+          bf        tris_emit
+          neg       r0,r0
+tris_emit:
+          add       r1,r0
+          mov.l     r0,@-r6
+          fschg
+          mov.l     @r4+,r1
+          fmul      fr7,fr6
+          mov.l     @r4+,r2
+          fmul      fr7,fr5
+          mov.l     r8,@-r6
+          mov       r0,r14
+          mov.l     r2,@-r6
+          mov       r6,r0
+          mov.l     r1,@-r6
+          shar      r0
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          bt/s      tris_last
+          fschg
+          mov.l     r6,@r6
+          add       #32,r5
+          pref      @r6
+          bra       tris_vtx
+          add       #64,r6
+tris_last:
+          add       #32,r5
+          mov.l     r0,@r6
+          dt        r9
+          pref      @r6
+          add       #64,r6
+          bf/s      tris_vtx
+          mov       #3,r3
+          rts
+          add       #-32,r6
+          fldi1     fr7
+          add       #56,r4
+          fschg
+          pref      @r4
+          fdiv      fr4,fr7
+          mov.l     r14,@-r6
+          add       #32,r4
+          mov.l     r8,@-r6
+          fmul      fr7,fr6
+          pref      @r4
+          add       #-64,r4
+          fmul      fr7,fr5
+          fmov      @r4+,fr0
+          mov       r6,r0
+          fmov      fr0,@-r6
+          shar      r0
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          bt/s      tris_last
+          fschg
+          mov.l     r6,@r6
+          add       #32,r5
+          pref      @r6
+          bra       tris_vtx
+          add       #64,r6
+          .ALIGN    32
+
+; constants of the arctangent lookup above: 128.0 spreads the ratio over the table, 0.5 rounds it; the
+; address of the table is the third word; the fourth is not read
+tris_k:
+          .FDATA.S  F'128.0
+          .FDATA.S  F'0.5
+          .DATA.L   _nlAtan256tbl
+          .FDATA.S  F'0.5
+
+; as strip_octant_tbl
+tris_octant_tbl:
+          .DATA.W   H'0000
+          .DATA.W   H'0101
+          .DATA.W   H'0081
+          .DATA.W   H'0080
+          .DATA.W   H'01FF
+          .DATA.W   H'0100
+          .DATA.W   H'0180
+          .DATA.W   H'0181
+
+; a strip that may cross the near plane. r9 collects, vertex by vertex, which ones are behind it, and
+; the case after each step cuts the polygon at the plane (vtx_clip_edge) or sends the vertices as they are
+put_strip_clip:
+          mov.l     r10,@-r15
+          mov.l     r11,@-r15
+          sts.l     pr,@-r15
+          mov.l     @r4+,r3
+clipstrip_start:
+          mov       #0,r11
+          bsr       vtx_xform
+          mov       #0,r9
+          bt/s      clipstrip_v0_out
+          rotcl     r9
+          bsr       vtx_send
+          add       #1,r11
+          bsr       vtx_xform
+          nop
+          bt/s      clipstrip_v1_out
+          rotcl     r9
+          bsr       vtx_send
+          add       #1,r11
+clipstrip_loop:
+          bsr       vtx_xform
+          nop
+          bt/s      clipstrip_all_out
+          rotcl     r9
+          bsr       vtx_send
+          add       #1,r11
+          bf        clipstrip_loop
+          bra       clipstrip_next_hdr
+          nop
+clipstrip_v0_out:
+          dt        r3
+          add       #1,r11
+          bsr       vtx_xform
+          dt        r3
+          bf/s      clipstrip_v2_out
+          rotcl     r9
+clipstrip_peek:
+          bsr       vtx_xform
+          add       #1,r11
+          bf/s      clipstrip_all_out
+          rotcl     r9
+          dt        r3
+          bf        clipstrip_peek
+clipstrip_next_hdr:
+          mov.l     @r4+,r0
+          cmp/pl    r0
+          bf/s      clipstrip_exit
+          tst       #128,r0
+          bf/s      clipstrip_start
+          mov.l     @r4+,r3
+          add       #-4,r4
+clipstrip_exit:
+          lds.l     @r15+,pr
+          mov.l     @r15+,r11
+          mov       #1,r0
+          mov.l     @r15+,r10
+          add       #-4,r4
+          rts
+          or        r0,r12
+clipstrip_v1_out:
+          bsr       vtx_save
+          dt        r3
+          bsr       vtx_xform
+          add       #-112,r4
+          bsr       vtx_save
+          mov       #0,r11
+          mov       #1,r11
+          clrt
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          bra       clipstrip_step
+          add       #56,r4
+clipstrip_v2_out:
+          bsr       vtx_save
+          mov       #1,r11
+          bsr       vtx_xform
+          add       #-112,r4
+          bsr       vtx_save
+          mov       #0,r11
+          mov       #1,r11
+          clrt
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          clrt
+          bsr       vtx_send_saved
+          mov       #1,r0
+          bra       clipstrip_step
+          add       #56,r4
+clipstrip_all_out:
+          bsr       vtx_save
+          nop
+          add       #-56,r4
+          bsr       vtx_xform
+          add       #-112,r4
+          bsr       vtx_save
+          add       #-2,r11
+          bsr       vtx_xform
+          nop
+          bsr       vtx_save
+          add       #1,r11
+          add       #56,r4
+          add       #1,r11
+          bra       clipstrip_case
+          mov       r9,r0
+clipstrip_step:
+          bsr       vtx_xform
+          add       #1,r11
+          bsr       vtx_save
+          rotcl     r9
+          mov       r9,r0
+clipstrip_case:
+          and       #7,r0
+          shll2     r0
+; jump by the bits in r0; case 0 runs into case 1, case 7 into the code after the table
+          braf      r0
+          nop
+          nop
+          nop
+          bra       clipstrip_case1
+          nop
+          bra       clipstrip_case2
+          nop
+          bra       clipstrip_case3
+          nop
+          bra       clipstrip_case4
+          nop
+          bra       clipstrip_case5
+          nop
+          bra       clipstrip_case6
+          nop
+          nop
+          nop
+clipstrip_case1:
+          mov       r11,r0
+          clrt
+          bsr       vtx_clip_edge
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       vtx_send_saved
+          add       #-1,r0
+          mov       r11,r0
+          dt        r3
+          bsr       vtx_clip_edge
+          add       #-1,r0
+          bf        clipstrip_step
+          bra       clipstrip_next_hdr
+          nop
+clipstrip_case2:
+          clrt
+          bsr       vtx_send_saved
+          mov       r11,r0
+          mov       r11,r0
+          clrt
+          bsr       vtx_clip_edge
+          add       #-1,r0
+          dt        r3
+          bsr       vtx_send_saved
+          mov       r11,r0
+          bf        clipstrip_step
+          bra       clipstrip_next_hdr
+          nop
+clipstrip_case3:
+          mov       r11,r0
+          sett
+          bsr       vtx_clip_edge
+          add       #-2,r0
+          dt        r3
+          bt        clipstrip_case_exit
+          bra       clipstrip_peek
+          nop
+clipstrip_case4:
+          mov       r11,r0
+          clrt
+          bsr       vtx_clip_edge
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       vtx_send_saved
+          add       #-1,r0
+          dt        r3
+          bsr       vtx_send_saved
+          mov       r11,r0
+          bt        clipstrip_case_exit
+          bra       clipstrip_loop
+          add       #1,r11
+clipstrip_case_exit:
+          bra       clipstrip_next_hdr
+          nop
+clipstrip_case5:
+          mov       r11,r0
+          dt        r3
+          bsr       vtx_clip_edge
+          add       #-1,r0
+          bf        clipstrip_step
+          bra       clipstrip_next_hdr
+          nop
+clipstrip_case6:
+          mov       r11,r0
+          tst       #1,r0
+          bt        clipstrip_case6_b
+          mov       r11,r0
+          clrt
+          bsr       vtx_clip_edge
+          add       #-1,r0
+clipstrip_case6_b:
+          mov       r11,r0
+          clrt
+          bsr       vtx_clip_edge
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       vtx_clip_edge
+          add       #-1,r0
+          dt        r3
+          bsr       vtx_send_saved
+          mov       r11,r0
+          bf        clipstrip_step
+          bra       clipstrip_next_hdr
+          nop
+          .ALIGN    32
+
+; takes the next vertex (position, normal, colour words), transforms it by xmtrx, and turns the
+; normal and the light into the angle and strength of the bump: r1 is left with the offset word
+; to send, r8 with the colour. T is set when the vertex is behind the near plane (r12).
+vtx_xform:
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4+,fr6
+          fldi1     fr7
+          fmov      @r4+,fr2
+          fmov      @r4+,fr0
+          fmov      @r4+,fr1
+          ftrv      xmtrx,fv4
+          fldi0     fr3
+          fmov      @r4+,fr10
+          mov       r13,r0
+          fmov      @r4+,fr8
+          shlr16    r0
+          fmov      @r4+,fr9
+          fipr      fv12,fv0
+          fmov      @r4+,fr2
+          fsub      fr15,fr15
+          fmov      @r4+,fr0
+          shll16    r0
+          flds      fr7,fpul
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fldi0     fr11
+          fcmp/gt   fr11,fr3
+          fsts      fpul,fr4
+          fipr      fv12,fv8
+          fmov      @r4+,fr1
+          bt        vtx_xform_dot_clamped
+          fldi0     fr3
+vtx_xform_dot_clamped:
+          fmov      fr3,fr8
+          fmul      fr8,fr8
+          fldi1     fr9
+          fipr      fv0,fv12
+          fldi0     fr10
+          fcmp/gt   fr11,fr10
+          mov       r13,r2
+          fsub      fr8,fr9
+          extu.b    r2,r2
+          bf        vtx_xform_sign_x
+          fneg      fr11
+vtx_xform_sign_x:
+          movt      r0
+          fcmp/gt   fr15,fr10
+          lds       r2,fpul
+          fsqrt     fr9
+          bf        vtx_xform_sign_y
+          fneg      fr15
+vtx_xform_sign_y:
+          movt      r1
+          fcmp/gt   fr11,fr15
+          fmov      fr15,fr10
+          shll2     r1
+          bf        vtx_xform_octant
+          fmov      fr11,fr15
+          or        #2,r0
+          fmov      fr10,fr11
+vtx_xform_octant:
+          or        r0,r1
+          float     fpul,fr10
+          shll      r1
+          mova      xform_octant_tbl,r0
+          mov.w     @(r0,r1),r1
+          mova      xform_k,r0
+          fmov      @r0+,fr0
+          fdiv      fr11,fr15
+          shlr      r1
+          fmov      @r0+,fr11
+          fmul      fr10,fr3
+          mov.l     @r0,r2
+          mov       r13,r0
+          shlr16    r0
+          fmul      fr10,fr9
+          shll16    r0
+          ftrc      fr3,fpul
+          or        r0,r1
+          sts       fpul,r0
+          add       #32,r4
+          ftrc      fr9,fpul
+          pref      @r4
+          shll16    r0
+          add       r0,r1
+          sts       fpul,r0
+          add       #32,r4
+          fmac      fr0,fr15,fr11
+          pref      @r4
+          ftrc      fr11,fpul
+          add       #-64,r4
+          shll8     r0
+          fldi0     fr15
+          add       r0,r1
+          sts       fpul,r0
+          and       #255,r0
+          flds      fr4,fpul
+          mov.b     @(r0,r2),r0
+          bf        vtx_xform_sign_fix
+          neg       r0,r0
+vtx_xform_sign_fix:
+          add       r1,r0
+          sts       fpul,r2
+          mov       r0,r1
+          fmov      @r4+,fr2
+          fmov      @r4+,fr3
+          rts
+          cmp/hi    r2,r12
+          .ALIGN    32
+
+; constants of the arctangent lookup above: 128.0 spreads the ratio over the table, 0.5 rounds it; the
+; address of the table is the third word; the fourth is not read
+xform_k:
+          .FDATA.S  F'128.0
+          .FDATA.S  F'0.5
+          .DATA.L   _nlAtan256tbl
+          .FDATA.S  F'0.0
+
+; as strip_octant_tbl
+xform_octant_tbl:
+          .DATA.W   H'0000
+          .DATA.W   H'0101
+          .DATA.W   H'0081
+          .DATA.W   H'0080
+          .DATA.W   H'01FF
+          .DATA.W   H'0100
+          .DATA.W   H'0180
+          .DATA.W   H'0181
+
+; sends the transformed vertex to the store queue as one TA vertex, r3 counting down to the strip's end
+vtx_send:
+          fschg
+          add       #32,r6
+          mov.l     r1,@-r6
+          fmul      fr7,fr6
+          fmul      fr7,fr5
+          mov.l     r8,@-r6
+          mov       r6,r0
+          fmov      fr2,@-r6
+          shar      r0
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          bt        vtx_send_ctl
+          mov       r6,r0
+vtx_send_ctl:
+          mov.l     r0,@r6
+          fschg
+          add       #32,r5
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; keeps the vertex in slot r11 of clip_vtx_buf
+vtx_save:
+          mov       r11,r0
+          mov       #5,r10
+          and       #3,r0
+          shld      r10,r0
+          mov.l     clip_vtx_end_ptr,r10
+          fschg
+          add       r0,r10
+          mov.l     r1,@-r10
+          mov.l     r8,@-r10
+          fmov      fr2,@-r10
+          fmov      fr6,@-r10
+          fmov      fr4,@-r10
+          rts
+          fschg
+          .ALIGN    32
+
+; sends saved vertex r0 as it is
+vtx_send_saved:
+          mov       #5,r1
+          mov.l     clip_vtx_buf_ptr,r10
+          and       #3,r0
+          fschg
+          shld      r1,r0
+          add       r0,r10
+          mov       #-16,r2
+          fmov      @r10+,fr0
+          shll16    r2
+          fmov      @r10+,fr2
+          add       #32,r6
+          fmov      @r10+,fr4
+          fmul      fr3,fr2
+          fmov      @r10+,fr6
+          fmul      fr3,fr1
+          shll8     r2
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          fmov      fr2,@-r6
+          fmov      fr0,@-r6
+          bt        vtx_send_saved_ctl
+          mov       r6,r2
+vtx_send_saved_ctl:
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; cuts the edge between saved vertices r0 and r11 at the near plane (r12): the new vertex is
+; interpolated from both and sent
+vtx_clip_edge:
+          mov       #5,r1
+          mov.l     clip_vtx_buf_ptr,r10
+          and       #3,r0
+          shld      r1,r0
+          mov       r10,r2
+          add       r0,r10
+          mov       r11,r0
+          and       #3,r0
+          fmov      @r10,fr2
+          shld      r1,r0
+          lds       r12,fpul
+          add       r0,r2
+          fsts      fpul,fr0
+          fmov      @r2,fr1
+          fsub      fr2,fr0
+          add       #24,r2
+          fschg
+          add       #32,r6
+          fsub      fr2,fr1
+          fmov      @r2,fr4
+          add       #-8,r2
+          lds       r7,fpul
+          add       #16,r10
+          fdiv      fr1,fr0
+          fmov      fr4,@-r6
+          fmov      @r2,fr4
+          add       #-8,r2
+          fmov      @r10,fr2
+          add       #-8,r10
+          fsts      fpul,fr1
+          fsub      fr2,fr4
+          fsub      fr3,fr5
+          fmac      fr0,fr4,fr2
+          fmac      fr0,fr5,fr3
+          fmov      fr2,@-r6
+          fschg
+          fmov      fr1,@-r6
+          fmov      @r2,fr5
+          add       #-4,r2
+          fmov      @r10,fr3
+          add       #-4,r10
+          fmov      @r2,fr4
+          fmov      @r10,fr2
+          fsub      fr3,fr5
+          fsub      fr2,fr4
+          mov       #-16,r2
+          fmac      fr0,fr5,fr3
+          shll16    r2
+          fmac      fr0,fr4,fr2
+          shll8     r2
+          fmul      fr1,fr3
+          add       #32,r5
+          fmul      fr1,fr2
+          fmov      fr3,@-r6
+          fmov      fr2,@-r6
+          bt        vtx_clip_edge_ctl
+          mov       r6,r2
+vtx_clip_edge_ctl:
+          mov.l     r2,@-r6
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    4
+clip_vtx_buf_ptr:
+          .DATA.L   clip_vtx_buf
+clip_vtx_end_ptr:
+          .DATA.L   clip_vtx_buf+H'20
+          .ALIGN    32
+
+; a list of triangles that may cross the near plane. outcode finds which vertices are behind it; all in
+; or all out are sent or dropped whole, the six cases between cut the triangle
+put_tris_clip:
+          mov.l     r10,@-r15
+          mov.l     r11,@-r15
+          sts.l     pr,@-r15
+          mov.l     @r4+,r3
+cliptri_loop:
+          bsr       cliptri_outcode
+          mov       #0,r9
+          mov       r9,r0
+          cmp/eq    #0,r0
+          bt        cliptri_all_in
+          cmp/eq    #7,r0
+          bt        cliptri_all_out
+          bsr       vtx_xform
+          mov       #0,r11
+          bsr       vtx_save
+          nop
+          bsr       vtx_xform
+          mov       #1,r11
+          bsr       vtx_save
+          nop
+          bsr       vtx_xform
+          mov       #2,r11
+          bsr       vtx_save
+          nop
+          shll2     r9
+; jump by the bits in r9 (1 to 6); case 0 and 7 are not here
+          braf      r9
+          nop
+          nop
+          nop
+          bra       cliptri_case1
+          nop
+          bra       cliptri_case2
+          nop
+          bra       cliptri_case3
+          nop
+          bra       cliptri_case4
+          nop
+          bra       cliptri_case5
+          nop
+          bra       cliptri_case6
+          nop
+          nop
+          .ALIGN    4
+cliptri_next:
+          dt        r3
+          bf        cliptri_loop
+          mov       #1,r0
+          lds.l     @r15+,pr
+          or        r0,r12
+          mov.l     @r15+,r11
+          rts
+          mov.l     @r15+,r10
+cliptri_all_in:
+          mov       r3,r9
+          bsr       vtx_xform
+          mov       #3,r3
+          bsr       vtx_send
+          nop
+          bsr       vtx_xform
+          nop
+          bsr       vtx_send
+          nop
+          bsr       vtx_xform
+          nop
+          bsr       vtx_send
+          nop
+          bra       cliptri_next
+          mov       r9,r3
+cliptri_all_out:
+          add       #56,r4
+          bra       cliptri_next
+          add       #112,r4
+cliptri_case1:
+          clrt
+          bsr       vtx_send_saved
+          mov       #0,r0
+          clrt
+          bsr       vtx_send_saved
+          mov       #1,r0
+          clrt
+          mov       #2,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          sett
+          bsr       vtx_clip_edge
+          mov       #1,r0
+          bra       cliptri_next
+          nop
+cliptri_case2:
+          clrt
+          bsr       vtx_send_saved
+          mov       #0,r0
+          clrt
+          mov       #1,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          clrt
+          mov       #2,r11
+          bsr       vtx_send_saved
+          mov       #2,r0
+          sett
+          bsr       vtx_clip_edge
+          mov       #1,r0
+          bra       cliptri_next
+          nop
+cliptri_case3:
+          clrt
+          bsr       vtx_send_saved
+          mov       #0,r0
+          clrt
+          mov       #1,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          sett
+          mov       #2,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          bra       cliptri_next
+          nop
+cliptri_case4:
+          clrt
+          mov       #1,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          clrt
+          bsr       vtx_send_saved
+          mov       #1,r0
+          clrt
+          mov       #2,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          sett
+          bsr       vtx_send_saved
+          mov       #2,r0
+          bra       cliptri_next
+          nop
+cliptri_case5:
+          clrt
+          mov       #1,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          clrt
+          bsr       vtx_send_saved
+          mov       #1,r0
+          sett
+          mov       #2,r11
+          bsr       vtx_clip_edge
+          mov       #1,r0
+          bra       cliptri_next
+          nop
+cliptri_case6:
+          clrt
+          mov       #2,r11
+          bsr       vtx_clip_edge
+          mov       #0,r0
+          clrt
+          bsr       vtx_clip_edge
+          mov       #1,r0
+          sett
+          bsr       vtx_send_saved
+          mov       #2,r0
+          bra       cliptri_next
+          nop
+          .ALIGN    32
+
+; transforms the next three vertices without keeping them and puts one bit each in r9 (1 = behind the near plane)
+cliptri_outcode:
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          fldi1     fr7
+          add       #48,r4
+          pref      @r4
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv4
+          fmov      @r4+,fr0
+          fmov      @r4+,fr1
+          fmov      @r4,fr2
+          fldi1     fr3
+          add       #48,r4
+          pref      @r4
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv0
+          flds      fr7,fpul
+          sts       fpul,r0
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          cmp/hi    r0,r12
+          fldi1     fr7
+          add       #-120,r4
+          ftrv      xmtrx,fv4
+          rotcl     r9
+          flds      fr3,fpul
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          flds      fr7,fpul
+          rotcl     r9
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          rts
+          rotcl     r9
+; pads the module to a longword
+          .DATA.W   H'0000
+
+          .END

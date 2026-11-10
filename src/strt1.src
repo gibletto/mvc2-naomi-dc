@@ -1,0 +1,118 @@
+; strt1: the program's start (Capcom's copy of the NAOMI start-up). It turns the caches on from
+; the uncached mirror, clears B and BSG, clears the registers, sets the stack and calls main.
+
+          .SECTION  B,DATA,ALIGN=4
+          .SECTION  BSG,DATA,ALIGN=4
+
+STACK_SIZE: .EQU    H'4000
+          .SECTION  STACK,DATA,ALIGN=32
+          .RES.B    STACK_SIZE
+
+          .SECTION  P,CODE,ALIGN=4
+          .IMPORT   _main
+          .IMPORT   _strt_area_bgn, _strt_area_end
+
+cold_start:
+          mova      set_ccr,r0          ; run on in the uncached mirror (P2)
+          mov.l     adr_and,r1
+          and       r1,r0
+          mov.l     adr_or,r1
+          or        r1,r0
+          jmp       @r0
+          nop
+          .ALIGN    4
+set_ccr:
+          mov.l     ccr_adr,r0          ; operand and instruction caches on
+          mov.l     ccr_on,r1
+          mov.l     r1,@r0
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+          nop
+
+          mova      b_section,r0        ; clear B a byte at a time
+          mov.l     @r0+,r2
+          mov       #0,r3
+          mov.l     @r0+,r4
+clear_b:
+          mov.b     r3,@r2
+          dt        r4
+          add       #1,r2
+          bf        clear_b
+          nop
+
+          mov.l     bsg_bgn,r0          ; clear BSG, the libraries' data
+          mov.l     bsg_end,r1
+          mov.l     zero,r2
+clear_bsg:
+          cmp/eq    r0,r1
+          bt        hot_start
+          mov.b     r2,@r0
+          bra       clear_bsg
+          add       #1,r0
+          .ALIGN    4
+zero:     .DATA.L   0
+
+hot_start:
+          mova      stack_data,r0
+          mov.l     @r0+,r15            ; the stack
+          mov.l     @r0+,r0             ; main
+          mov       #0,r1
+          mov       #0,r2
+          mov       #0,r3
+          mov       #0,r4
+          mov       #0,r5
+          mov       #0,r6
+          mov       #0,r7
+          mov       #0,r8
+          mov       #0,r9
+          mov       #0,r10
+          mov       #0,r11
+          mov       #0,r12
+          mov       #0,r13
+          mov       #0,r14
+          fldi0     fr0
+          fmov      fr0,fr1
+          fmov      fr0,fr2
+          fmov      fr0,fr3
+          fmov      fr0,fr4
+          fmov      fr0,fr5
+          fmov      fr0,fr6
+          fmov      fr0,fr7
+          fmov      fr0,fr8
+          fmov      fr0,fr9
+          fmov      fr0,fr10
+          fmov      fr0,fr11
+          fmov      fr0,fr12
+          fmov      fr0,fr13
+          fmov      fr0,fr14
+          fmov      fr0,fr15
+          jsr       @r0
+          nop
+halt:
+          bra       halt
+          nop
+          nop
+          nop
+
+          .ALIGN    4
+b_section:
+          .DATA.L   (STARTOF B)
+          .DATA.L   (SIZEOF B)
+stack_data:
+          .DATA.L   (STARTOF STACK)+(SIZEOF STACK)
+          .DATA.L   _main
+bsg_bgn:  .DATA.L   (STARTOF BSG)
+bsg_end:  .DATA.L   (STARTOF BSG)+(SIZEOF BSG)
+          .DATA.L   _strt_area_bgn      ; an area above the program that nothing reads (0C3FB000)
+          .DATA.L   _strt_area_end
+adr_and:  .DATA.L   H'1FFFFFFF
+adr_or:   .DATA.L   H'A0000000
+ccr_adr:  .DATA.L   H'FF00001C
+ccr_on:   .DATA.L   H'00000105
+
+          .END

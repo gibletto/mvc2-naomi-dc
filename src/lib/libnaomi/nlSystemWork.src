@@ -1,0 +1,13 @@
+; nlSystemWork: the library's work, which GBR holds while it runs (the palette's mode and flag are
+; its first bytes), 0x64 bytes. It lies with the data the start-up leaves alone.
+
+          .SECTION  BX,DATA,ALIGN=32
+          .EXPORT   _NLSystemWork_
+          .EXPORT   _nl_scale_factor
+
+_NLSystemWork_:
+          .RES.B    40
+_nl_scale_factor:
+          .RES.B    60
+
+          .END

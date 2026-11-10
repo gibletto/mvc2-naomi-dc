@@ -1,0 +1,25 @@
+; spr_tbl: two tables of each character's sprite counts, kept in the code section as Capcom's
+; assembler tables are: how many sprites its file holds (nothing reads this one), and how many of
+; them, from the first, sprite_set_load loads as the character's set.
+
+          .SECTION  P,CODE,ALIGN=4
+          .EXPORT   _spr_cnt_tbl
+          .EXPORT   _spr_set_cnt_tbl
+
+_spr_cnt_tbl:
+          .DATA.W   441,426,451,943,1198,825,866,562,920,941
+          .DATA.W   671,952,1124,511,939,770,1107,793,741,681
+          .DATA.W   979,546,799,681,490,377,386,467,1022,1026
+          .DATA.W   525,1392,931,318,920,267,482,541,353,407
+          .DATA.W   601,336,1174,576,1101,661,1113,663,1242,738
+          .DATA.W   581,1081,392,909,710,884,730,571,969
+
+_spr_set_cnt_tbl:
+          .DATA.W   61,17,38,71,43,66,97,21,45,127
+          .DATA.W   15,21,159,52,70,104,261,53,24,31
+          .DATA.W   45,51,27,40,38,37,16,8,77,31
+          .DATA.W   69,84,42,34,50,0,9,23,25,39
+          .DATA.W   48,21,66,52,106,32,91,102,161,36
+          .DATA.W   13,75,39,74,118,36,81,21,254
+
+          .END

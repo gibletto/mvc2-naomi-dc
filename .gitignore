@@ -1,0 +1,4 @@
+/build/
+/rom/*
+!/rom/README
+__pycache__/

@@ -1,0 +1,1 @@
+-section=p=PSG,c=CSG,d=DSG,b=BSG -fpu=single -comment=nonest -cpu=sh4 -define=__SHC__ -division=cpu -endian=little -pic=0 -macsave=0 -sjis -round=nearest -string=const -optimize=0 -speed -extra=a=800

@@ -1,0 +1,44 @@
+; nlcmnPalette: copies colours into the library's palette buffer, in assembler. The palette mode and
+; the flag that the palette has changed are the first bytes of the library's work, which GBR holds.
+
+          .SECTION  P,CODE,ALIGN=4
+          .EXPORT   _nlSetPaletteData
+          .IMPORT   _PaletteBuffer_
+
+PALETTE_CHANGED: .EQU 0         ; NLSystemWork_'s bytes
+PALETTE_MODE:    .EQU 1
+MODE_8888:       .EQU 3         ; 32-bit colours; the others are 16-bit
+
+; nlSetPaletteData: r4 the first entry, r5 the colours, r6 how many. Each entry is a word of the
+; buffer; a 16-bit colour fills its low half.
+_nlSetPaletteData:
+          mov.b     @(PALETTE_MODE,gbr),r0
+          mov.l     buffer_ptr,r2
+          cmp/eq    #MODE_8888,r0
+          shll2     r4
+          mov       r2,r0
+          bt        long
+short:
+          mov.w     @r5+,r1
+          dt        r6
+          mov.w     r1,@(r0,r4)
+          bf/s      short
+          add       #4,r4
+          mov       #1,r0
+          rts
+          mov.b     r0,@(PALETTE_CHANGED,gbr)
+long:
+          mov.l     @r5+,r1
+          dt        r6
+          mov.l     r1,@(r0,r4)
+          bf/s      long
+          add       #4,r4
+          mov       #1,r0
+          rts
+          mov.b     r0,@(PALETTE_CHANGED,gbr)
+
+          .ALIGN    4
+buffer_ptr:
+          .DATA.L   _PaletteBuffer_
+
+          .END

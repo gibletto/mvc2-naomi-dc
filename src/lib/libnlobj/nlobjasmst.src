@@ -1,0 +1,2521 @@
+; nlobjasmst: the same reader as nlobjasm with the saturation term (satu). Each lit vertex
+; (unless the lighting is flat) also gets nl_satu_threshold's first float times the light plus
+; its second float added to fr3, the offset colour's alpha. The strip and triangle routines are
+; this module's own copies (r13 = nl_satu_threshold); the work buffer is nlobjasm's.
+
+          .SECTION  P,CODE,ALIGN=32
+          .EXPORT   _displaypolygondata_sidx_satu
+          .EXPORT   _displaypolygondata_sidx_trnsl_satu
+          .IMPORT   _gpwbuf, _kmiCurrentVertexBuff, _nlObjPut_bumpbridge, _nlObjPut_vtxcolbridge, _nl_fade_color, _nl_fade_color_offset
+          .IMPORT   _nl_focusX2, _nl_focusY2, _nl_or_GP, _nl_projectMatrixHeight, _nl_projectMatrixLeft, _nl_projectMatrixTop
+          .IMPORT   _nl_projectMatrixWidth, _nl_satu_threshold, _nl_scale_factor, _nl_specular_tbl, _nl_trnsl_blend_mode
+
+VTX_SIZE: .EQU      32                  ; a hardware vertex: command word, x, y, 1/w, u, v, base, offset
+RING:     .EQU      H'140               ; gpwbuf: four vertices, the last ones transformed, for cutting
+SPEC_TOP: .EQU      H'4D4               ; the specular lookup counts down to the row's end
+
+; the object's polygon data drawn solid (translucency 1.0)
+; r4 = the data, r5 = its parameters: a colour (3 floats), the near limit, the light direction
+; (3 floats), an ambient scale and a colour scale for the cut vertices (kept in r7). The data
+; is a list of groups; a group is a bounding sphere, its header words, its colour block and its
+; strips and triangles. A zero header word ends the list.
+; Stack: 0 translucency, 4 |scale|, 8-20 focus and window, 24 fade colour, 36 ambient scale,
+; 40 nl_or_GP, 48 colour, 60 the colour scale. r12 = the near limit, its bit 0 set once a
+; primitive had to be cut. r10 = the vertex buffers, r6 = the store queue, r5 = the write address.
+; The strips and triangles are called with r13 = nl_satu_threshold (two floats).
+_displaypolygondata_sidx_satu:          ; ( void *data, NLOBJPARAM *param )
+          fldi1     fr4
+
+; the same with the translucency in fr4
+_displaypolygondata_sidx_trnsl_satu:    ; ( void *data, NLOBJPARAM *param, Float trnsl )
+          add       #24,r4        ; past the data's header
+          mov.l     scale_adr,r7
+          fldi1     fr1
+          fmov      fr15,@-r15
+          fmov      @r7,fr0
+          fmov      fr14,@-r15
+          fmov      fr13,@-r15
+          fdiv      fr0,fr1       ; fr1 = 1 / nl_scale_factor
+          fmov      fr12,@-r15
+          mov.l     r14,@-r15
+          mov.l     r13,@-r15
+          mov.l     r12,@-r15
+          mov.l     r11,@-r15
+          mov.l     r10,@-r15
+          mov.l     r9,@-r15
+          mov.l     r8,@-r15
+          mov       #0,r0
+          sts.l     pr,@-r15
+          add       #-64,r15      ; the frame, 64 bytes
+          fldi1     fr7
+          fmov      fr4,@(r0,r15)
+          mov       #4,r0
+          fabs      fr0
+          fmov      fr0,@(r0,r15) ; |scale| for the sphere test
+          mov.l     focus_x_adr,r0
+          fmov      fr7,@r7       ; the scale is taken: nl_scale_factor = 1.0
+          mov.l     @r0,r1
+          mov.l     proj_w_adr,r2
+          mov.l     r1,@(8,r15)
+          mov.l     @r2,r1
+          mov.l     proj_h_adr,r0
+          mov.l     focus_y_adr,r2
+          mov.l     r1,@(16,r15)
+          mov.l     @r2,r3
+          mov.l     @r0,r1
+          mov.l     r3,@(12,r15)
+          fmov      @r5+,fr10
+          mov.l     r1,@(20,r15)
+          fmov      @r5+,fr8
+          fmov      @r5+,fr9
+          mov.l     @r5+,r12
+          mov       #56,r0
+          fmov      fr10,@(r0,r15)
+          mov       #48,r0
+          fmov      fr8,@(r0,r15)
+          mov       #52,r0
+          fmov      fr9,@(r0,r15)
+          fmov      @r5+,fr14
+          fmov      @r5+,fr12
+          fmov      @r5+,fr13
+          fmul      fr1,fr12
+          mov.l     @r5+,r0
+          fmul      fr1,fr13
+          mov.l     r0,@(36,r15)
+          mov.l     @r5+,r7
+          fmul      fr1,fr14
+          mov.l     r7,@(60,r15)
+          mov.l     fade_adr,r0
+          mov.l     @r0+,r1
+          mov.l     @r0+,r2
+          mov.l     @r0+,r3
+          mov.l     r1,@(24,r15)
+          mov.l     r2,@(28,r15)
+          mov.l     r3,@(32,r15)
+          mov.l     or_gp_adr,r0
+          mov.l     @r0+,r5
+          mov.l     r5,@(40,r15)
+          mov.l     @r0+,r6
+          mov.l     r6,@(44,r15)
+          mov.l     vtxbuf_adr,r10
+          mov       r15,r3
+          mov.l     @r4+,r8
+          add       #4,r3
+          mov.l     @r10,r10
+          mov       #-1,r11
+          fmov      fr4,fr11
+          or        r5,r8
+          fcmp/gt   fr11,fr7
+          fmov      @r4+,fr2
+          mov.l     @r4+,r1
+          or        r6,r1
+          bf/s      poly_setup
+          fmov      @r4+,fr3
+          bt        poly_trnsl
+          .ALIGN    4
+
+; the next group: nl_or_GP is or-ed into its header words, and a translucent draw
+; changes the blend bits
+poly_next:
+          mov.l     @(40,r15),r3
+          mov.l     @(44,r15),r0
+          or        r3,r8
+          mov       r15,r3
+          fmov      @r3+,fr11
+          or        r0,r1
+          fldi1     fr7
+          fcmp/gt   fr11,fr7
+          mov       r4,r0
+          add       #48,r0
+          bf/s      poly_setup
+          pref      @r0
+
+; blend mode of nl_trnsl_blend_mode into the header words
+poly_trnsl:
+          mov       #2,r2
+          mov       r1,r0
+          shll16    r2
+          shll8     r2
+          mov.l     blend_adr,r9
+          or        r2,r8
+          or        #192,r0
+          swap.w    r0,r0
+          mov.l     @r9,r9
+          or        #16,r0
+          swap.b    r0,r0
+          or        #252,r0
+          xor       r9,r0
+          swap.b    r0,r0
+          swap.w    r0,r0
+          add       r2,r2
+          mov       r0,r1
+          not       r2,r2
+          and       r2,r8
+
+; the group's vertex buffer: QACR0/1 point the store queues at its address (bits 24-31),
+; r6 = the queue, r5 = the write address inside it; then the sphere is tested
+poly_setup:
+          mov       r8,r0
+          fmov      @r4+,fr4
+          shlr16    r0
+          fmov      @r4+,fr5
+          shlr8     r0
+          fmov      @r4+,fr6
+          and       #7,r0         ; the group's buffer number, bits 24-26
+          mov       #4,r2
+          shll2     r0
+          ftrv      xmtrx,fv4     ; the sphere's centre into view space
+          fmov      @r3+,fr1
+          shll8     r2
+          fmov      @r4+,fr0
+          cmp/eq    r0,r11        ; the same buffer as before?
+          mov       r0,r11
+          mov       #-32,r6
+          fmul      fr1,fr0
+          shll16    r2
+          bt/s      poly_sphere
+          mov.l     @(r0,r10),r5
+          mov       #-1,r0
+          shll16    r0
+          shll8     r0
+          or        #56,r0        ; r0 = QACR0, 0xFF000038
+          mov       r5,r9
+          shlr16    r9
+          shlr8     r9
+          mov.l     r9,@r0        ; QACR0 and QACR1 = bits 24-31 of the address
+          mov.l     r9,@(4,r0)
+poly_sphere:
+          add       #-1,r2
+          lds       r12,fpul
+          mov       #-2,r0
+          fadd      fr0,fr7
+          and       r5,r2         ; the address inside the area
+          fsts      fpul,fr1
+          shll8     r6
+          fcmp/gt   fr1,fr7
+          shll16    r6
+          or        r2,r6         ; r6 = the store queue at that place
+          fsub      fr0,fr7
+          and       r0,r12
+          mov.l     gpwbuf_adr,r9
+          bf/s      poly_screen
+          fsub      fr0,fr7
+          fcmp/gt   fr1,fr7
+          bf/s      poly_screen
+          add       #1,r12
+
+; the group is out of sight: step over its vertex data
+poly_skip:
+          mov       r4,r2
+          add       #44,r4
+          mov.l     @r4+,r0
+          mov.l     r8,@r6
+          mov       r8,r1
+          add       r0,r4
+          mov.l     @r4+,r8
+          tst       r8,r8
+          bf        poly_skip_fade
+          bra       poly_exit
+          nop
+          .ALIGN    4
+
+; a skipped group that has a colour block still sends it, times the fade colour plus its offset
+poly_skip_fade:
+          mov       r15,r9
+          add       #24,r9
+          fmov      @r9+,fr5
+          fmov      @r9+,fr6
+          add       #12,r2
+          fmov      @r9+,fr7
+          mov       r1,r0
+          tst       #16,r0
+          bf/s      poly_skip_next
+          tst       #32,r0
+          bt        poly_skip_next
+          fmov      @r2+,fr0
+          fmov      @r2+,fr1
+          fmov      @r2+,fr2
+          fmov      @r2+,fr3
+          fmul      fr11,fr0
+          mov.l     fade_ofs_adr,r0
+          fmov      @r0+,fr11
+          fmul      fr5,fr1
+          fmov      @r2+,fr4
+          fmov      @r2+,fr5
+          fmul      fr11,fr5
+          fmov      @r0+,fr11
+          fmul      fr6,fr2
+          fmov      @r2+,fr6
+          fmul      fr11,fr6
+          fmov      @r0+,fr11
+          fmul      fr7,fr3
+          fmov      @r2+,fr7
+          fschg
+          fmul      fr11,fr7
+          mov       #0,r0
+          mov.l     r0,@(4,r6)
+          mov.l     r0,@(8,r6)
+          mov.l     r0,@(12,r6)
+          pref      @r6
+          add       #64,r6
+          fmov      fr6,@-r6
+          fmov      fr4,@-r6
+          mov       r11,r0
+          fmov      fr2,@-r6
+          add       #64,r5
+          fmov      fr0,@-r6
+          fschg
+          pref      @r6
+          add       #32,r6
+          mov.l     r5,@(r0,r10)
+poly_skip_next:
+          fmov      @r4+,fr2
+          mov.l     @r4+,r1
+          bra       poly_next
+          fmov      @r4+,fr3
+          .ALIGN    4
+
+; the sphere's screen box against the window (outside goes to poly_skip); the group's
+; header words are kept at the start of gpwbuf for the primitives' headers
+poly_screen:
+          fmov      @r3+,fr1
+          mov.l     proj_left_adr,r0
+          add       #16,r9
+          fmov      @r0,fr7
+          fmul      fr4,fr7
+          fneg      fr0
+          fmul      fr0,fr1
+          fmov      fr3,@-r9
+          fsub      fr7,fr5
+          fmov      @r3+,fr3
+          mov       r4,r2
+          mov.l     proj_top_adr,r0
+          fcmp/gt   fr1,fr5
+          fmov      @r0,fr7
+          fmul      fr0,fr3
+          bf/s      poly_skip
+          fmul      fr4,fr7
+          mov.l     r1,@-r9
+          fsub      fr7,fr6
+          fmov      @r3+,fr0
+          fcmp/gt   fr3,fr6
+          fmov      @r3+,fr7
+          fmul      fr4,fr0
+          bf/s      poly_skip
+          fsub      fr1,fr0
+          fcmp/gt   fr0,fr5
+          fmov      @r3+,fr5
+          fmul      fr4,fr7
+          bt/s      poly_skip
+          fmov      fr2,@-r9
+          fsub      fr3,fr7
+          mov.l     r8,@-r9
+          mov       #8,r1
+          fcmp/gt   fr7,fr6
+          fmov      @r3+,fr6
+          bt        poly_skip
+          mov       r8,r0
+          tst       #16,r0
+          mov.b     @(4,r2),r0
+          add       #8,r2
+          fmov      @r3+,fr7
+          mov       r0,r8
+          fmov      @r2+,fr15
+          bf/s      poly_mode
+          add       #48,r4
+          fmov      @r2+,fr0
+          fmov      @r2+,fr1
+          fmov      @r2+,fr2
+          fmov      @r2+,fr3
+          fmul      fr11,fr0
+          mov.l     fade_ofs_adr,r0
+          fmov      @r0+,fr11
+          fmul      fr5,fr1
+          fmov      @r2+,fr4
+          fmov      @r2+,fr5
+          fmul      fr11,fr5
+          fmov      @r0+,fr11
+          fmul      fr6,fr2
+          fmov      @r2+,fr6
+          fmul      fr11,fr6
+          fmov      @r0+,fr11
+          fmul      fr7,fr3
+          fmov      @r2+,fr7
+          add       #64,r6
+          fmul      fr11,fr7
+          fschg
+          fmov      fr6,@-r6
+          fmov      fr4,@-r6
+          fmov      fr2,@-r6
+          fmov      fr0,@-r6
+          fschg
+          add       #-32,r6
+
+; the group's lighting: r8 < 0 is fixed (-1 flat, -2 bump, -3 vertex colour objects, which
+; have their own routines), 0 diffuse only, above 0 a specular row; picks the row of the table
+poly_mode:
+          cmp/pz    r8
+          bt        poly_lit
+          mov       r8,r0
+          cmp/eq    #-1,r0
+          bt/s      poly_unlit
+          cmp/eq    #-2,r0
+          bf        poly_mode_vtxcol
+          mov.l     bump_adr,r0
+          jsr       @r0
+          mov.l     @(60,r15),r7
+          bt        poly_exit
+          fmov      @r4+,fr2
+          mov.l     @r4+,r1
+          bra       poly_next
+          fmov      @r4+,fr3
+          .ALIGN    4
+poly_mode_vtxcol:
+          mov.l     @(60,r15),r7
+          cmp/eq    #-3,r0
+          mov       #36,r0
+          mov.l     vtxcol_adr,r1
+          bf        poly_unlit
+          fmov      @(r0,r15),fr1
+          jsr       @r1
+          fmul      fr1,fr15
+          bt        poly_exit
+          fmov      @r4+,fr2
+          mov.l     @r4+,r1
+          bra       poly_next
+          fmov      @r4+,fr3
+          .ALIGN    4
+poly_unlit:
+          bra       poly_prim
+          fldi1     fr15
+poly_lit:
+          cmp/pl    r8
+          mov       #56,r0
+          bf        poly_ambient
+          fmov      @(r0,r15),fr10
+          mov       #48,r0
+          fmov      @(r0,r15),fr8
+          mov       #52,r0
+          fmov      @(r0,r15),fr9
+          mov       #9,r0
+          shld      r0,r8
+          mov.l     spec_adr,r0
+          add       r0,r8
+poly_ambient:
+          mov       #36,r0
+          fmov      @(r0,r15),fr1
+          fmul      fr1,fr15
+poly_prim:
+          mov.l     @r4+,r0
+
+; the next primitive of the group: a positive word is a strip or triangle header, anything
+; else (a header word, or 0 at the end) leaves the group
+prim_next:
+          cmp/pl    r0
+          mov.l     gpwbuf_adr,r9
+          bt/s      prim_head
+          cmp/pz    r0
+          mov       r0,r8
+          mov       r11,r0
+          mov.l     r5,@(r0,r10)
+          bt        poly_exit
+          fmov      @r4+,fr2
+          mov.l     @r4+,r1
+          bra       poly_next
+          fmov      @r4+,fr3
+
+; the polygon header of a primitive: the group's words from gpwbuf, the Gouraud bit from
+; bit 6 of the primitive's header, the culling direction and the texture bits
+prim_head:
+          mov       r0,r1
+          mov       #-5,r2
+          mov.l     @r9+,r3
+          and       #64,r0
+          shld      r2,r0
+          mov       #-3,r2
+          and       r2,r3
+          or        r3,r0
+          tst       #16,r0
+          add       #32,r4
+          bf/s      prim_cull
+          lds       r0,fpul
+          or        #16,r0
+          mov       r9,r2
+          mov.l     r0,@-r2
+
+; nl_or_GP's sign says the culling is reversed: its two bits are flipped
+prim_cull:
+          mov.l     @(40,r15),r2
+          movt      r3
+          mov       r1,r0
+          cmp/pz    r2
+          mov       #27,r2
+          bt/s      prim_cull_set
+          and       #3,r0
+          xor       #1,r0
+prim_cull_set:
+          shld      r2,r0
+          cmp/pl    r3
+          mov       #3,r3
+          fschg
+          shld      r2,r3
+          pref      @r4
+          not       r3,r3
+          mov.l     @r9+,r2
+          and       r3,r2
+          fsts      fpul,fr0
+          or        r0,r2
+          lds       r2,fpul
+          add       #-32,r4
+          fsts      fpul,fr1
+          add       #16,r6
+          fmov      @r9+,fr2
+          fmov      fr2,@-r6
+          add       #32,r5
+          fmov      fr0,@-r6
+          fschg
+          pref      @r6
+          bf/s      prim_draw
+          add       #32,r6
+          pref      @r6
+          add       #32,r6
+          add       #32,r5
+
+; send the primitive: bit 3 of the header says triangle; the cut routines if r12 bit 0
+prim_draw:
+          rotcr     r12
+          mov       r1,r0
+          bt/s      prim_clip
+          shll      r12
+          tst       #8,r0
+          mov.l     satu_adr,r13
+          bf        prim_tri
+          bsr       strip_tex_satu
+          nop
+          bra       prim_next
+          mov.l     @r4+,r0
+prim_tri:
+          bsr       triangle_tex_satu
+          nop
+          bra       prim_next
+          mov.l     @r4+,r0
+
+; leave: the registers back
+poly_exit:
+          add       #64,r15
+          lds.l     @r15+,pr
+          mov.l     @r15+,r8
+          mov.l     @r15+,r9
+          mov.l     @r15+,r10
+          mov.l     @r15+,r11
+          mov.l     @r15+,r12
+          mov.l     @r15+,r13
+          mov.l     @r15+,r14
+          fmov      @r15+,fr12
+          fmov      @r15+,fr13
+          fmov      @r15+,fr14
+          fmov      @r15+,fr15
+          rts
+          nop
+          .ALIGN    4
+prim_clip:
+          mov       #0,r1
+          tst       #64,r0
+          addc      r1,r12
+          mov.l     @(60,r15),r7
+          tst       #16,r0
+          mov.l     satu_adr,r13
+          bt/s      prim_clip_tri
+          tst       #8,r0
+          bsr       strip_nc_satu
+          tst       #32,r0
+          bra       prim_next
+          mov.l     @r4+,r0
+prim_clip_tri:
+          bsr       triangle_nc_satu
+          tst       #32,r0
+          bra       prim_next
+          mov.l     @r4+,r0
+
+; literal pool
+vtxbuf_adr:     .DATA.L   _kmiCurrentVertexBuff
+gpwbuf_adr:     .DATA.L   _gpwbuf
+scale_adr:      .DATA.L   _nl_scale_factor
+fade_adr:       .DATA.L   _nl_fade_color
+fade_ofs_adr:   .DATA.L   _nl_fade_color_offset
+satu_adr:       .DATA.L   _nl_satu_threshold
+focus_x_adr:    .DATA.L   _nl_focusX2
+focus_y_adr:    .DATA.L   _nl_focusY2
+proj_w_adr:     .DATA.L   _nl_projectMatrixWidth
+proj_h_adr:     .DATA.L   _nl_projectMatrixHeight
+proj_top_adr:   .DATA.L   _nl_projectMatrixTop
+proj_left_adr:  .DATA.L   _nl_projectMatrixLeft
+bump_adr:       .DATA.L   _nlObjPut_bumpbridge
+vtxcol_adr:     .DATA.L   _nlObjPut_vtxcolbridge
+blend_adr:      .DATA.L   _nl_trnsl_blend_mode
+or_gp_adr:      .DATA.L   _nl_or_GP
+spec_adr:       .DATA.L   _nl_specular_tbl-SPEC_TOP
+          .ALIGN    32
+
+; a strip entirely in front of the near limit. r8 = 0 diffuse light, bit 0 set flat,
+; else the specular row. The data is a vertex count and the vertex records; a record starts
+; with its x, whose bit 0 says the position is in the record, else the next word is its
+; offset. Two vertices are done per turn, the second one's transform under the first's divide.
+strip_tex_satu:                         ; ( r4 data, r5 vertex buffer, r6 store queue )
+          tst       r8,r8
+          mov       r8,r0
+          bf        stx_mode
+          bra       stx_lit
+stx_mode:
+          tst       #1,r0
+          bf        stx_flat
+          bra       stx_spec
+          nop
+stx_flat:
+          mov.l     @r4+,r3
+          fldi1     fr2
+          fschg
+          fldi0     fr3
+          fmov      fr2,@-r6
+          add       #32,r6
+          fmov      fr2,@r6
+          mov.l     @r4,r0
+          mov       r4,r14
+          tst       #1,r0
+          add       #32,r4
+          bf        stx_flat_pos
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+stx_flat_pos:
+          fmov      @r14+,fr4
+          fmov      @r14,fr6
+          add       #16,r14
+          fldi1     fr7
+          fmov      @r14,fr0
+          ftrv      xmtrx,fv4
+stx_flat_loop:
+          fldi1     fr7
+          fdiv      fr4,fr7
+          dt        r3
+          mov.l     @r4+,r0
+          bt/s      stx_flat_more_a
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov       r6,r2
+          bt/s      stx_flat_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+
+; vertex A: the records to send are those of the turn before
+stx_flat_a:
+          fmov      @r14+,fr8
+          add       #32,r4
+          pref      @r4
+          fmov      @r14,fr10
+          add       #16,r14
+          fldi1     fr11
+          fmul      fr7,fr6
+          fmov      fr0,@-r6
+          fmul      fr7,fr5
+          fmov      fr6,@-r6
+          ftrv      xmtrx,fv8
+          fmov      fr4,@-r6
+          add       #-32,r4
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          dt        r3
+          pref      @r6
+          add       #56,r6
+          mov       r6,r2
+          fldi1     fr11
+          fdiv      fr8,fr11
+          mov.l     @r4+,r0
+          bt/s      stx_flat_more_b
+          mov.l     @r4+,r14
+          tst       #1,r0
+          bt/s      stx_flat_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+stx_flat_b:
+          add       #32,r4
+          fmov      @r14+,fr4
+          pref      @r4
+          fmov      @r14,fr6
+          add       #16,r14
+          fldi1     fr7
+          fmul      fr11,fr10
+          add       #-32,r4
+          fmul      fr11,fr9
+          fmov      fr0,@-r6
+          fmov      fr10,@-r6
+          ftrv      xmtrx,fv4
+          fmov      fr8,@-r6
+          add       #64,r5
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          pref      @r6
+          bra       stx_flat_loop
+          add       #56,r6
+          .ALIGN    4
+
+; the count is spent: the next run of the strip goes on if its header word (bit 7) says so
+stx_flat_more_b:
+          cmp/pl    r0
+          mov.l     @r4+,r2
+          bf        stx_flat_end_b
+          tst       #128,r0
+          mov       r14,r3
+          bt        stx_flat_end_b
+          mov       r2,r0
+          mov       r6,r2
+          shar      r2
+          mov.l     @r4+,r14
+          tst       #1,r0
+          bt/s      stx_flat_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       stx_flat_b
+          add       #-8,r14
+          .ALIGN    4
+stx_flat_end_b:
+          add       #44,r4
+          pref      @r4
+          add       #-48,r4
+          fmov      fr8,fr4
+          add       #32,r5
+          bra       stx_flat_last
+          fmov      fr10,fr6
+          .ALIGN    4
+stx_flat_more_a:
+          cmp/pl    r0
+          mov.l     @r4+,r2
+          bf        stx_flat_end_a
+          tst       #128,r0
+          mov       r14,r3
+          bt        stx_flat_end_a
+          mov       r2,r0
+          mov       r6,r2
+          shar      r2
+          mov.l     @r4+,r14
+          tst       #1,r0
+          bt/s      stx_flat_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       stx_flat_a
+          add       #-8,r14
+          .ALIGN    4
+stx_flat_end_a:
+          add       #44,r4
+          pref      @r4
+          add       #-48,r4
+
+; the last vertex, with the end-of-strip command (r6 shifted right)
+stx_flat_last:
+          fmul      fr7,fr6
+          mov       r6,r2
+          shar      r2
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          add       #-8,r4
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+
+; diffuse lit strip: the colour is the ambient (fr15) plus the normal against the light
+stx_lit:
+          mov.l     @r4+,r3
+          add       #32,r6
+          fschg
+          mov.l     @r4,r0
+          mov       r4,r14
+          fldi0     fr2
+          tst       #1,r0
+          add       #32,r4
+          bf        stx_lit_pos
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+stx_lit_pos:
+          fmov      @r14+,fr4
+          mov       r6,r2
+          fmov      @r14+,fr6
+          fadd      fr7,fr2
+          fldi1     fr7
+          fldi0     fr3
+          fmov      @r14+,fr0
+          ftrv      xmtrx,fv4
+stx_lit_loop:
+          mov.l     @r4+,r0
+          flds      fr15,fpul
+          dt        r3
+          mov.l     @r4+,r1
+          fipr      fv12,fv0
+          fldi1     fr7
+          bt/s      stx_lit_more_a
+          fdiv      fr4,fr7
+          tst       #1,r0
+          add       r4,r1
+          bt/s      stx_lit_a
+          fsts      fpul,fr2
+          mov       r4,r1
+          add       #24,r4
+          add       #-8,r1
+stx_lit_a:
+          fldi0     fr10
+          fcmp/gt   fr10,fr3
+          fmov      @r1+,fr8
+          add       #32,r4
+          fmov      @r13,fr0
+          bf        stx_lit_a_back
+          fadd      fr3,fr2
+stx_lit_a_back:
+          pref      @r4
+          cmp/pz    r8
+          fadd      fr2,fr1
+          fldi0     fr3
+          bf        stx_lit_a_satu
+          fmac      fr0,fr1,fr3
+stx_lit_a_satu:
+          fmov      @r14,fr0
+          fmov      @r1+,fr10
+          add       #-32,r4
+          fmov      fr2,@-r6
+          fsub      fr2,fr2
+          fmov      fr0,@-r6
+          fmul      fr7,fr6
+          fmov      @r1+,fr0
+          fadd      fr11,fr2
+          fldi1     fr11
+          fmul      fr7,fr5
+          add       #32,r5
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          ftrv      xmtrx,fv8
+          mov.l     r2,@r6
+          fsub      fr3,fr3
+          mov.l     @r4+,r0
+          mov       r6,r2
+          pref      @r6
+          add       #64,r6
+          mov.l     @r4+,r14
+          flds      fr15,fpul
+          fipr      fv12,fv0
+          fldi1     fr11
+          bt/s      stx_lit_more_b
+          fdiv      fr8,fr11
+          tst       #1,r0
+          add       r4,r14
+          bt/s      stx_lit_b
+          fsts      fpul,fr2
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+stx_lit_b:
+          fldi0     fr0
+          fcmp/gt   fr0,fr3
+          fmov      @r14+,fr4
+          add       #32,r4
+          fmov      @r13,fr0
+          bf        stx_lit_b_back
+          fadd      fr3,fr2
+stx_lit_b_back:
+          pref      @r4
+          cmp/pz    r8
+          fadd      fr2,fr1
+          fldi0     fr3
+          bf        stx_lit_b_satu
+          fmac      fr0,fr1,fr3
+stx_lit_b_satu:
+          fmov      @r1,fr0
+          fmov      @r14+,fr6
+          add       #-32,r4
+          fmov      fr2,@-r6
+          fsub      fr2,fr2
+          fmov      fr0,@-r6
+          fmul      fr11,fr10
+          fmov      @r14+,fr0
+          fadd      fr7,fr2
+          fldi1     fr7
+          fmul      fr11,fr9
+          add       #32,r5
+          fmov      fr10,@-r6
+          fsub      fr3,fr3
+          fmov      fr8,@-r6
+          ftrv      xmtrx,fv4
+          mov.l     r2,@r6
+          mov       r6,r2
+          pref      @r6
+          bra       stx_lit_loop
+          add       #64,r6
+stx_lit_more_b:
+          cmp/pl    r0
+          fsts      fpul,fr2
+          bf        stx_lit_end_b
+          tst       #128,r0
+          mov       r14,r3
+          bt        stx_lit_end_b
+          mov.l     @r4+,r0
+          mov       r6,r2
+          shar      r2
+          tst       #1,r0
+          mov.l     @r4+,r14
+          bt/s      stx_lit_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       stx_lit_b
+          add       #-8,r14
+          .ALIGN    4
+stx_lit_end_b:
+          add       #48,r4
+          pref      @r4
+          add       #-48,r4
+          fmov      fr8,fr4
+          bra       stx_lit_last
+          fmov      fr10,fr6
+stx_lit_more_a:
+          cmp/pl    r0
+          fsts      fpul,fr2
+          bf        stx_lit_end_a
+          tst       #128,r0
+          mov       r1,r3
+          bt        stx_lit_end_a
+          mov.l     @r4+,r0
+          mov       r6,r2
+          shar      r2
+          tst       #1,r0
+          mov.l     @r4+,r1
+          bt/s      stx_lit_a
+          add       r4,r1
+          mov       r4,r1
+          add       #24,r4
+          bra       stx_lit_a
+          add       #-8,r1
+          .ALIGN    4
+stx_lit_end_a:
+          add       #48,r4
+          mov       r14,r1
+          pref      @r4
+          add       #-48,r4
+stx_lit_last:
+          fldi0     fr0
+          fcmp/gt   fr0,fr3
+          fmov      @r13,fr0
+          bf        stx_lit_last_back
+          fadd      fr3,fr2
+stx_lit_last_back:
+          cmp/pz    r8
+          fmov      @r1,fr10
+          fadd      fr2,fr1
+          fldi0     fr3
+          bf        stx_lit_last_satu
+          fmac      fr0,fr1,fr3
+stx_lit_last_satu:
+          fmul      fr7,fr6
+          fmov      fr2,@-r6
+          fmul      fr7,fr5
+          fmov      fr10,@-r6
+          mov       r6,r2
+          shar      r2
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          add       #-8,r4
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+
+; specular strip: the diffuse term as above, and the lookup in the row r8 for the highlight
+stx_spec:
+          mov       #127,r2
+          mov.l     @r4+,r3
+          add       #-32,r6
+          mov.l     @r4,r0
+          add       #127,r2
+          fschg
+          add       #55,r2
+          tst       #1,r0
+          mov       r4,r14
+          bf/s      stx_spec_pos
+          add       #32,r4
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+stx_spec_pos:
+          fmov      @r14+,fr4
+
+; one vertex per turn
+stx_spec_loop:
+          fmov      @r14+,fr6
+          mov       r6,r7
+          fldi0     fr2
+          fadd      fr7,fr2
+          fldi1     fr7
+          add       #64,r6
+          fldi0     fr3
+          add       #32,r5
+          fmov      @r14+,fr0
+          ftrv      xmtrx,fv4
+          fldi0     fr11
+          dt        r3
+          mov.l     @r4+,r0
+          bt/s      stx_spec_more
+          mov       r14,r1
+          fipr      fv12,fv0
+          tst       #1,r0
+          mov.l     @r4+,r14
+          bf/s      stx_spec_inline
+          fldi1     fr7
+          fdiv      fr4,fr7
+          pref      @r4
+stx_spec_ref:
+          fcmp/gt   fr11,fr3
+          add       r4,r14
+          flds      fr15,fpul
+          fipr      fv0,fv8
+          fmov      @r13,fr0
+          pref      @r14
+          bf/s      stx_spec_none
+          fsts      fpul,fr2
+          fadd      fr3,fr2
+          fldi0     fr3
+          bra       stx_spec_look
+          ftrc      fr11,fpul
+          .ALIGN    4
+stx_spec_end_off:
+          add       #-28,r4
+          fldi1     fr7
+stx_spec_inline:
+          fdiv      fr4,fr7
+stx_spec_inline_ref:
+          add       #24,r4
+          fcmp/gt   fr11,fr3
+          flds      fr15,fpul
+          fipr      fv0,fv8
+          mov       r4,r14
+          fmov      @r13,fr0
+          add       #-32,r14
+          pref      @r4
+          bf/s      stx_spec_none
+          fsts      fpul,fr2
+          fadd      fr3,fr2
+          ftrc      fr11,fpul
+          fldi0     fr3
+
+; the highlight: the dot product as an index into the row, if inside it
+stx_spec_look:
+          sts       fpul,r0
+          fadd      fr2,fr1
+          cmp/gt    r2,r0
+          shll2     r0
+          bf        stx_spec_satu
+          fcmp/gt   fr3,fr1
+          fschg
+          fmov      @(r0,r8),fr3
+          bf/s      stx_spec_send
+          fschg
+          bra       stx_spec_send
+          fmac      fr0,fr1,fr3
+stx_spec_none:
+          fadd      fr2,fr1
+          fldi0     fr3
+stx_spec_satu:
+          fmac      fr0,fr1,fr3
+stx_spec_send:
+          fmov      @r1,fr0
+          fmul      fr7,fr6
+          fmov      fr2,@-r6
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          tst       r3,r3
+          fmov      fr6,@-r6
+          fmov      fr4,@-r6
+          bt/s      stx_spec_flush
+          mov.l     r7,@r6
+          fmov      @r14+,fr4
+          bra       stx_spec_loop
+stx_spec_flush:
+          pref      @r6
+          add       #32,r6
+          rts
+          fschg
+          .ALIGN    4
+
+; the count is spent: the next run goes on if its header word (bit 7) says so
+stx_spec_more:
+          mov       r6,r7
+          shar      r7
+          cmp/pl    r0
+          bf/s      stx_spec_end_off
+          fipr      fv12,fv0
+          tst       #128,r0
+          fldi1     fr7
+          bt        stx_spec_end_off
+          mov.l     @r4+,r3
+          mov.l     @r4+,r0
+          mov.l     @r4+,r14
+          tst       #1,r0
+          fdiv      fr4,fr7
+          bf        stx_spec_inline_ref
+          bra       stx_spec_ref
+          pref      @r4
+          .ALIGN    32
+
+; a strip that is cut at the near limit. r3 = the vertices left, r11 the vertex number (the
+; ring slot is its low 2 bits), r9 the history of the near tests (bit 0 the latest, set =
+; nearer than the limit), r12 bit 0 the flat shading bit. A vertex in front is sent at once;
+; a vertex that is not is kept in the ring until its neighbours are known.
+strip_nc_satu:                          ; ( r4 data, r5 vertex buffer, r6 store queue )
+          mov.l     r10,@-r15
+          mov.l     r11,@-r15
+          sts.l     pr,@-r15
+          mov.l     @r4+,r3
+snc_run:
+          mov       #0,r11
+          bsr       xform_vertex
+          mov       #0,r9
+          bt/s      snc_out
+          rotcl     r9
+          bsr       send_vertex
+          add       #1,r11
+          bsr       xform_vertex
+          nop
+          bt/s      snc_leave2
+          rotcl     r9
+          bsr       send_vertex
+          add       #1,r11
+
+; more vertices in front: send each
+snc_in:
+          bsr       xform_vertex
+          nop
+          bt/s      snc_leave
+          rotcl     r9
+          bsr       send_vertex
+          add       #1,r11
+          bf        snc_in
+          bt        snc_next
+
+; the first vertex is cut away: look on for the first one in front
+snc_out:
+          dt        r3
+          add       #1,r11
+          bsr       xform_vertex
+          dt        r3
+          bf/s      snc_enter2
+          rotcl     r9
+snc_peek:
+          mov.l     @r4,r0
+          mov       r4,r14
+          tst       #1,r0
+          add       #32,r4
+          bf/s      snc_peek_pos
+          fldi1     fr7
+          add       #-24,r4
+          mov.l     @(4,r14),r14
+          add       r4,r14
+snc_peek_pos:
+          fmov      @r14+,fr4
+          fmov      @r14+,fr5
+snc_peek_loop:
+          fmov      @r14+,fr6
+          mov       #32,r1
+          mov.l     @r4,r0
+          add       #32,r4
+          pref      @r4
+          ftrv      xmtrx,fv4
+          tst       #1,r0
+          add       #-32,r4
+          bf/s      snc_peek_test
+          mov       r4,r14
+          mov       #8,r1
+          mov.l     @(4,r14),r14
+          add       #8,r14
+          add       r4,r14
+snc_peek_test:
+          flds      fr7,fpul
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          add       #1,r11
+          bf/s      snc_enter
+          rotcl     r9
+          dt        r3
+          fldi1     fr7
+          bt        snc_next
+          add       r1,r4
+          fmov      @r14+,fr4
+          bra       snc_peek_loop
+          fmov      @r14+,fr5
+
+; the run is done: the next one goes on if its header word (bit 7) says so; else the end
+snc_next:
+          mov.l     @r4+,r0
+          cmp/pl    r0
+          bf/s      snc_done
+          tst       #128,r0
+          bf/s      snc_run
+          mov.l     @r4+,r3
+          add       #-4,r4
+
+; leave: r12 bit 0 is set so that the rest of the group is cut too, and the header word is read again
+snc_done:
+          lds.l     @r15+,pr
+          mov       #1,r0
+          mov.l     @r15+,r11
+          add       #-4,r4
+          mov.l     @r15+,r10
+          rts
+          or        r0,r12
+
+; the second vertex is cut away with the first one in front: the cut vertices are made from
+; the records again (the data cursor goes back over them)
+snc_leave2:
+          bsr       ring_store
+          dt        r3
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_leave2_back1
+          add       #-24,r4
+snc_leave2_back1:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_leave2_back2
+          add       #-24,r4
+snc_leave2_back2:
+          bsr       xform_vertex
+          nop
+          bsr       ring_store
+          mov       #0,r11
+          mov       #1,r11
+          clrt
+          bsr       send_cut
+          mov       #0,r0
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        snc_leave2_fwd
+          add       #24,r4
+snc_leave2_fwd:
+          bra       snc_step
+          nop
+
+; the second vertex is in front after a first one cut away
+snc_enter2:
+          bsr       ring_store
+          mov       #1,r11
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_enter2_back1
+          add       #-24,r4
+snc_enter2_back1:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_enter2_back2
+          add       #-24,r4
+snc_enter2_back2:
+          bsr       xform_vertex
+          nop
+          bsr       ring_store
+          mov       #0,r11
+          mov       #1,r11
+          clrt
+          bsr       send_cut
+          mov       #0,r0
+          clrt
+          bsr       send_ring
+          mov       #1,r0
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        snc_enter2_fwd
+          add       #24,r4
+snc_enter2_fwd:
+          bra       snc_step
+          nop
+
+; a vertex in front after cut ones: go back over three records to make the cut ones again
+snc_enter:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_enter_back1
+          add       #-24,r4
+snc_enter_back1:
+          bsr       xform_vertex
+          nop
+
+; a vertex is cut away after ones in front
+snc_leave:
+          bsr       ring_store
+          nop
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_leave_back1
+          add       #-24,r4
+snc_leave_back1:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_leave_back2
+          add       #-24,r4
+snc_leave_back2:
+          add       #-8,r4
+          mov.l     @(4,r4),r0
+          tst       #1,r0
+          bt        snc_leave_back3
+          add       #-24,r4
+snc_leave_back3:
+          bsr       xform_vertex
+          nop
+          bsr       ring_store
+          add       #-2,r11
+          bsr       xform_vertex
+          nop
+          bsr       ring_store
+          add       #1,r11
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        snc_leave_fwd
+          add       #24,r4
+snc_leave_fwd:
+          add       #1,r11
+          mov       r12,r0
+          tst       #1,r0
+          bt/s      snc_case
+          mov       r9,r0
+          bsr       ring_flat
+          nop
+          bra       snc_case
+          mov       r9,r0
+
+; next vertex: transform it, keep it in the ring, and go by the pattern of the last three
+snc_step:
+          bsr       xform_vertex
+          add       #1,r11
+          bsr       ring_store
+          rotcl     r9
+          mov       r12,r0
+          tst       #1,r0
+          bt/s      snc_case
+          mov       r9,r0
+          bsr       ring_flat
+          nop
+          mov       r9,r0
+
+; by the near tests of the last three vertices (bit 0 the latest); 0 and 7 share pat1
+snc_case:
+          and       #7,r0
+          shll2     r0
+          braf      r0
+          nop
+          nop
+          nop
+          bra       snc_pat1
+          nop
+          bra       snc_pat2
+          nop
+          bra       snc_pat3
+          nop
+          bra       snc_pat4
+          nop
+          bra       snc_pat5
+          nop
+          bra       snc_pat6
+          nop
+          nop
+          nop
+
+; (0, 1, 7) the latest vertex is cut away: the two cuts and the vertex between
+snc_pat1:
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       send_ring
+          add       #-1,r0
+          mov       r11,r0
+          dt        r3
+          bsr       send_cut
+          add       #-1,r0
+          bf        snc_step
+          bra       snc_next
+          nop
+
+; (2) the middle one is cut away
+snc_pat2:
+          clrt
+          bsr       send_ring
+          mov       r11,r0
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-1,r0
+          dt        r3
+          bsr       send_ring
+          mov       r11,r0
+          bf        snc_step
+          bra       snc_next
+          nop
+
+; (3) the two latest are cut away
+snc_pat3:
+          mov       r11,r0
+          sett
+          bsr       send_cut
+          add       #-2,r0
+          dt        r3
+          bt        snc_pat_end
+          bra       snc_peek
+          nop
+
+; (4) the first of the three is cut away
+snc_pat4:
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       send_ring
+          add       #-1,r0
+          dt        r3
+          bsr       send_ring
+          mov       r11,r0
+          bt        snc_pat_end
+          bra       snc_in
+          add       #1,r11
+snc_pat_end:
+          bra       snc_next
+          nop
+
+; (5) only the middle one is in front
+snc_pat5:
+          mov       r11,r0
+          dt        r3
+          bsr       send_cut
+          add       #-1,r0
+          bf        snc_step
+          bra       snc_next
+          nop
+
+; (6) only the latest is in front: both orders of the strip are made
+snc_pat6:
+          mov       r11,r0
+          tst       #1,r0
+          bt        snc_pat6_even
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-1,r0
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-1,r0
+          bra       snc_pat6_tail
+          nop
+snc_pat6_even:
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-2,r0
+          mov       r11,r0
+          clrt
+          bsr       send_cut
+          add       #-1,r0
+snc_pat6_tail:
+          dt        r3
+          bsr       send_ring
+          mov       r11,r0
+          bf        snc_step
+          bra       snc_next
+          nop
+          .ALIGN    32
+
+; the vertex record at r4 transformed by xmtrx and lit: sets fr4 = its depth, fr5/fr6 x and y,
+; fr7 = 1/w, fr0/fr1 u and v (from r2), fr2/fr3 the colours. T is set when it is nearer than
+; the near limit (the float bits of r12 compared as integers). r4 moves to the next record.
+xform_vertex:
+          mov.l     @r4,r0
+          tst       #1,r0
+          bf/s      xform_inline
+          fmov      @r4+,fr4
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr4
+          fmov      @r0+,fr5
+          fmov      @r0+,fr6
+          fldi1     fr7
+          fmov      @r0+,fr2
+          fmov      @r0+,fr0
+          ftrv      xmtrx,fv4
+          fmov      @r0+,fr1
+          fldi0     fr3
+          add       #32,r4
+          bra       xform_light
+          mov       r0,r2
+
+; the position is in the record (its first word is x)
+xform_inline:
+          fmov      @r4+,fr5
+          fmov      @r4+,fr6
+          fldi1     fr7
+          fmov      @r4+,fr2
+          fmov      @r4+,fr0
+          ftrv      xmtrx,fv4
+          fmov      @r4+,fr1
+          fldi0     fr3
+          mov       r4,r2
+          add       #40,r4
+
+; the light: the normal against the direction (fv12) and the specular lookup of r8, if any
+xform_light:
+          fldi0     fr11
+          fipr      fv12,fv0
+          pref      @r4
+          add       #-32,r4
+          flds      fr7,fpul
+          sts       fpul,r0
+          fldi1     fr7
+          fdiv      fr4,fr7
+          fsts      fpul,fr4
+          fcmp/gt   fr11,fr3
+          fipr      fv0,fv8
+          fmov      fr15,fr2
+          bf        xform_dark
+          fadd      fr3,fr2
+          mov       r13,r1
+          fmov      @r1+,fr0
+          tst       r8,r8
+          fmov      @r1+,fr1
+          fldi0     fr3
+          bt/s      xform_end
+          fadd      fr2,fr1
+          mov       #1,r1
+          tst       r1,r8
+          bf/s      xform_flat
+          ftrc      fr11,fpul
+          mov       #127,r1
+          fldi0     fr3
+          add       #127,r1
+          sts       fpul,r0
+          add       #55,r1
+          cmp/gt    r1,r0
+          shll2     r0
+          bf        xform_out
+          mov.l     @(r0,r8),r0
+          fcmp/gt   fr3,fr1
+          lds       r0,fpul
+          bf/s      xform_look_end
+          fsts      fpul,fr3
+          fmac      fr0,fr1,fr3
+xform_look_end:
+          flds      fr4,fpul
+          sts       fpul,r0
+          rts
+          cmp/hi    r0,r12
+
+; flat lighting: the colour stays the ambient
+xform_flat:
+          fldi1     fr2
+          flds      fr4,fpul
+          sts       fpul,r0
+          rts
+          cmp/hi    r0,r12
+xform_dark:
+          mov       r13,r1
+          cmp/pz    r8
+          fldi0     fr3
+          bf        xform_flat
+          fmov      @r1+,fr0
+          flds      fr4,fpul
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          fmov      @r1+,fr1
+          fadd      fr2,fr1
+          rts
+          fmac      fr0,fr1,fr3
+xform_out:
+          flds      fr4,fpul
+          sts       fpul,r0
+xform_end:
+          cmp/hi    r0,r12
+          rts
+          fmac      fr0,fr1,fr3
+          .ALIGN    32
+
+; the vertex sent at the store queue (32 bytes, x and y scaled by 1/w, and the command word:
+; the queue address itself, or shifted right once at the end of a strip), then queued by pref.
+; r3 counts the strip down; T is set after the last one.
+send_vertex:
+          fschg
+          add       #32,r6
+          fmov      @r2,fr0
+          fmul      fr7,fr6       ; y / w
+          fmov      fr2,@-r6
+          fmul      fr7,fr5       ; x / w
+          fmov      fr0,@-r6
+          mov       r6,r2
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          bt/s      send_vertex_end
+          fschg
+          mov.l     r6,@r6        ; command word: the queue address, a vertex of the strip
+          add       #32,r5
+          pref      @r6
+          rts
+          add       #32,r6
+send_vertex_end:
+          shar      r2
+          mov.l     r2,@r6        ; command word shifted: the end of the strip
+          add       #32,r5
+          sett
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; the vertex kept in the ring slot r11 & 3 (the slots are 32 bytes, filled backwards)
+ring_store:
+          mov       #5,r10
+          mov       r11,r0
+          and       #3,r0
+          fschg
+          shld      r10,r0
+          mov.l     ring_end_adr,r10
+          fmov      @r2,fr0
+          add       r0,r10
+          fmov      fr2,@-r10
+          fmov      fr0,@-r10
+          fmov      fr6,@-r10
+          fmov      fr4,@-r10
+          rts
+          fschg
+          .ALIGN    32
+
+; flat shading: the latest vertex's colours copied into the two before it
+ring_flat:
+          mov       #5,r1
+          mov.l     ring_end_adr,r10
+          mov       r11,r0
+          and       #3,r0
+          mov       r10,r2
+          shld      r1,r0
+          fschg
+          add       r0,r10
+          add       #-8,r10
+          mov       r11,r0
+          fmov      @r10,fr2
+          add       #-1,r0
+          mov       r2,r10
+          and       #3,r0
+          shld      r1,r0
+          add       r0,r2
+          mov       r11,r0
+          fmov      fr2,@-r2
+          add       #-2,r0
+          and       #3,r0
+          shld      r1,r0
+          add       r0,r10
+          fmov      fr2,@-r10
+          rts
+          fschg
+          .ALIGN    32
+
+; ring slot r0 sent as a vertex; the colours scaled by fr3. T set asks for the end-of-strip command
+send_ring:
+          and       #3,r0
+          mov       #5,r2
+          mov.l     ring_adr,r10
+          shld      r2,r0
+          fschg
+          add       r0,r10
+          fmov      @r10+,fr0
+          fmov      @r10+,fr2
+          add       #32,r6
+          fmov      @r10+,fr4
+          fmul      fr3,fr2
+          fmov      @r10+,fr6
+          fmul      fr3,fr1
+          fmov      fr6,@-r6
+          mov       r6,r2
+          fmov      fr4,@-r6
+          add       #32,r5
+          fmov      fr2,@-r6
+          bf/s      send_ring_cmd
+          fmov      fr0,@-r6
+          shar      r2
+          sett
+send_ring_cmd:
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+          .ALIGN    32
+
+; the point where the edge from ring slot r0 to slot r11 crosses the near limit: the factor
+; (limit - depth0) / (depth1 - depth0) applied to each of x, y, u, v and the colours, then sent.
+; T set asks for the end-of-strip command
+send_cut:
+          and       #3,r0
+          shll2     r0
+          mov.l     ring_adr,r10
+          shll2     r0
+          add       r0,r0
+          mov       r10,r2
+          add       r0,r10
+          mov       r11,r0
+          and       #3,r0
+          fmov      @r10,fr2
+          shll2     r0
+          shll2     r0
+          add       r0,r0
+          add       r0,r2
+          fmov      @r2,fr1
+          lds       r12,fpul
+          fsts      fpul,fr0
+          fsub      fr2,fr0
+          add       #24,r10
+          fsub      fr2,fr1
+          add       #24,r2
+          fdiv      fr1,fr0
+          lds       r7,fpul
+          fsts      fpul,fr1
+          fschg
+          fmov      @r2,fr4
+          add       #-8,r2
+          fmov      @r10,fr2
+          add       #-8,r10
+          fsub      fr2,fr4
+          fsub      fr3,fr5
+          add       #32,r6
+          fmac      fr0,fr4,fr2
+          fmac      fr0,fr5,fr3
+          fmov      fr2,@-r6
+          fmov      @r2,fr4
+          add       #-8,r2
+          fmov      @r10,fr2
+          add       #-8,r10
+          fsub      fr2,fr4
+          fsub      fr3,fr5
+          fmac      fr0,fr4,fr2
+          fmac      fr0,fr5,fr3
+          fmov      fr2,@-r6
+          fschg
+          fmov      fr1,@-r6
+          fmov      @r2,fr5
+          add       #-4,r2
+          fmov      @r10,fr3
+          add       #-4,r10
+          fmov      @r2,fr4
+          fmov      @r10,fr2
+          fsub      fr3,fr5
+          fsub      fr2,fr4
+          mov       #-16,r2
+          fmac      fr0,fr5,fr3
+          shll16    r2
+          fmac      fr0,fr4,fr2
+          shll8     r2
+          fmul      fr1,fr3
+          add       #32,r5
+          fmul      fr1,fr2
+          fmov      fr3,@-r6
+          fmov      fr2,@-r6
+          bt        send_cut_cmd
+          mov       r6,r2
+send_cut_cmd:
+          mov.l     r2,@-r6
+          pref      @r6
+          rts
+          add       #32,r6
+ring_adr:       .DATA.L   _gpwbuf+RING
+ring_end_adr:   .DATA.L   _gpwbuf+RING+VTX_SIZE ; slot 0's end: the ring is filled backwards
+          .ALIGN    32
+
+; a run of triangles (r3 of them) that may reach past the near limit. The three vertices
+; are transformed at once and the pattern of their near tests picks what is sent
+triangle_nc_satu:                       ; ( r4 data, r5 vertex buffer, r6 store queue )
+          mov.l     r10,@-r15
+          mov.l     r11,@-r15
+          sts.l     pr,@-r15
+          mov.l     @r4+,r3
+tnc_tri:
+          bsr       tnc_xform3
+          mov       #0,r9
+          mov       r9,r0
+          cmp/eq    #0,r0
+          bt        tnc_all_in
+          cmp/eq    #7,r0
+          bt        tnc_all_out
+          bsr       xform_vertex
+          mov       #0,r11
+          bsr       ring_store
+          nop
+          bsr       xform_vertex
+          mov       #1,r11
+          bsr       ring_store
+          nop
+          bsr       xform_vertex
+          mov       #2,r11
+          bsr       ring_store
+          nop
+          mov       r12,r0
+          tst       #1,r0
+          bt/s      tnc_case
+          shll2     r9
+          bsr       ring_flat
+          nop
+
+; by the pattern, bit 2 the first vertex; 0 and 7 are done before, their slots are empty
+tnc_case:
+          braf      r9
+          nop
+          nop
+          nop
+          bra       tnc_pat1
+          nop
+          bra       tnc_pat2
+          nop
+          bra       tnc_pat3
+          nop
+          bra       tnc_pat4
+          nop
+          bra       tnc_pat5
+          nop
+          bra       tnc_pat6
+          nop
+          nop
+          nop
+
+; next triangle; r3 counts them
+tnc_next:
+          dt        r3
+          bf        tnc_tri
+          mov       #1,r0
+          lds.l     @r15+,pr
+          or        r0,r12
+          mov.l     @r15+,r11
+          rts
+          mov.l     @r15+,r10
+
+; all three in front: send them as they are
+tnc_all_in:
+          mov       r3,r9
+          bsr       xform_vertex
+          mov       #3,r3
+          bsr       send_vertex
+          nop
+          bsr       xform_vertex
+          nop
+          bsr       send_vertex
+          nop
+          bsr       xform_vertex
+          nop
+          bsr       send_vertex
+          nop
+          bra       tnc_next
+          mov       r9,r3
+
+; all three cut away: only the data cursor moves
+tnc_all_out:
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        tnc_all_out_2
+          add       #24,r4
+tnc_all_out_2:
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        tnc_all_out_3
+          add       #24,r4
+tnc_all_out_3:
+          mov.l     @r4,r0
+          tst       #1,r0
+          add       #8,r4
+          bt        tnc_all_out_end
+          add       #24,r4
+tnc_all_out_end:
+          bra       tnc_next
+          nop
+tnc_pat1:
+          clrt
+          bsr       send_ring
+          mov       #0,r0
+          clrt
+          bsr       send_ring
+          mov       #1,r0
+          clrt
+          mov       #2,r11
+          bsr       send_cut
+          mov       #0,r0
+          sett
+          bsr       send_cut
+          mov       #1,r0
+          bra       tnc_next
+          nop
+tnc_pat2:
+          clrt
+          bsr       send_ring
+          mov       #0,r0
+          clrt
+          mov       #1,r11
+          bsr       send_cut
+          mov       #0,r0
+          clrt
+          mov       #2,r11
+          bsr       send_ring
+          mov       #2,r0
+          sett
+          bsr       send_cut
+          mov       #1,r0
+          bra       tnc_next
+          nop
+tnc_pat3:
+          clrt
+          bsr       send_ring
+          mov       #0,r0
+          clrt
+          mov       #1,r11
+          bsr       send_cut
+          mov       #0,r0
+          sett
+          mov       #2,r11
+          bsr       send_cut
+          mov       #0,r0
+          bra       tnc_next
+          nop
+tnc_pat4:
+          clrt
+          mov       #1,r11
+          bsr       send_cut
+          mov       #0,r0
+          clrt
+          bsr       send_ring
+          mov       #1,r0
+          clrt
+          mov       #2,r11
+          bsr       send_cut
+          mov       #0,r0
+          sett
+          bsr       send_ring
+          mov       #2,r0
+          bra       tnc_next
+          nop
+tnc_pat5:
+          clrt
+          mov       #1,r11
+          bsr       send_cut
+          mov       #0,r0
+          clrt
+          bsr       send_ring
+          mov       #1,r0
+          sett
+          mov       #2,r11
+          bsr       send_cut
+          mov       #1,r0
+          bra       tnc_next
+          nop
+tnc_pat6:
+          clrt
+          mov       #2,r11
+          bsr       send_cut
+          mov       #0,r0
+          clrt
+          bsr       send_cut
+          mov       #1,r0
+          sett
+          bsr       send_ring
+          mov       #2,r0
+          bra       tnc_next
+          nop
+          .ALIGN    32
+
+; the three vertices at r4 transformed into the ring and tested for the near limit:
+; r9 gets one bit each, the first vertex's the highest
+tnc_xform3:
+          mov       r4,r1
+          mov.l     @r4,r0
+          tst       #1,r0
+          bf/s      tnc_v0_inline
+          fmov      @r4+,fr4
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr4
+          fmov      @r0+,fr5
+          fmov      @r0+,fr6
+          bra       tnc_v0_done
+          fldi1     fr7
+tnc_v0_inline:
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          fldi1     fr7
+          add       #24,r4
+tnc_v0_done:
+          pref      @r4
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv4
+          mov.l     @r4,r0
+          tst       #1,r0
+          bf/s      tnc_v1_inline
+          fmov      @r4+,fr0
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr0
+          fmov      @r0+,fr1
+          fmov      @r0+,fr2
+          bra       tnc_v1_done
+          fldi1     fr3
+tnc_v1_inline:
+          fmov      @r4+,fr1
+          fmov      @r4,fr2
+          fldi1     fr3
+          add       #24,r4
+tnc_v1_done:
+          add       #32,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv0
+          mov.l     @r4,r0
+          tst       #1,r0
+          flds      fr7,fpul
+          bf/s      tnc_v2_inline
+          fmov      @r4+,fr4
+          mov.l     @r4+,r0
+          add       r4,r0
+          fmov      @r0+,fr4
+          fmov      @r0+,fr5
+          fmov      @r0+,fr6
+          bra       tnc_v2_done
+          fldi1     fr7
+tnc_v2_inline:
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          fldi1     fr7
+tnc_v2_done:
+          mov       r1,r4
+          sts       fpul,r0
+          ftrv      xmtrx,fv4
+          cmp/hi    r0,r12
+          flds      fr3,fpul
+          rotcl     r9
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          flds      fr7,fpul
+          rotcl     r9
+          sts       fpul,r0
+          cmp/hi    r0,r12
+          rts
+          rotcl     r9
+          .ALIGN    32
+
+; a run of triangles entirely in front of the near limit, lit as strip_tex_satu
+; (r8 = 0 diffuse, bit 0 set flat, else the specular row): r9 triangles of 3 vertices each
+triangle_tex_satu:                      ; ( r4 data, r5 vertex buffer, r6 store queue )
+          tst       r8,r8
+          mov       r8,r0
+          bf        ttx_mode
+          bra       ttx_lit
+ttx_mode:
+          tst       #1,r0
+          bf        ttx_flat
+          bra       ttx_spec
+          nop
+ttx_flat:
+          mov.l     @r4+,r9
+          fldi1     fr2
+          fschg
+          fldi0     fr3
+          mov       #3,r3
+          fmov      fr2,@-r6
+          add       #32,r6
+          fmov      fr2,@r6
+          mov.l     @r4,r0
+          mov       r4,r14
+          tst       #1,r0
+          add       #32,r4
+          bf        ttx_flat_pos
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+ttx_flat_pos:
+          fmov      @r14+,fr4
+          fmov      @r14,fr6
+          add       #16,r14
+          fldi1     fr7
+          fmov      @r14,fr0
+          ftrv      xmtrx,fv4
+ttx_flat_loop:
+          fldi1     fr7
+          fdiv      fr4,fr7
+          dt        r3
+          mov.l     @r4+,r0
+          bt/s      ttx_flat_more_a
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov       r6,r2
+          bt/s      ttx_flat_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+ttx_flat_a:
+          fmov      @r14+,fr8
+          add       #32,r4
+          pref      @r4
+          fmov      @r14,fr10
+          add       #16,r14
+          fldi1     fr11
+          fmul      fr7,fr6
+          fmov      fr0,@-r6
+          fmul      fr7,fr5
+          fmov      fr6,@-r6
+          ftrv      xmtrx,fv8
+          fmov      fr4,@-r6
+          add       #-32,r4
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          dt        r3
+          pref      @r6
+          add       #56,r6
+          mov       r6,r2
+          fldi1     fr11
+          fdiv      fr8,fr11
+          mov.l     @r4+,r0
+          bt/s      ttx_flat_more_b
+          mov.l     @r4+,r14
+          tst       #1,r0
+          bt/s      ttx_flat_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+ttx_flat_b:
+          add       #32,r4
+          fmov      @r14+,fr4
+          pref      @r4
+          fmov      @r14,fr6
+          add       #16,r14
+          fldi1     fr7
+          fmul      fr11,fr10
+          add       #-32,r4
+          fmul      fr11,fr9
+          fmov      fr0,@-r6
+          fmov      fr10,@-r6
+          ftrv      xmtrx,fv4
+          fmov      fr8,@-r6
+          add       #64,r5
+          mov.l     r2,@r6
+          fmov      @r14,fr0
+          pref      @r6
+          bra       ttx_flat_loop
+          add       #56,r6
+ttx_flat_more_b:
+          dt        r9
+          mov       r6,r2
+          bt/s      ttx_flat_end_b
+          shar      r2
+          tst       #1,r0
+          mov       #3,r3
+          bt/s      ttx_flat_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       ttx_flat_b
+          add       #-8,r14
+ttx_flat_end_b:
+          add       #48,r4
+          pref      @r4
+          add       #-48,r4
+          fmov      fr8,fr4
+          add       #32,r5
+          bra       ttx_flat_last
+          fmov      fr10,fr6
+          .ALIGN    4
+ttx_flat_more_a:
+          dt        r9
+          mov       r6,r2
+          bt/s      ttx_flat_end_a
+          shar      r2
+          tst       #1,r0
+          mov       #3,r3
+          bt/s      ttx_flat_a
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       ttx_flat_a
+          add       #-8,r14
+ttx_flat_end_a:
+          add       #48,r4
+          pref      @r4
+          add       #-48,r4
+ttx_flat_last:
+          fmul      fr7,fr6
+          fmov      fr0,@-r6
+          fmul      fr7,fr5
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          add       #-8,r4
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+
+; diffuse lit triangle
+ttx_lit:
+          mov.l     @r4+,r9
+          add       #32,r6
+          fschg
+          mov       #3,r3
+          mov.l     @r4,r0
+          mov       r4,r14
+          fldi0     fr2
+          tst       #1,r0
+          add       #32,r4
+          bf        ttx_lit_pos
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+ttx_lit_pos:
+          fmov      @r14+,fr4
+          mov       r6,r2
+          fmov      @r14+,fr6
+          fadd      fr7,fr2
+          fldi1     fr7
+          fldi0     fr3
+          fmov      @r14+,fr0
+          ftrv      xmtrx,fv4
+ttx_lit_loop:
+          mov.l     @r4+,r0
+          flds      fr15,fpul
+          dt        r3
+          mov.l     @r4+,r1
+          fipr      fv12,fv0
+          fldi1     fr7
+          bt/s      ttx_lit_more_a
+          fdiv      fr4,fr7
+          tst       #1,r0
+          add       r4,r1
+          bt/s      ttx_lit_a
+          fsts      fpul,fr2
+          mov       r4,r1
+          add       #24,r4
+          add       #-8,r1
+ttx_lit_a:
+          fldi0     fr10
+          fcmp/gt   fr10,fr3
+          fmov      @r1+,fr8
+          add       #32,r4
+          fmov      @r13,fr0
+          bf        ttx_lit_a_back
+          fadd      fr3,fr2
+ttx_lit_a_back:
+          pref      @r4
+          cmp/pz    r8
+          fadd      fr2,fr1
+          fldi0     fr3
+          bf        ttx_lit_a_satu
+          fmac      fr0,fr1,fr3
+ttx_lit_a_satu:
+          fmov      @r14,fr0
+          fmov      @r1+,fr10
+          add       #-32,r4
+          fmov      fr2,@-r6
+          fsub      fr2,fr2
+          fmov      fr0,@-r6
+          fmul      fr7,fr6
+          fmov      @r1+,fr0
+          fadd      fr11,fr2
+          fldi1     fr11
+          fmul      fr7,fr5
+          add       #32,r5
+          fmov      fr6,@-r6
+          dt        r3
+          fmov      fr4,@-r6
+          ftrv      xmtrx,fv8
+          mov.l     r2,@r6
+          fsub      fr3,fr3
+          mov.l     @r4+,r0
+          mov       r6,r2
+          pref      @r6
+          add       #64,r6
+          mov.l     @r4+,r14
+          flds      fr15,fpul
+          fipr      fv12,fv0
+          fldi1     fr11
+          bt/s      ttx_lit_more_b
+          fdiv      fr8,fr11
+          tst       #1,r0
+          add       r4,r14
+          bt/s      ttx_lit_b
+          fsts      fpul,fr2
+          mov       r4,r14
+          add       #24,r4
+          add       #-8,r14
+ttx_lit_b:
+          fldi0     fr0
+          fcmp/gt   fr0,fr3
+          fmov      @r14+,fr4
+          add       #32,r4
+          fmov      @r13,fr0
+          bf        ttx_lit_b_back
+          fadd      fr3,fr2
+ttx_lit_b_back:
+          pref      @r4
+          cmp/pz    r8
+          fadd      fr2,fr1
+          fldi0     fr3
+          bf        ttx_lit_b_satu
+          fmac      fr0,fr1,fr3
+ttx_lit_b_satu:
+          fmov      @r1,fr0
+          fmov      @r14+,fr6
+          add       #-32,r4
+          fmov      fr2,@-r6
+          fsub      fr2,fr2
+          fmov      fr0,@-r6
+          fmul      fr11,fr10
+          fmov      @r14+,fr0
+          fadd      fr7,fr2
+          fldi1     fr7
+          fmul      fr11,fr9
+          add       #32,r5
+          fmov      fr10,@-r6
+          fsub      fr3,fr3
+          fmov      fr8,@-r6
+          ftrv      xmtrx,fv4
+          mov.l     r2,@r6
+          mov       r6,r2
+          pref      @r6
+          bra       ttx_lit_loop
+          add       #64,r6
+ttx_lit_more_b:
+          dt        r9
+          fsts      fpul,fr2
+          mov       r6,r2
+          bt/s      ttx_lit_end_b
+          shar      r2
+          tst       #1,r0
+          mov       #3,r3
+          bt/s      ttx_lit_b
+          add       r4,r14
+          mov       r4,r14
+          add       #24,r4
+          bra       ttx_lit_b
+          add       #-8,r14
+ttx_lit_end_b:
+          add       #48,r4
+          pref      @r4
+          add       #-48,r4
+          fmov      fr8,fr4
+          bra       ttx_lit_last
+          fmov      fr10,fr6
+ttx_lit_more_a:
+          dt        r9
+          fsts      fpul,fr2
+          mov       r6,r2
+          bt/s      ttx_lit_end_a
+          shar      r2
+          tst       #1,r0
+          mov       #3,r3
+          bt/s      ttx_lit_a
+          add       r4,r1
+          mov       r4,r1
+          add       #24,r4
+          bra       ttx_lit_a
+          add       #-8,r1
+          .ALIGN    4
+ttx_lit_end_a:
+          add       #48,r4
+          mov       r14,r1
+          pref      @r4
+          add       #-48,r4
+ttx_lit_last:
+          fldi0     fr0
+          fcmp/gt   fr0,fr3
+          fmov      @r13,fr0
+          bf        ttx_lit_last_back
+          fadd      fr3,fr2
+ttx_lit_last_back:
+          cmp/pz    r8
+          fmov      @r1,fr10
+          fadd      fr2,fr1
+          fldi0     fr3
+          bf        ttx_lit_last_satu
+          fmac      fr0,fr1,fr3
+ttx_lit_last_satu:
+          fmul      fr7,fr6
+          fmov      fr2,@-r6
+          fmul      fr7,fr5
+          fmov      fr10,@-r6
+          fmov      fr6,@-r6
+          add       #32,r5
+          fmov      fr4,@-r6
+          add       #-8,r4
+          mov.l     r2,@r6
+          fschg
+          pref      @r6
+          rts
+          add       #32,r6
+
+; specular triangle
+ttx_spec:
+          mov       #127,r2
+          mov       #3,r3
+          mov.l     @r4+,r9
+          add       #-32,r6
+          mov.l     @r4,r0
+          add       #127,r2
+          fschg
+          add       #55,r2
+          tst       #1,r0
+          mov       r4,r14
+          bf/s      ttx_spec_pos
+          add       #32,r4
+          mov.l     @(4,r14),r14
+          add       #-24,r4
+          add       r4,r14
+ttx_spec_pos:
+          fmov      @r14+,fr4
+ttx_spec_loop:
+          fmov      @r14+,fr6
+          mov       r6,r7
+          fldi0     fr2
+          fadd      fr7,fr2
+          fldi1     fr7
+          add       #64,r6
+          fldi0     fr3
+          add       #32,r5
+          fmov      @r14+,fr0
+          ftrv      xmtrx,fv4
+          fldi0     fr11
+          dt        r3
+          mov.l     @r4+,r0
+          bt/s      ttx_spec_more
+          mov       r14,r1
+          fipr      fv12,fv0
+          tst       #1,r0
+          mov.l     @r4+,r14
+          bf/s      ttx_spec_inline
+          fldi1     fr7
+          fdiv      fr4,fr7
+          pref      @r4
+ttx_spec_ref:
+          fcmp/gt   fr11,fr3
+          add       r4,r14
+          flds      fr15,fpul
+          fipr      fv0,fv8
+          fmov      @r13,fr0
+          pref      @r14
+          bf/s      ttx_spec_none
+          fsts      fpul,fr2
+          fadd      fr3,fr2
+          fldi0     fr3
+          bra       ttx_spec_look
+          ftrc      fr11,fpul
+ttx_spec_end_off:
+          add       #-28,r4
+          fldi1     fr7
+ttx_spec_inline:
+          fdiv      fr4,fr7
+ttx_spec_inline_ref:
+          add       #24,r4
+          fcmp/gt   fr11,fr3
+          flds      fr15,fpul
+          fipr      fv0,fv8
+          mov       r4,r14
+          fmov      @r13,fr0
+          add       #-32,r14
+          pref      @r4
+          bf/s      ttx_spec_none
+          fsts      fpul,fr2
+          fadd      fr3,fr2
+          ftrc      fr11,fpul
+          fldi0     fr3
+ttx_spec_look:
+          sts       fpul,r0
+          fadd      fr2,fr1
+          cmp/gt    r2,r0
+          shll2     r0
+          bf        ttx_spec_satu
+          fcmp/gt   fr3,fr1
+          fschg
+          fmov      @(r0,r8),fr3
+          bf/s      ttx_spec_send
+          fschg
+          bra       ttx_spec_send
+          fmac      fr0,fr1,fr3
+ttx_spec_none:
+          fadd      fr2,fr1
+          fldi0     fr3
+ttx_spec_satu:
+          fmac      fr0,fr1,fr3
+ttx_spec_send:
+          fmov      @r1,fr0
+          fmul      fr7,fr6
+          fmov      fr2,@-r6
+          fmul      fr7,fr5
+          fmov      fr0,@-r6
+          tst       r3,r3
+          fmov      fr6,@-r6
+          fmov      fr4,@-r6
+          bt/s      ttx_spec_flush
+          mov.l     r7,@r6
+          fmov      @r14+,fr4
+          bra       ttx_spec_loop
+ttx_spec_flush:
+          pref      @r6
+          add       #32,r6
+          rts
+          fschg
+          .ALIGN    4
+ttx_spec_more:
+          mov       r6,r7
+          shar      r7
+          dt        r9
+          bt/s      ttx_spec_end_off
+          fipr      fv12,fv0
+          mov.l     @r4+,r14
+          tst       #1,r0
+          mov.l     three,r3
+          fldi1     fr7
+          bf/s      ttx_spec_inline_ref
+          fdiv      fr4,fr7
+          bra       ttx_spec_ref
+          pref      @r4
+          .DATA.W   H'0000
+three:          .DATA.L   H'00000003        ; the vertex count of a triangle
+
+          .END

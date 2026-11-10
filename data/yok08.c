@@ -1,0 +1,1460 @@
+/* Psylocke (character 08): the computer's answers.
+   What it does about an attack that is coming. PLAYER_WORK's cpu_answer_adrs points here;
+   em_answer_sel picks a list from it.
+
+   yok08_tbl        a record (CPU_DATA) for each answer. The row of the attack in its owner's hit
+                    table (hit_dtXX.c) names the answer; YK_GD030 and YK_GD060 are the first two.
+                    A record is the offsets of its sel (twice: no rate is read) and its cmd.
+   yok08_sel_AA     32 picks; one is taken at random.
+   yok08_cmd_AA     the answer's lists: a pick is a number in this table.
+   yok08_cmd_AA_NN  a list, in the commands of cpu_cmd.h. CMD_JUMP and the other jumps name
+                    a list of lib08.c. */
+#include "player.h"
+#include "pl08_def.h"
+#include "cpu_cmd.h"
+
+extern const Uint8 *const yok08_cmd_00[], *const yok08_cmd_01[], *const yok08_cmd_02[],
+	*const yok08_cmd_03[], *const yok08_cmd_04[], *const yok08_cmd_05[], *const yok08_cmd_06[],
+	*const yok08_cmd_07[], *const yok08_cmd_08[];
+extern const Uint8 yok08_sel_00[], yok08_sel_01[], yok08_sel_02[], yok08_sel_03[], yok08_sel_04[],
+	yok08_sel_05[], yok08_sel_06[], yok08_sel_07[], yok08_sel_08[], yok08_cmd_00_00[],
+	yok08_cmd_00_01[], yok08_cmd_00_02[], yok08_cmd_00_03[], yok08_cmd_00_04[], yok08_cmd_00_05[],
+	yok08_cmd_00_06[], yok08_cmd_00_07[], yok08_cmd_00_08[], yok08_cmd_00_09[], yok08_cmd_01_00[],
+	yok08_cmd_01_01[], yok08_cmd_01_02[], yok08_cmd_01_03[], yok08_cmd_01_04[], yok08_cmd_01_05[],
+	yok08_cmd_01_06[], yok08_cmd_01_07[], yok08_cmd_01_08[], yok08_cmd_01_09[], yok08_cmd_02_00[],
+	yok08_cmd_02_01[], yok08_cmd_02_02[], yok08_cmd_02_03[], yok08_cmd_02_04[], yok08_cmd_02_05[],
+	yok08_cmd_02_06[], yok08_cmd_02_07[], yok08_cmd_02_08[], yok08_cmd_02_09[], yok08_cmd_03_00[],
+	yok08_cmd_03_01[], yok08_cmd_03_02[], yok08_cmd_03_03[], yok08_cmd_03_04[], yok08_cmd_03_05[],
+	yok08_cmd_03_06[], yok08_cmd_03_07[], yok08_cmd_03_08[], yok08_cmd_03_09[], yok08_cmd_04_00[],
+	yok08_cmd_04_01[], yok08_cmd_04_02[], yok08_cmd_04_03[], yok08_cmd_04_04[], yok08_cmd_04_05[],
+	yok08_cmd_04_06[], yok08_cmd_04_07[], yok08_cmd_04_08[], yok08_cmd_04_09[], yok08_cmd_05_00[],
+	yok08_cmd_05_01[], yok08_cmd_05_02[], yok08_cmd_05_03[], yok08_cmd_05_04[], yok08_cmd_05_05[],
+	yok08_cmd_05_06[], yok08_cmd_05_07[], yok08_cmd_05_08[], yok08_cmd_05_09[], yok08_cmd_06_00[],
+	yok08_cmd_06_01[], yok08_cmd_06_02[], yok08_cmd_06_03[], yok08_cmd_06_04[], yok08_cmd_06_05[],
+	yok08_cmd_06_06[], yok08_cmd_06_07[], yok08_cmd_06_08[], yok08_cmd_06_09[], yok08_cmd_07_00[],
+	yok08_cmd_07_01[], yok08_cmd_07_02[], yok08_cmd_07_03[], yok08_cmd_07_04[], yok08_cmd_07_05[],
+	yok08_cmd_07_06[], yok08_cmd_07_07[], yok08_cmd_07_08[], yok08_cmd_07_09[], yok08_cmd_08_00[],
+	yok08_cmd_08_01[], yok08_cmd_08_02[], yok08_cmd_08_03[], yok08_cmd_08_04[], yok08_cmd_08_05[],
+	yok08_cmd_08_06[], yok08_cmd_08_07[], yok08_cmd_08_08[], yok08_cmd_08_09[];
+
+const CPU_DATA yok08_tbl[] = {
+	{ ( Sint32 )yok08_sel_00, ( Sint32 )yok08_sel_00, ( Sint32 )yok08_cmd_00 },	/* YK_GD030 */
+	{ ( Sint32 )yok08_sel_01, ( Sint32 )yok08_sel_01, ( Sint32 )yok08_cmd_01 },	/* YK_GD060 */
+	{ ( Sint32 )yok08_sel_02, ( Sint32 )yok08_sel_02, ( Sint32 )yok08_cmd_02 },	/* 2 */
+	{ ( Sint32 )yok08_sel_03, ( Sint32 )yok08_sel_03, ( Sint32 )yok08_cmd_03 },	/* 3 */
+	{ ( Sint32 )yok08_sel_04, ( Sint32 )yok08_sel_04, ( Sint32 )yok08_cmd_04 },	/* 4 */
+	{ ( Sint32 )yok08_sel_05, ( Sint32 )yok08_sel_05, ( Sint32 )yok08_cmd_05 },	/* 5 */
+	{ ( Sint32 )yok08_sel_06, ( Sint32 )yok08_sel_06, ( Sint32 )yok08_cmd_06 },	/* 6 */
+	{ ( Sint32 )yok08_sel_07, ( Sint32 )yok08_sel_07, ( Sint32 )yok08_cmd_07 },	/* 7 */
+	{ ( Sint32 )yok08_sel_08, ( Sint32 )yok08_sel_08, ( Sint32 )yok08_cmd_08 },	/* 8 */
+};
+
+const Uint8 yok08_sel_00[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   3,   1,   1,   0,   0,   0,   0,   2,
+	  1,   1,   1,   1,   1,   1,   1,   2,   9,   1,   1,   2,   1,   1,   1,   7,
+};
+
+const Uint8 *const yok08_cmd_00[] = {
+	yok08_cmd_00_00, yok08_cmd_00_01, yok08_cmd_00_02, yok08_cmd_00_03, yok08_cmd_00_04, yok08_cmd_00_05,
+	yok08_cmd_00_06, yok08_cmd_00_07, yok08_cmd_00_08, yok08_cmd_00_09,
+};
+
+const Uint8 yok08_sel_01[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   1,   3,   3,   3,   0,   0,   0,   0,
+	  3,   3,   3,   3,   3,   3,   3,   3,   7,   3,   2,   2,   3,   3,   3,   8,
+};
+
+const Uint8 *const yok08_cmd_01[] = {
+	yok08_cmd_01_00, yok08_cmd_01_01, yok08_cmd_01_02, yok08_cmd_01_03, yok08_cmd_01_04, yok08_cmd_01_05,
+	yok08_cmd_01_06, yok08_cmd_01_07, yok08_cmd_01_08, yok08_cmd_01_09,
+};
+
+const Uint8 yok08_sel_02[] = {
+	  7,   0,   0,   0,   0,   0,   0,   0,   1,   4,   4,   4,   0,   0,   0,   0,
+	  4,   4,   4,   4,   4,   4,   4,   4,   9,   4,   2,   2,   9,   4,   4,   8,
+};
+
+const Uint8 *const yok08_cmd_02[] = {
+	yok08_cmd_02_00, yok08_cmd_02_01, yok08_cmd_02_02, yok08_cmd_02_03, yok08_cmd_02_04, yok08_cmd_02_05,
+	yok08_cmd_02_06, yok08_cmd_02_07, yok08_cmd_02_08, yok08_cmd_02_09,
+};
+
+const Uint8 yok08_sel_03[] = {
+	  0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+	  0,   0,   0,   0,   4,   4,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+};
+
+const Uint8 *const yok08_cmd_03[] = {
+	yok08_cmd_03_00, yok08_cmd_03_01, yok08_cmd_03_02, yok08_cmd_03_03, yok08_cmd_03_04, yok08_cmd_03_05,
+	yok08_cmd_03_06, yok08_cmd_03_07, yok08_cmd_03_08, yok08_cmd_03_09,
+};
+
+const Uint8 yok08_sel_04[] = {
+	  2,   2,   2,   2,   2,   2,   2,   2,   5,   8,   8,   8,   8,   7,   7,   7,
+	  9,   9,   9,   9,   9,   9,   9,   9,   0,   0,   0,   0,   9,   9,   9,   9,
+};
+
+const Uint8 *const yok08_cmd_04[] = {
+	yok08_cmd_04_00, yok08_cmd_04_01, yok08_cmd_04_02, yok08_cmd_04_03, yok08_cmd_04_04, yok08_cmd_04_05,
+	yok08_cmd_04_06, yok08_cmd_04_07, yok08_cmd_04_08, yok08_cmd_04_09,
+};
+
+const Uint8 yok08_sel_05[] = {
+	  2,   2,   2,   2,   2,   2,   8,   8,   3,   2,   2,   2,   2,   2,   8,   8,
+	  9,   1,   1,   1,   1,   1,   8,   8,   7,   9,   9,   9,   1,   1,   8,   8,
+};
+
+const Uint8 *const yok08_cmd_05[] = {
+	yok08_cmd_05_00, yok08_cmd_05_01, yok08_cmd_05_02, yok08_cmd_05_03, yok08_cmd_05_04, yok08_cmd_05_05,
+	yok08_cmd_05_06, yok08_cmd_05_07, yok08_cmd_05_08, yok08_cmd_05_09,
+};
+
+const Uint8 yok08_sel_06[] = {
+	  7,   7,   7,   0,   0,   0,   6,   3,   2,   2,   2,   2,   2,   2,   2,   2,
+	  9,   9,   1,   1,   1,   1,   1,   8,   7,   7,   7,   7,   7,   1,   1,   1,
+};
+
+const Uint8 *const yok08_cmd_06[] = {
+	yok08_cmd_06_00, yok08_cmd_06_01, yok08_cmd_06_02, yok08_cmd_06_03, yok08_cmd_06_04, yok08_cmd_06_05,
+	yok08_cmd_06_06, yok08_cmd_06_07, yok08_cmd_06_08, yok08_cmd_06_09,
+};
+
+const Uint8 yok08_sel_07[] = {
+	  1,   2,   0,   0,   0,   0,   0,   5,   7,   7,   7,   7,   7,   7,   7,   5,
+	  7,   7,   7,   7,   7,   7,   7,   7,   9,   9,   0,   0,   6,   6,   6,   6,
+};
+
+const Uint8 *const yok08_cmd_07[] = {
+	yok08_cmd_07_00, yok08_cmd_07_01, yok08_cmd_07_02, yok08_cmd_07_03, yok08_cmd_07_04, yok08_cmd_07_05,
+	yok08_cmd_07_06, yok08_cmd_07_07, yok08_cmd_07_08, yok08_cmd_07_09,
+};
+
+const Uint8 yok08_sel_08[] = {
+	  2,   2,   2,   2,   2,   2,   2,   2,   0,   0,   6,   6,   6,   6,   6,   6,
+	  0,   0,   6,   6,   6,   6,   6,   6,   3,   3,   9,   9,   8,   8,   8,   8,
+};
+
+const Uint8 *const yok08_cmd_08[] = {
+	yok08_cmd_08_00, yok08_cmd_08_01, yok08_cmd_08_02, yok08_cmd_08_03, yok08_cmd_08_04, yok08_cmd_08_05,
+	yok08_cmd_08_06, yok08_cmd_08_07, yok08_cmd_08_08, yok08_cmd_08_09,
+};
+
+const Uint8 yok08_cmd_00_00[] = {
+	LOCK_SET,
+	IF_AREA2( 128, 160, 0, 0 ),
+		IF_LEVEL( 24 ),
+			IF_RND( 14 ),
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 13 ),
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 12 ),
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 11 ),
+							GUARD( 30 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 10 ),
+							GUARD( 30 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_01[] = {
+	LOCK_SET,
+	IF_ATCK_COME,
+		IF_LEVEL( 24 ),
+			IF_RND( 14 ),
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 13 ),
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 12 ),
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 11 ),
+							GUARD( 30 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 10 ),
+							GUARD( 30 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_02[] = {
+	LOCK_SET,
+	IF_AREA2( 112, 144, 0, 0 ),
+		IF_LEVEL( 24 ),
+			IF_RND( 14 ),
+				JUMP( DIR_UP ),
+				CMD_JUMP( 14 ),
+				CMD_JUMP( 52 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 13 ),
+					JUMP( DIR_UP ),
+					CMD_JUMP( 14 ),
+					CMD_JUMP( 52 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 12 ),
+						JUMP( DIR_UP ),
+						CMD_JUMP( 14 ),
+						CMD_JUMP( 52 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 11 ),
+							JUMP( DIR_UP ),
+							CMD_JUMP( 14 ),
+							CMD_JUMP( 52 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 10 ),
+							JUMP( DIR_UP ),
+							CMD_JUMP( 14 ),
+							CMD_JUMP( 52 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_03[] = {
+	GUARD( 60 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_04[] = {
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_06[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_08[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 26 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_RND( 16 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_00_09[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 14 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 13 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 12 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 11 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 10 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_00[] = {
+	LOCK_SET,
+	IF_AREA2( 128, 128, 0, 0 ),
+		IF_LEVEL( 24 ),
+			IF_RND( 14 ),
+				GUARD( 60 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 13 ),
+					GUARD( 60 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 12 ),
+						GUARD( 60 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 11 ),
+							GUARD( 60 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 10 ),
+							GUARD( 60 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_01[] = {
+	GUARD( 60 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_02[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 10 ),
+			IF_AREA2( 88, 144, 0, 0 ),
+				JUMP( DIR_UP ),
+				CMD_JUMP( 14 ),
+				CMD_JUMP( 52 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_03[] = {
+	LOCK_SET,
+	IF_ATCK_COME,
+		IF_LEVEL( 24 ),
+			IF_RND( 14 ),
+				GUARD( 60 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 13 ),
+					GUARD( 60 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 12 ),
+						GUARD( 60 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 11 ),
+							GUARD( 60 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 10 ),
+							GUARD( 60 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_04[] = {
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_06[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_08[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 26 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_RND( 16 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_01_09[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 14 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 13 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 12 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 11 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 10 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_00[] = {
+	LOCK_SET,
+	IF_AREA2( 128, 144, 0, 0 ),
+		IF_LEVEL( 24 ),
+			IF_RND( 15 ),
+				GUARD( 120 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 14 ),
+					GUARD( 120 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 13 ),
+						GUARD( 120 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 12 ),
+							GUARD( 120 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 11 ),
+							GUARD( 120 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_01[] = {
+	VCOUNTER_SET( 6 ),
+	GUARD( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_02[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 10 ),
+			IF_AREA2( 88, 144, 0, 0 ),
+				JUMP( DIR_UP ),
+				CMD_JUMP( 14 ),
+				CMD_JUMP( 52 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_03[] = {
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_04[] = {
+	LOCK_SET,
+	IF_ATCK_COME,
+		IF_LEVEL( 24 ),
+			IF_RND( 15 ),
+				GUARD( 120 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 14 ),
+					GUARD( 120 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 13 ),
+						GUARD( 120 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 12 ),
+							GUARD( 120 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 11 ),
+							GUARD( 120 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_06[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_08[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 26 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_RND( 16 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_02_09[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 15 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 14 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 13 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 12 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 11 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_00[] = {
+	LOCK_SET,
+	IF_AREA2( 136, 128, 0, 0 ),
+		IF_LEVEL( 16 ),
+			IF_RND( 4 ),
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			WAIT( 30 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT( 30 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_01[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_02[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 10 ),
+			IF_AREA2( 88, 144, 0, 0 ),
+				CMD_JUMP( 14 ),
+				CMD_JUMP( 52 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_03[] = {
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_04[] = {
+	LOCK_SET,
+	IF_ATCK_COME,
+		GUARD( 120 ),
+	CMD_ELSE,
+		IF_LEVEL( 24 ),
+		CMD_ELSE,
+			WAIT2( 6 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	WAIT2( 2 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_06[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_08[] = {
+	LOCK_SET,
+	CMD_JUMP( 2 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_03_09[] = {
+	LOCK_SET,
+	IF_AREA2( 144, 0, 0, 0 ),
+		TIMER2_SET( 30 ),
+		JUMP( DIR_FORWARD ),
+		CMD_JUMP( 14 ),
+		CMD_JUMP( 52 ),
+	CMD_ENDIF,
+	STAND,
+	LOCK_CLR,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_00[] = {
+	LOCK_SET,
+	IF_DIST( 240, 144, 0, 0 ),
+		STAND,
+		GUARD( 60 ),
+		IF_ATCK_COME,
+			GUARD( 30 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_01[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_02[] = {
+	LOCK_SET,
+	TIMER_SET( 40 ),
+	IF_AREA2( 240, 112, 48, 0 ),
+		IF_AREA2( 112, 144, 0, 0 ),
+			GUARD( 60 ),
+		CMD_ELSE,
+			TIMER_SET( 60 ),
+			IF_AREA2( 112, 112, 0, 0 ),
+				JUMP( DIR_UP ),
+				CMD_JUMP( 14 ),
+				CMD_JUMP( 52 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	STAND,
+	LOCK_CLR,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_03[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_04[] = {
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_05[] = {
+	GUARD( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_06[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_07[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 17 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 16 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 15 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 14 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 13 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_08[] = {
+	LOCK_SET,
+	CMD_JUMP( 2 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_04_09[] = {
+	LOCK_SET,
+	TIMER_SET( 40 ),
+	IF_AREA2( 240, 112, 48, 0 ),
+		IF_AREA2( 112, 112, 0, 0 ),
+			GUARD( 60 ),
+		CMD_ELSE,
+			JUMP_RND( 35, 36, 35, 36 ),
+			TIMER_SET( 60 ),
+			IF_AREA2( 192, 112, 0, 0 ),
+				JUMP( DIR_FORWARD ),
+				CMD_JUMP( 14 ),
+				CMD_JUMP( 52 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	STAND,
+	LOCK_CLR,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_00[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_01[] = {
+	LOCK_SET,
+	IF_AREA2( 112, 112, 32, 0 ),
+		GUARD2( 60 ),
+	CMD_ELSE,
+		DASH_EM( 64 ),
+		IF_EM_ATCK( ATCK_CROUCH_HK ),
+			STAND,
+			CANCEL_SET,
+				KICK( LV_HEAVY ),
+				IF_RND( 16 ),
+					SP_CMD( pl08_sp_blast, 0, PK_PUNCH, LV_HEAVY, 0 ),
+				CMD_ENDIF,
+				CANCEL_CLR,
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_EM_ATCK( ATCK_CROUCH_HP ),
+				CANCEL_SET2,
+					CROUCH,
+					PUNCH( LV_HEAVY ),
+					IF_LEVEL( 6 ),
+						SJUMP_FLAG_SET,
+							IF_RND( 2 ),
+								JUMP_LEVEL( 24, 16, 24, 20, 23, 31, 6 ),
+							CMD_ELSE,
+								JUMP_LEVEL( 40, 16, 39, 20, 24, 31, 24 ),
+							CMD_ENDIF,
+							JUMP_FLAG_CLR,
+						CMD_ENDIF,
+					CMD_ENDIF,
+					CANCEL_CLR,
+				CMD_ENDIF,
+			CMD_ELSE,
+				TIMER_SET( 30 ),
+				IF_EM_ATCK( 64 ),
+					SP_CMD( pl08_sp_spin, 0, PK_PUNCH, LV_LIGHT, 0 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+		STAND,
+	CMD_ENDIF,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_02[] = {
+	LOCK_SET,
+	IF_AREA2( 96, 144, 16, 0 ),
+		GUARD2( 60 ),
+	CMD_ELSE,
+		IF_RND( 16 ),
+			DASH_EM( 32 ),
+		CMD_ELSE,
+			JUMP( DIR_UP ),
+			CMD_JUMP( 14 ),
+			CMD_JUMP( 52 ),
+		CMD_ENDIF,
+		STAND,
+		WAIT2( 4 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_03[] = {
+	VCOUNTER_SET( 6 ),
+	GUARD2( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_04[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_06[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_08[] = {
+	LOCK_SET,
+	CMD_JUMP( 2 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_05_09[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 17 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 16 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 15 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 14 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 13 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_00[] = {
+	LOCK_SET,
+	IF_AREA2( 144, 128, 0, 0 ),
+		IF_LEVEL( 5 ),
+			IF_RND( 30 ),
+				GUARD( 60 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_RND( 20 ),
+				GUARD( 60 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_01[] = {
+	LOCK_SET,
+	CROUCH,
+	TIMER_SET( 40 ),
+	IF_ATCK_COME,
+		GUARD( 30 ),
+	CMD_ELSE,
+		IF_LEVEL( 18 ),
+		CMD_ELSE,
+			WAIT2( 6 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_02[] = {
+	LOCK_SET,
+	STAND,
+	TIMER_SET( 10 ),
+	IF_AREA2( 112, 128, 0, 0 ),
+		JUMP( DIR_UP ),
+		CMD_JUMP( 14 ),
+		CMD_JUMP( 52 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_03[] = {
+	GUARD( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_04[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_06[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 15 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 14 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 13 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 12 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 11 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_08[] = {
+	LOCK_SET,
+	CMD_JUMP( 2 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_06_09[] = {
+	LOCK_SET,
+	TIMER_SET( 10 ),
+	IF_AREA2( 192, 112, 0, 0 ),
+		IF_AREA2( 64, 112, 0, 0 ),
+			GUARD( 30 ),
+		CMD_ELSE,
+			JUMP_RND( 35, 36, 35, 36 ),
+			JUMP( DIR_FORWARD ),
+			CMD_JUMP( 14 ),
+			CMD_JUMP( 52 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+	CMD_ENDIF,
+	STAND,
+	LOCK_CLR,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_00[] = {
+	LOCK_SET,
+	IF_AREA2( 144, 192, 0, 0 ),
+		IF_LEVEL( 16 ),
+			IF_RND( 30 ),
+				GUARD( 30 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_RND( 16 ),
+				GUARD( 30 ),
+			CMD_ELSE,
+				WAIT2( 2 ),
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_01[] = {
+	VCOUNTER_SET( 6 ),
+	GUARD( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_02[] = {
+	LOCK_SET,
+	STAND,
+	TIMER_SET( 10 ),
+	IF_AREA2( 112, 128, 0, 0 ),
+		JUMP( DIR_UP ),
+		CMD_JUMP( 14 ),
+		CMD_JUMP( 52 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_03[] = {
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_04[] = {
+	LOCK_SET,
+	TIMER_SET( 5 ),
+	IF_ATCK_COME,
+		IF_LEVEL( 24 ),
+			IF_RND( 15 ),
+				GUARD( 120 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 21 ),
+				IF_RND( 14 ),
+					GUARD( 120 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 13 ),
+					IF_RND( 13 ),
+						GUARD( 120 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_LEVEL( 7 ),
+						IF_RND( 12 ),
+							GUARD( 120 ),
+						CMD_ENDIF,
+					CMD_ELSE,
+						IF_RND( 11 ),
+							GUARD( 120 ),
+						CMD_ENDIF,
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_05[] = {
+	LOCK_SET,
+	IF_LEVEL( 2 ),
+		IF_RND( 26 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_RND( 16 ),
+			CMD_JUMP( 2 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_06[] = {
+	LOCK_SET,
+	IF_AREA2( 144, 60, 0, 0 ),
+		JUMP_RND( 35, 36, 35, 36 ),
+		JUMP( DIR_FORWARD ),
+		CMD_JUMP( 14 ),
+		CMD_JUMP( 52 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	STAND,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_08[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_07_09[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 15 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 14 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 13 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 12 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 11 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_00[] = {
+	LOCK_SET,
+	IF_AREA2( 240, 144, 32, 0 ),
+		IF_LEVEL( 31 ),
+			IF_RND( 31 ),
+				GUARD( 30 ),
+				IF_AREA2( 144, 144, 0, 0 ),
+					GUARD( 30 ),
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 16 ),
+				IF_RND( 29 ),
+					GUARD( 30 ),
+					IF_AREA2( 144, 144, 0, 0 ),
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_RND( 27 ),
+					GUARD( 30 ),
+					IF_AREA2( 144, 144, 0, 0 ),
+						GUARD( 30 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ELSE,
+		WAIT2( 2 ),
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_01[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_02[] = {
+	LOCK_SET,
+	TIMER2_SET( 20 ),
+	TIMER_SET( 40 ),
+	IF_AREA2( 240, 112, 48, 0 ),
+		IF_AREA2( 144, 144, 0, 0 ),
+			GUARD( 60 ),
+		CMD_ELSE,
+			JUMP( DIR_UP ),
+			CMD_JUMP( 14 ),
+			CMD_JUMP( 52 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	STAND,
+	LOCK_CLR,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_03[] = {
+	GUARD( 120 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_04[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_05[] = {
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_06[] = {
+	LOCK_SET,
+	TIMER_SET( 40 ),
+	IF_AREA2( 240, 112, 48, 0 ),
+		IF_AREA2( 144, 144, 0, 0 ),
+			GUARD( 60 ),
+		CMD_ELSE,
+			JUMP( DIR_FORWARD ),
+			CMD_JUMP( 14 ),
+			CMD_JUMP( 52 ),
+		CMD_ENDIF,
+	CMD_ENDIF,
+	STAND,
+	LOCK_CLR,
+	WAIT2( 2 ),
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_07[] = {
+	LOCK_SET,
+	CMD_JUMP( 41 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_08[] = {
+	LOCK_SET,
+	CMD_JUMP( 2 ),
+	LOCK_CLR,
+	CMD_EXIT,
+};
+
+const Uint8 yok08_cmd_08_09[] = {
+	LOCK_SET,
+	IF_LEVEL( 24 ),
+		IF_RND( 16 ),
+			CMD_JUMP( 46 ),
+			CMD_JUMP( 18 ),
+		CMD_ENDIF,
+	CMD_ELSE,
+		IF_LEVEL( 21 ),
+			IF_RND( 15 ),
+				CMD_JUMP( 46 ),
+				CMD_JUMP( 18 ),
+			CMD_ENDIF,
+		CMD_ELSE,
+			IF_LEVEL( 13 ),
+				IF_RND( 14 ),
+					CMD_JUMP( 46 ),
+					CMD_JUMP( 18 ),
+				CMD_ENDIF,
+			CMD_ELSE,
+				IF_LEVEL( 7 ),
+					IF_RND( 13 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ELSE,
+					IF_RND( 12 ),
+						CMD_JUMP( 46 ),
+						CMD_JUMP( 18 ),
+					CMD_ENDIF,
+				CMD_ENDIF,
+			CMD_ENDIF,
+		CMD_ENDIF,
+	CMD_ENDIF,
+	LOCK_CLR,
+	CMD_EXIT,
+};

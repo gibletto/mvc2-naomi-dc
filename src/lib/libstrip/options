@@ -1,0 +1,1 @@
+-cpu=sh4 -pic=0 -endian=little -fpu=single -string=const -sjis -round=zero -optimize=1 -size -align16
