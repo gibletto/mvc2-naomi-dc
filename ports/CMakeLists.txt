@@ -153,7 +153,7 @@ add_library(mvc2_span_end OBJECT ${PORT}/game/span_end.c)
 # (objcopy -G). What it uses and does not define binds to the host, and two programs can share one
 # executable. The names it keeps in place become NAME.name, and the executable's link gives their addresses.
 set(GEN ${CMAKE_BINARY_DIR}/gen)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86|i686|AMD64|i386" AND WIN32)
+if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     set(UNDERSCORE --underscore)
     set(SYM_PREFIX _)
 endif()
