@@ -322,9 +322,15 @@ endif()
 # mvc2.cfg (unless there is one)
 if(WIN32)
     get_filename_component(TOOL_BIN ${CMAKE_C_COMPILER} DIRECTORY)
+    set(DLL_DIRS ${TOOL_BIN})
+    if(TARGET SDL3::SDL3-shared)
+        get_target_property(SDL_DLL SDL3::SDL3-shared LOCATION)
+        get_filename_component(SDL_BIN ${SDL_DLL} DIRECTORY)
+        list(PREPEND DLL_DIRS ${SDL_BIN})
+    endif()
     install(TARGETS mvc2 mvc2dc
             RUNTIME_DEPENDENCIES
-                DIRECTORIES ${TOOL_BIN}
+                DIRECTORIES ${DLL_DIRS}
                 PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-"
                 POST_EXCLUDE_REGEXES "[Ss][Yy][Ss][Tt][Ee][Mm]32" "[Ss][Yy][Ss][Ww][Oo][Ww]64"
             RUNTIME DESTINATION .)

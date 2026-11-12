@@ -50,6 +50,9 @@ jobs:
     name: Windows
     runs-on: windows-2025
     timeout-minutes: 30
+    env:
+      SDL3_VERSION: 3.4.2
+      SDL3_SHA256: 7b8f0c5453ea68e7afc6bacb79c44b8492aa312fce712fb3be5a7b3ada393cb2
     defaults:
       run:
         shell: msys2 {0}
@@ -63,14 +66,23 @@ jobs:
             mingw-w64-i686-gcc
             mingw-w64-i686-cmake
             mingw-w64-i686-ninja
-            mingw-w64-i686-sdl3
             mingw-w64-i686-python
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      - name: Get SDL3
+        working-directory: .
+        run: |
+          curl -fsSL -o sdl3.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL3_VERSION/SDL3-devel-$SDL3_VERSION-mingw.tar.gz"
+          echo "$SDL3_SHA256  sdl3.tar.gz" | sha256sum -c
+          dir="$(cygpath -u "$RUNNER_TEMP")/sdl3"
+          mkdir -p "$dir"
+          tar -xzf sdl3.tar.gz -C "$dir" --strip-components=1
+          rm sdl3.tar.gz
+
       - name: Build
         run: |
-          cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc
+          cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc -DCMAKE_PREFIX_PATH="$(cygpath -m "$RUNNER_TEMP")/sdl3/i686-w64-mingw32"
           ninja -C build

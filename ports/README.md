@@ -36,8 +36,9 @@ Dreamcast the files of your own USA disc, extracted into a folder.
 
 ## PC (Windows, MSYS2 mingw32)
 
-32-bit, because the game stores addresses in 32 bits. Needs `mingw-w64-i686-gcc`, `-cmake`, `-ninja`,
-`-sdl3` and Python 3. From this folder:
+32-bit, because the game stores addresses in 32 bits. Needs `mingw-w64-i686-gcc`, `-cmake`, `-ninja` and
+Python 3, and SDL3: MSYS2's `mingw-w64-i686-sdl3` where it still has one, or the `i686-w64-mingw32` folder of
+libsdl's `SDL3-devel-VERSION-mingw.tar.gz`, given as `-DCMAKE_PREFIX_PATH=FOLDER`. From this folder:
 
     cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc
     ninja -C build
