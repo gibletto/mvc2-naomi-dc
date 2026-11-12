@@ -6,29 +6,52 @@ The names in here are Capcom's wherever they could be found, so blame them for `
 
 ## What this is
 
-This is the program of the arcade game *Marvel vs. Capcom 2: New Age of Heroes* (the NAOMI cartridge, MAME set
-`mvsc2`), turned back into source code. It is a decompilation: the machine code in the program ROM has been
-rewritten as C, and as SH-4 assembler where the original was assembler (the SH-4 is the NAOMI board's CPU), so
-people can read it and change it.
+This is the source code of *Marvel vs. Capcom 2: New Age of Heroes*, turned back from the machine code of two
+releases: the NAOMI arcade cartridge (MAME set `mvsc2`) and the Dreamcast disc. One source tree builds both, and
+each comes out byte for byte as it shipped:
 
-It is also a byte-for-byte match. It builds with the original toolchain (Hitachi's SHC 5.1 Release 08, asmsh 4.0,
-lnk 6.0A and elf2bin) and Sega's NAOMI libraries: the compiler turns the C into machine code, the assembler does
-the same for the assembler files, and the linker joins the pieces into one program. Every routine comes out as the
-arcade's exact bytes, and the finished file is the cartridge's program ROM:
+    epr-23085a.ic11   4,194,304 bytes   sha1 f58c31b245fc33fa541f9f074548402a63f7c3d3   the arcade's program ROM
+    1ST_READ.BIN      1,809,817 bytes   sha1 b0c3604e3494b12f751793a74fc9b494ed67a30c   the Dreamcast disc's program
 
-    epr-23085a.ic11   4,194,304 bytes   sha1 f58c31b245fc33fa541f9f074548402a63f7c3d3
+It is a decompilation: the machine code has been rewritten as C, and as SH-4 assembler where the original was
+assembler (the SH-4 is the CPU of both machines), so people can read it and change it. Most files are the same
+for both. Where the Dreamcast differs, the file says so with `#ifdef TARGET_DC`.
 
-The ROM holds two programs, the game and the operator's test menu, and the fighting data of the 59 characters
-(moves, hit boxes, the computer's play). All of that is built from this source. The pictures, models and sound
-are in the cartridge's other ROMs and are not part of this.
-
-The same source also builds the US cartridge's program ROM and the Dreamcast version from the USA disc (see
-The US arcade version and The Dreamcast version below).
+The same C also runs elsewhere. `ports/` compiles it into a PC and a 3DS version of the game, which play from
+your own ROM set or disc.
 
 For a tour of how the game itself works (the frame loop, inputs, special moves, hit boxes, damage), read
 `docs/HOW_THE_GAME_WORKS.md`.
 
+## Choose your version
+
+To build a program that is byte for byte the original:
+
+- the arcade's export cartridge, MAME set `mvsc2`: [Building](#building)
+- the US arcade cartridge, MAME set `mvsc2u`: [The US arcade version](#the-us-arcade-version)
+- the Dreamcast USA disc: [The Dreamcast version](#the-dreamcast-version)
+
+These need Windows, Hitachi's compiler and Sega's SDK libraries. None of them can be included here, so the
+sections below say where to find them.
+
+To build a port, which plays the game on another machine:
+
+- PC (Windows): [ports/README.md](ports/README.md)
+- Nintendo 3DS: [ports/3DS.md](ports/3DS.md). A work in progress: it runs both versions, but on an Old 3DS
+  fights are only about 10 fps so far.
+
+These need only GCC, CMake, Python 3 and SDL3, or devkitPro for the 3DS. The releases have them ready to play.
+
 ## Building
+
+The arcade build uses the original toolchain (Hitachi's SHC 5.1 Release 08, asmsh 4.0, lnk 6.0A and elf2bin)
+and Sega's NAOMI libraries: the compiler turns the C into machine code, the assembler does the same for the
+assembler files, and the linker joins the pieces into one program. Every routine comes out as the arcade's
+exact bytes, and the finished file is the cartridge's program ROM, `epr-23085a.ic11`.
+
+The ROM holds two programs, the game and the operator's test menu, and the fighting data of the 59 characters
+(moves, hit boxes, the computer's play). All of that is built from this source. The pictures, models and sound
+are in the cartridge's other ROMs and are not part of this.
 
 You need Windows (the compiler's tools are Win32 programs), Python 3, your own ROM, and two zips from Sega's NAOMI
 SDK. The Internet Archive has the SDK as the item `NaomiSDK`:
@@ -141,6 +164,10 @@ Things that were learned on the way:
     functions.tsv  every routine of the game program: arcade address, size, name, file
     tools/         mvc2rom.py: reads your ROM; chrpack.py: packs the characters' data
     rom/           your ROM goes here
+    symbols.txt    every named address of the arcade's program (symbols_dc.txt: the Dreamcast's)
+    pointers.tsv   the words of the arcade's program that hold addresses, and those addresses
+                   (pointers_dc.tsv: the Dreamcast's), which a port needs to load the program's data
+    ports/         the PC and 3DS ports
 
 A character's code is `src/s_plXX.c`, where XX is the character's number in hexadecimal (`s_pl00.c` is Ryu). Its
 fireballs and other effects are in `shlXX_YY.c` and `plsXX_YY.c`, and its data in `data/`.
@@ -237,7 +264,8 @@ from the compiler's zip, apart from two small modules.
 ## Contributing
 
 As this is an exact byte-match, every contribution must keep the match: build, and check that the SHA-1 line still
-says the ROM is the arcade's. Contributions should improve or explain the code: a better name, a field worked out,
+says the ROM is the arcade's (and, for a file the Dreamcast shares, that `build.bat dc` still matches the disc).
+The ports build from the same files, and GitHub's Build workflow checks that they still do. Contributions should improve or explain the code: a better name, a field worked out,
 a clearer way to write a routine that still compiles to the same bytes.
 
 A "fake" match is source that builds the right bytes but is unlikely to be what Capcom wrote: an odd loop, an
@@ -246,4 +274,5 @@ routines only match with them. Changes should lower their number or explain them
 
 ## License
 
-GNU Affero General Public License v3.0 (`LICENSE`). `NOTICE.md` lists what the license does not cover.
+GNU Affero General Public License v3.0 (`LICENSE`). `NOTICE.md` lists what the license does not cover, and
+`ports/NOTICE.md` what the ports take from elsewhere.

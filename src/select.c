@@ -38,6 +38,12 @@ extern void obj_uv_begin( int *src, void *obj );
 extern int obj_uv_next( void );
 extern void obj_uv_get( Float *x, Float *y );
 extern void obj_uv_put( Float *x, Float *y );
+#ifdef HOST_PORT
+extern int host_unlock ;	/* the host's unlock = all */
+#define ARCADE_CLEAR	( host_unlock || Sys->arcade_clear )
+#else
+#define ARCADE_CLEAR	Sys->arcade_clear
+#endif
 #ifdef TARGET_DC
 extern void load_side_set( Uint8 side );	/* am_load.c: the sides whose players' files are read */
 extern void pl_data_no_init( int side );
@@ -201,6 +207,12 @@ static void sel_mask_set( Sint8 side )
 	on[1] = pl_work[0].card_open[1] | pl_work[1].card_open[1] | Sys->char_open1 ;
 	off[0] = pl_work[0].card_ex[0] | pl_work[1].card_ex[0] | Sys->char_open_all0 ;
 	off[1] = pl_work[0].card_ex[1] | pl_work[1].card_ex[1] | Sys->char_open_all1 ;
+#ifdef HOST_PORT
+	if( host_unlock ){	/* select's masks only, never what is saved */
+		on[0] = off[0] = 0xf8ffffff ;
+		on[1] = off[1] = 0x07ffffff ;
+	}
+#endif
 	sel_w.char_ex[side][0] = 0 ;
 	sel_w.char_ex[side][1] = 0 ;
 #ifdef TARGET_DC
@@ -268,6 +280,9 @@ static void sel_init( void )
 	Texture_Init() ;
 #ifdef TARGET_DC
 	sel_w.stage_ex_cnt = vms_work.stage_ex_cnt ;
+#ifdef HOST_PORT
+	if( host_unlock ) sel_w.stage_ex_cnt = 7 ;
+#endif
 	if( Sys->home_mode == HOME_VERSUS ){
 		sel_w.stage_cur = 0 ;
 		stage_no = 17 ;
@@ -513,7 +528,7 @@ static int sel_stage_move( PLAYER_WORK *pl_w )
 	Sint8 max ;
 
 	old = sel_w.stage_cur ;
-	max = sel_w.stage_ex_cnt + Sys->arcade_clear + 10 ;
+	max = sel_w.stage_ex_cnt + ARCADE_CLEAR + 10 ;
 	if( sel_sw_on[pl_w->pl_index] & ( KEY_UP | KEY_DOWN ) ){
 		na_req( 1 ) ;
 		if( sel_sw_on[pl_w->pl_index] & KEY_UP ) sel_w.stage_cur = ( sel_w.stage_cur + max - 1 ) % max ;
@@ -528,7 +543,7 @@ static int sel_stage_move( PLAYER_WORK *pl_w )
 		tex_req_flag = 1 ;
 		tex_req_no = 29 ;
 	}
-	if( Sys->arcade_clear ) stage_no = stage_tbl_ex[sel_w.stage_cur] ;
+	if( ARCADE_CLEAR ) stage_no = stage_tbl_ex[sel_w.stage_cur] ;
 	else stage_no = stage_tbl[sel_w.stage_cur] ;
 	if( sel_sw_on[pl_w->pl_index] & ( KEY_LP | KEY_HP | KEY_LK | KEY_HK ) ){
 		na_req( 2 ) ;
@@ -2089,6 +2104,12 @@ static void sel_pl_mask_set( PLAYER_WORK *pl_w )
 	on[1] = pl_w->card_open[1] | Sys->char_open1 ;
 	off[0] = pl_w->card_ex[0] | Sys->char_open_all0 ;
 	off[1] = pl_w->card_ex[1] | Sys->char_open_all1 ;
+#ifdef HOST_PORT
+	if( host_unlock ){
+		on[0] = off[0] = 0xf8ffffff ;
+		on[1] = off[1] = 0x07ffffff ;
+	}
+#endif
 	sel_w.char_ex[pl_w->pl_index][0] = 0 ;
 	sel_w.char_ex[pl_w->pl_index][1] = 0 ;
 #ifdef TARGET_DC

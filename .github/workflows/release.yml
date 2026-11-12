@@ -1,0 +1,228 @@
+name: Release
+
+# Builds the Windows and 3DS zips and attaches them to the release (by hand: with a tag, or none to only
+# build). The ROM-exact builds can't run here: SHC and Sega's SDK libraries can't be redistributed.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to attach the zips to (empty to only build)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: devkitpro/devkitarm:20260610@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5
+    defaults:
+      run:
+        working-directory: ports
+    steps:
+      - name: Install build tools
+        working-directory: .
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake ninja-build python3 git
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - name: Build
+        run: |
+          cmake -G Ninja -B build-3ds -DCMAKE_TOOLCHAIN_FILE=port/cmake/3ds-native.cmake -DDEVKITPRO="$DEVKITPRO"
+          ninja -C build-3ds
+          cmake -G Ninja -B build-o3ds -DCMAKE_TOOLCHAIN_FILE=port/cmake/3ds-native.cmake -DDEVKITPRO="$DEVKITPRO" \
+            -DOLD_3DS_TEST=ON
+          ninja -C build-o3ds
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: build-3ds
+          path: |
+            ports/build-3ds/mvc2
+            ports/build-3ds/mvc2.3dsx
+            ports/build-o3ds/mvc2
+            ports/build-o3ds/mvc2.3dsx
+          if-no-files-found: error
+          retention-days: 7
+
+  # makerom needs a newer glibc than the devkitPro image has
+  package:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: build-3ds
+          path: ports
+
+      - name: Get makerom and bannertool
+        run: |
+          mkdir -p tools-bin && cd tools-bin
+          curl -fsSL -o makerom.zip https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.19.0/makerom-v0.19.0-ubuntu_x86_64.zip
+          curl -fsSL -o bannertool.zip https://github.com/diasurgical/bannertool/releases/download/1.2.0/bannertool.zip
+          sha256sum -c <<'SUMS'
+          287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e  makerom.zip
+          69768596f836acb3e3aeaa66e47c6ba560dde813c6dfcd33c8afc25fe29b7524  bannertool.zip
+          SUMS
+          unzip -q makerom.zip makerom
+          unzip -q -j bannertool.zip linux-x86_64/bannertool
+          chmod +x makerom bannertool
+
+      - name: Make the CIAs
+        # as ctr_create_cia (port/cmake/3ds-native.cmake), with the titles and CIA_MODE from CMakeLists.txt
+        working-directory: ports
+        run: |
+          python3 - > ../cia_modes <<'PY'
+          import re
+          s = open("CMakeLists.txt").read()
+          for o3ds in (False, True):
+              arm = re.search(r"if\(OLD_3DS_TEST\)(.*?)else\(\)(.*?)endif\(\)", s, re.S).group(1 if o3ds else 2)
+              get = lambda k: " ".join(re.search(r"set\(%s (.*?)\)\s*$" % k, arm, re.S | re.M).group(1).split())
+              print("build-o3ds" if o3ds else "build-3ds", get("TITLE"), get("DESCRIPTION"), get("CIA_MODE"), sep="|")
+          PY
+          cat ../cia_modes
+          while IFS='|' read -r out title description mode; do
+            title=${title//\"/} description=${description//\"/}
+            ../tools-bin/bannertool makebanner -i port/ctr/cia/banner.png -a port/ctr/cia/banner.wav -o $out/mvc2.bnr
+            ../tools-bin/bannertool makesmdh -s "$title" -l "$description" -p "mvsc2-naomi-port" -i port/ctr/icon.png \
+              -o $out/mvc2.cia.smdh
+            # shellcheck disable=SC2086
+            ../tools-bin/makerom -f cia -o $out/mvc2.cia -target t -exefslogo -elf $out/mvc2 -rsf port/ctr/cia/mvc2.rsf \
+              -icon $out/mvc2.cia.smdh -banner $out/mvc2.bnr $mode
+          done < ../cia_modes
+
+      - name: Package
+        id: package
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          version="${TAG:-$(git rev-parse --short=7 HEAD)}"
+          name="mvc2-3ds-$version"
+          for kind in 3ds o3ds-test; do
+            n="mvc2-$kind-$version"
+            dir="dist/$n"
+            build=ports/build-3ds
+            [ $kind = o3ds-test ] && build=ports/build-o3ds
+            mkdir -p "$dir/sd/3ds/mvc2/roms/mvsc2" "$dir/sd/3ds/mvc2/disc"
+            cp $build/mvc2.3dsx "$dir/sd/3ds/mvc2/"
+            cp $build/mvc2.cia "$dir/"
+            touch "$dir/sd/3ds/mvc2/roms/mvsc2/PUT THE mvsc2 SET'S FILES HERE.txt"
+            touch "$dir/sd/3ds/mvc2/disc/PUT THE USA DISC'S FILES HERE.txt"
+            cp ports/3DS.md "$dir/README.md"
+            cp LICENSE "$dir/LICENSE.txt"
+            cp ports/NOTICE.md "$dir/NOTICE.md"
+            (cd dist && zip -r -9 "$n.zip" "$n")
+            (cd dist && sha256sum "$n.zip" > "$n.zip.sha256")
+          done
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  # 32-bit: the game stores addresses in 32 bits
+  pc:
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+        working-directory: ports
+    steps:
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: MINGW32
+          update: false
+          install: >-
+            mingw-w64-i686-gcc
+            mingw-w64-i686-cmake
+            mingw-w64-i686-ninja
+            mingw-w64-i686-sdl3
+            mingw-w64-i686-python
+            zip
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - name: Build
+        run: |
+          cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc
+          ninja -C build
+
+      - name: Package
+        id: package
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          version="${TAG:-${GITHUB_SHA::7}}"
+          name="mvc2-windows-$version"
+          dir="../dist/$name"
+          cmake --install build --prefix "$dir"
+          mkdir -p "$dir/roms/mvsc2" "$dir/disc"
+          touch "$dir/roms/mvsc2/PUT THE mvsc2 SET'S FILES HERE.txt"
+          touch "$dir/disc/PUT THE USA DISC'S FILES HERE.txt"
+          cp ../LICENSE "$dir/LICENSE.txt"
+          cp NOTICE.md "$dir/NOTICE.md"
+          (cd ../dist && zip -r -9 "$name.zip" "$name")
+          (cd ../dist && sha256sum "$name.zip" > "$name.zip.sha256")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/${{ steps.package.outputs.name }}.zip
+            dist/${{ steps.package.outputs.name }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [package, pc]
+    if: github.event_name == 'release' || inputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: mvc2-*
+          merge-multiple: true
+          path: assets
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" assets/* --clobber

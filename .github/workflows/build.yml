@@ -1,0 +1,76 @@
+name: Build
+
+# Builds the ports for Windows and the 3DS. The ROM-exact builds can't run here: SHC and Sega's SDK
+# libraries can't be redistributed.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ctr:
+    name: 3DS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: devkitpro/devkitarm:20260610@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5
+    defaults:
+      run:
+        working-directory: ports
+    steps:
+      - name: Install build tools
+        working-directory: .
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake ninja-build python3 git
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        run: |
+          cmake -G Ninja -B build-3ds -DCMAKE_TOOLCHAIN_FILE=port/cmake/3ds-native.cmake -DDEVKITPRO="$DEVKITPRO"
+          ninja -C build-3ds
+
+      - name: Build the Old 3DS test build
+        run: |
+          cmake -G Ninja -B build-o3ds -DCMAKE_TOOLCHAIN_FILE=port/cmake/3ds-native.cmake -DDEVKITPRO="$DEVKITPRO" \
+            -DOLD_3DS_TEST=ON
+          ninja -C build-o3ds
+
+  pc:
+    name: Windows
+    runs-on: windows-2025
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: msys2 {0}
+        working-directory: ports
+    steps:
+      - uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: MINGW32
+          update: false
+          install: >-
+            mingw-w64-i686-gcc
+            mingw-w64-i686-cmake
+            mingw-w64-i686-ninja
+            mingw-w64-i686-sdl3
+            mingw-w64-i686-python
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        run: |
+          cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc
+          ninja -C build
