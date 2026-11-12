@@ -1,15 +1,11 @@
 # Marvel vs. Capcom 2 (NAOMI and Dreamcast) on PC and 3DS, from the decompilation (MVC2_DECOMP: by default
-# the folder above, else ../mvsc2-naomi-decomp).
+# the folder above).
 #   cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc && ninja -C build    (MSYS2 mingw32; -DMVC2_SDL3=OFF: SDL2)
 cmake_minimum_required(VERSION 3.21)
-project(mvsc2_naomi_port C)
+project(mvc2_ports C)
 
 set(PORT ${CMAKE_SOURCE_DIR}/port)
-if(EXISTS ${CMAKE_SOURCE_DIR}/../mvc2.sub)
-    get_filename_component(DEFAULT_DECOMP ${CMAKE_SOURCE_DIR}/.. ABSOLUTE)
-else()
-    set(DEFAULT_DECOMP ${CMAKE_SOURCE_DIR}/../mvsc2-naomi-decomp)
-endif()
+get_filename_component(DEFAULT_DECOMP ${CMAKE_SOURCE_DIR}/.. ABSOLUTE)
 set(MVC2_DECOMP ${DEFAULT_DECOMP} CACHE PATH "the decompilation")
 set(GAME ${MVC2_DECOMP})
 if(EXISTS ${GAME}/pointers.tsv)

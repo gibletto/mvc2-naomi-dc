@@ -3,7 +3,7 @@
 A port of Marvel vs. Capcom 2, the NAOMI arcade game and the Dreamcast version, to PC and Nintendo 3DS,
 built on their decompilation, which is the rest of this repository. It is not an emulator: the decompiled
 game is compiled for the host, and the port supplies what the NAOMI board, the Dreamcast and Sega's libraries
-did. It follows the layout of [sfiii3-cps3-port](https://github.com/gibletto/sfiii3-cps3-port).
+did.
 
 To play on Windows, unzip a release, put the game's data in `roms/mvsc2` and `disc` beside `mvc2.exe`, and
 run it; `PLAYING.md` has the keys and settings. For the 3DS, see [3DS.md](3DS.md).
@@ -31,8 +31,8 @@ Dreamcast the files of your own USA disc, extracted into a folder.
   Shinobi's calls, the memory card and the ADX music's decoder.
 - `port/snd/` is the sound: the AICA's ARM7 and DSP, which run the game's own sound driver, and Sega's sound
   libraries' calls over them.
-- `port/sdl/` is the PC front end (`start.c` picks the version from the data it finds), `port/ctr/` the 3DS one. `port/sys/` holds the coroutine and
-  division-by-zero support from sfiii3-cps3-port.
+- `port/sdl/` is the PC front end (`start.c` picks the version from the data it finds), `port/ctr/` the 3DS
+  one. `port/sys/` runs the game as a coroutine and makes a division by zero give 0, as SHC's code did.
 
 ## PC (Windows, MSYS2 mingw32)
 

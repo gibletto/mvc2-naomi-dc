@@ -5,11 +5,6 @@
 This repository holds source code only. The game's program, graphics and sound come from the user's own copy,
 read at start-up: the arcade's ROM set, or the files of the Dreamcast disc.
 
-## port/sys and port/cmake
-
-The coroutine and division-by-zero support (`port/sys`) and the 3DS toolchain file (`port/cmake`) come from
-[sfiii3-cps3-port](https://github.com/gibletto/sfiii3-cps3-port) (AGPL-3.0).
-
 ## port/naomi/naomi_m1.c
 
 The M1 cartridge's packed-file scheme is as worked out in MAME's `naomim1.cpp` (BSD-3-Clause,
