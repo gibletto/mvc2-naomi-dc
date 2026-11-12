@@ -356,21 +356,34 @@ int pl22_delay_ck( PLAYER_WORK *pl_w )
 	else com = com_dmidare ;
 	if( com_nml_ck( pl_w, com, &pl_w->com_w ) && *pl_w->gauge_level ){
 		pl_w->delay_sp_type = pl22_sp_midare ;
+		/* from the European disc on, a hyper combo sets the attack level too */
+#if BUILD_DATE >= 20000412
+		pl_w->atck_level = 1 ;
+#endif
 		return 1 ;
 	}
 	if( !pl_w->obj_flag ) com = com_shinkuu ;
 	else com = com_dshinkuu ;
 	if( com_nml_ck( pl_w, com, &pl_w->com_w0 ) && *pl_w->gauge_level ){
 		pl_w->delay_sp_type = com[2] ;
+#if BUILD_DATE >= 20000412
+		pl_w->atck_level = 1 ;
+#endif
 		return 1 ;
 	}
 	if( com_nml_ck( pl_w, com_haru, &pl_w->com_w1 ) && *pl_w->gauge_level ){
 		if( 1 ) pl_w->delay_sp_type = pl22_sp_haru ;
 		else pl_w->delay_sp_type = pl22_sp_haru ;
+#if BUILD_DATE >= 20000412
+		pl_w->atck_level = 1 ;
+#endif
 		return 1 ;
 	}
 	if( pl_w->obj_flag && com_seq_ck( pl_w, com_shungoku, &pl_w->com_w7 ) && *pl_w->gauge_level >= 3 ){
 		pl_w->delay_sp_type = pl22_sp_shungoku ;
+#if BUILD_DATE >= 20000412
+		pl_w->atck_level = 1 ;
+#endif
 		return 1 ;
 	}
 	return 0 ;
@@ -3002,6 +3015,9 @@ void	pl22_sp_gattai( PLAYER_WORK *pl_w )
 
 	pl_w->routine_2 = pl_w->routine_3 = pl_w->routine_1 = PL_NORM ;
 	pl_w->pl_sp_type = gattai_tbl[pl_w->pl_personal + pl_w->obj_flag * 3] ;
+#if BUILD_DATE >= 20000412	/* the level, as in pl22_delay_ck */
+	pl_w->atck_level = 1 ;
+#endif
 	act_st_set( pl_w, N_SUPER ) ;
 }
 

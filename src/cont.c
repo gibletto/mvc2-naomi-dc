@@ -5,6 +5,10 @@
 extern void disp_stage_front( void ) ;
 extern void cont_ef0_set( void ) ;
 extern void cont_ef1_set( void ) ;
+#ifdef TARGET_DC
+extern void load_stop( void ) ;
+extern void fight_load_start( int no ) ;	/* am_load.c: asks the disc for a scene's files */
+#endif
 
 static void cont_start( void ) ;
 static void cont_count( void ) ;
@@ -38,6 +42,21 @@ static void cont_start( void )
 	TexLoad( 15 ) ;
 	back_color_set2( 0xff000000, 0xff000000 ) ;
 	sys = Sys ;
+#ifdef TARGET_DC
+	/* the home game has no continue setting */
+	if( sys->event_flag ){
+		sys->routine_0 = 2 ;
+		return ;
+	}
+	sys->routine_0 ++ ;
+	Sys->entry_stop = 0 ;
+	Sys->timer2 = 9 ;
+	Sys->timer3 = 120 ;
+	se_vol_up( 0, 1 ) ;
+	se_vol_up( 1, 1 ) ;
+	scene_song_req( 4, 23 ) ;
+	na_req( 60 ) ;
+#else
 	if( sys->event_flag ) goto skip ;
 	if( sys->cont_enable ){
 		sys->routine_0 ++ ;
@@ -54,9 +73,15 @@ skip:
 		sys->routine_0 = 2 ;
 		return ;
 	}
+#endif
 	cont_ef0_set() ;
 	cont_ef1_set() ;
 	back_color_set( 0xffffffff ) ;
+#ifdef TARGET_DC
+	/* the select's files are read while the count runs */
+	load_stop() ;
+	fight_load_start( 8 ) ;
+#endif
 }
 
 /*==============================================================*/

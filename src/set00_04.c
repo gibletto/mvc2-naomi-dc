@@ -10,7 +10,12 @@ extern int obj_uv_next( void ) ;
 extern int obj_uv_pos_get( VEC3 *v ) ;
 extern int obj_uv_pos_put( VEC3 *v ) ;
 
-static VEC3 set00_04_pos = { -300.0f, 1450.0f, -4110.0f } ;
+static VEC3 set00_04_pos[] = {
+	{ -300.0f, 1450.0f, -4110.0f },
+#ifdef TARGET_DC	/* the stage's other look */
+	{ -690.0f, 1500.0f, -4180.0f },
+#endif
+} ;
 
 static void set00_04_main( PLAYER_WORK *ew ) ;
 
@@ -23,7 +28,12 @@ void set00_04_set( void )
 		ew->disp_flag = 1 ;
 		ew->work_func = set00_04_main ;
 		ew->obj = obj_stg->obj[11] ;
-		ew->pos = set00_04_pos ;
+#ifdef TARGET_DC
+		if( stage_no == 0 ) ew->pos = set00_04_pos[0] ;
+		else ew->pos = set00_04_pos[1] ;
+#else
+		ew->pos = set00_04_pos[0] ;
+#endif
 		ew->obj_flag = OBJ_POS | OBJ_BRIGHT ;
 	}
 }

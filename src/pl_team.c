@@ -14,6 +14,9 @@ extern void pl_prio_set( PLAYER_WORK *pl_l, PLAYER_WORK *ef_l ) ;
 extern void pl_push_ck( void ) ;
 extern void vital_red_recover( void ) ;
 extern void vital_red_timer( void ) ;
+#ifdef TARGET_DC
+extern void vital_drain_move( void ) ;
+#endif
 extern void pl_change_set( PLAYER_WORK *pl_w, PLAYER_WORK *nw ) ;
 extern void pl_change_in_set2( PLAYER_WORK *pl_w ) ;
 extern void pl_hyper_scr_flash( PLAYER_WORK *pl_w ) ;
@@ -39,6 +42,9 @@ static void change_snap( PLAYER_WORK *pl_w ) ;
 static void team_hyper_ck( void ) ;
 static void team_end_ck( PLAYER_WORK *pl_w, PLAYER_WORK *w1, PLAYER_WORK *w2 ) ;
 static void team_end_ck_all( void ) ;
+#ifdef TARGET_DC
+static void gauge_auto_add( void ) ;
+#endif
 static void hyper_bg_se_ck( void ) ;
 
 /****************************************************************/
@@ -88,6 +94,10 @@ void pl_work_move( void )
 	vital_red_recover() ;
 	vital_red_timer() ;
 	cpu_level_set() ;
+#ifdef TARGET_DC	/* the home rules */
+	gauge_auto_add() ;
+	vital_drain_move() ;
+#endif
 }
 
 /****************************************************************/
@@ -627,6 +637,19 @@ static void team_end_ck_all( void )
 		team_end_ck( w0, w1, w2 ) ;
 	}
 }
+
+#ifdef TARGET_DC
+/*==============================================================*/
+/*			Training: the gauges fill by themselves				*/
+/*==============================================================*/
+static void gauge_auto_add( void )
+{
+	if( !Sys->auto_gauge ) return ;
+	if( vs_sys_w->game_stop ) return ;
+	pl_gauge_add( vs_sys_w->team_w[0][0], 4 ) ;
+	pl_gauge_add( vs_sys_w->team_w[1][0], 4 ) ;
+}
+#endif
 
 /*==============================================================*/
 /*			The sound when the hyper combo's screen effect		*/

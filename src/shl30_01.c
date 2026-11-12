@@ -1040,7 +1040,7 @@ static void shl30_01_chase_0( PLAYER_WORK *ew, SHL30_01_LOCAL_W *lw )
 	}
 	w = ew ;
 	wlw = lw ;
-	if( 0 ) head_lw->wind_turn = lw->part_cnt ;
+aim :	/* nothing jumps here */
 	for( i = 0 ; i <= head_lw->part_cnt ; i ++ ){
 		tgt = wlw->aim_dir ;
 		diff = w->dir ;

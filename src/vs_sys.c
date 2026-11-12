@@ -6,6 +6,15 @@
 #define VS_ROUND_SIZE	0x94	/* the part of vs_sys_work set up again for each fight */
 #define FULL_VITAL	432	/* a team's three vitals, untouched */
 
+/* the streams of the boss's second and third forms */
+#ifdef TARGET_DC
+#define BOSS2_STREAM	17
+#define BOSS3_STREAM	18
+#else
+#define BOSS2_STREAM	9
+#define BOSS3_STREAM	10
+#endif
+
 extern int sprintf( char *s, const char *fmt, ... ) ;
 extern void vs_msg_set( int no ) ;	/* the fight's start and end messages */
 extern void vs_res_set( int no ) ;	/* the result messages */
@@ -29,7 +38,9 @@ static void vs_move_win( VS_SYS_WORK *vs_w ) ;
 static void vs_move_boss( VS_SYS_WORK *vs_w ) ;
 static void vs_move_bonus( VS_SYS_WORK *vs_w ) ;
 static void vs_move_exit( VS_SYS_WORK *vs_w ) ;
+#ifndef TARGET_DC	/* the home game's training menu calls it too */
 static void vs_rule_set( VS_SYS_WORK *vs_w ) ;
+#endif
 static Uint8 pl_end_wait_ck( PLAYER_WORK *pl_w ) ;
 static int land_flag_get( void ) ;
 static int wall_flag_get( void ) ;
@@ -38,6 +49,11 @@ static void round_time_init( void ) ;
 static int round_time_ck( VS_SYS_WORK *vs_w ) ;
 static void time_frame_set( VS_SYS_WORK *vs_w ) ;
 static void pl_stand_all( void ) ;
+#ifdef TARGET_DC
+static void training_dm_disp( int side ) ;
+static void training_disp( void ) ;
+static void win_pts_add( int kind ) ;
+#endif
 
 /****************************************************************/
 /*			Set up the match: the teams in their chosen			*/
@@ -104,6 +120,9 @@ void vs_sys_move( void )
 
 	vs_jmp[vs_sys_work.vs_st]( &vs_sys_work ) ;
 	naomi_level_disp() ;
+#ifdef TARGET_DC
+	if( Sys->no_ko_flag ) training_disp() ;
+#endif
 }
 
 /*==============================================================*/
@@ -182,7 +201,7 @@ static void vs_move_ready( VS_SYS_WORK *vs_w )
 	if( vs_w->round_cnt && vs_w->game_mode == 8 && Sys->boss_flag ){
 		stream_stop() ;
 		s3l_fade_in_set( 1 ) ;
-		stream_req( vs_w->round_cnt == 1 ? 9 : 10 ) ;
+		stream_req( vs_w->round_cnt == 1 ? BOSS2_STREAM : BOSS3_STREAM ) ;
 		stream_start() ;
 	}
 }
@@ -209,8 +228,18 @@ static int ko_ck( VS_SYS_WORK *vs_w )
 {
 	Sint16 vital0, vital1 ;
 
+#ifdef TARGET_DC	/* a home rule: one character a side */
+	if( Sys->one_char ){
+		vital0 = pl_work[vs_w->unk_8a[0]].vital_new ;
+		vital1 = pl_work[vs_w->unk_8a[1]].vital_new ;
+	} else {
+		vital0 = pl_work[0].vital_new + pl_work[2].vital_new + pl_work[4].vital_new ;
+		vital1 = pl_work[1].vital_new + pl_work[3].vital_new + pl_work[5].vital_new ;
+	}
+#else
 	vital0 = pl_work[0].vital_new + pl_work[2].vital_new + pl_work[4].vital_new ;
 	vital1 = pl_work[1].vital_new + pl_work[3].vital_new + pl_work[5].vital_new ;
+#endif
 	if( vital0 + vital1 == 0 ) return draw_set( vs_w ) ;
 	if( !vital1 ) return win_set_1p( vs_w ) ;
 	if( !vital0 ) return win_set_2p( vs_w ) ;
@@ -226,8 +255,18 @@ static void time_over_ck( VS_SYS_WORK *vs_w )
 	PLAYER_WORK *pl_w ;
 
 	vs_w->time_over = 1 ;
+#ifdef TARGET_DC
+	if( Sys->one_char ){
+		vital0 = pl_work[vs_w->unk_8a[0]].vital_new ;
+		vital1 = pl_work[vs_w->unk_8a[1]].vital_new ;
+	} else {
+		vital0 = pl_work[0].vital_new + pl_work[2].vital_new + pl_work[4].vital_new ;
+		vital1 = pl_work[1].vital_new + pl_work[3].vital_new + pl_work[5].vital_new ;
+	}
+#else
 	vital0 = pl_work[0].vital_new + pl_work[2].vital_new + pl_work[4].vital_new ;
 	vital1 = pl_work[1].vital_new + pl_work[3].vital_new + pl_work[5].vital_new ;
+#endif
 	if( vital0 == vital1 ){
 		draw_set( vs_w ) ;
 		return ;
@@ -273,8 +312,9 @@ static void pl_round_end_clr( PLAYER_WORK *pl_w )
 /*==============================================================*/
 /*			The fight is over: the result, its message and		*/
 /*			the last hit's bonus. kind is how it ended;			*/
-/*			nothing here reads it, but its tests remain			*/
+/*			only the home game reads it							*/
 /*==============================================================*/
+/* Nothing reads bonus; with no statement after kind in those arms the loop takes another shape. */
 static void round_end_set( VS_SYS_WORK *vs_w )
 {
 	PLAYER_WORK *pl_w ;
@@ -282,12 +322,16 @@ static void round_end_set( VS_SYS_WORK *vs_w )
 	HIT_DATA *hd ;
 	int flag ;
 	int kind ;
+	int bonus ;
 	int i ;
 
 	vs_w->ctrl_flag = CTRL_NO_INPUT ;
 	vs_w->vs_st = VS_END_WAIT ;
 	vs_w->pose_wait_timer = 150 ;
 	vs_w->vs_timer = 360 ;
+#ifdef TARGET_DC
+	if( 0 ) vs_w->vs_timer = 360 ;	/* left out of the build */
+#endif
 	for( i = 0 ; i < 6 ; i ++ ) pl_round_end_clr( &pl_work[i] ) ;
 	kind = 0 ;
 	if( vs_w->time_over ){
@@ -300,8 +344,7 @@ static void round_end_set( VS_SYS_WORK *vs_w )
 			em = vs_w->ko_at_w ;
 			if( em && em->pl_type == PL_HAYATO ) flag = ( ( int ( * )( PLAYER_WORK * ) )em->pl_tbl[TBL_EX0] )( em ) ;
 			pl_w = vs_w->team_w[vs_w->winner_id][0] ;
-			hd = vs_w->ko_hit_data ;
-			if( hd ){
+			if( ( hd = vs_w->ko_hit_data ) ){
 				if( ( hd->atck_kind & A_HYPER ) || flag ){
 					flash_finish_set() ;
 					finish_ef_set() ;
@@ -310,14 +353,17 @@ static void round_end_set( VS_SYS_WORK *vs_w )
 						else vs_w->bonus_lo = 0x30000000 ;
 						vs_w->bonus_hi = 0 ;
 						kind = 2 ;
+						bonus = 2 ;
 					} else if( pl_w->team_type == 6 ){
 						vs_w->bonus_hi = 0 ;
 						vs_w->bonus_lo = 0x70000000 ;
 						kind = 3 ;
+						bonus = 3 ;
 					} else {
 						vs_w->bonus_hi = 0 ;
 						vs_w->bonus_lo = 0x10000000 ;
 						kind = 1 ;
+						bonus = 1 ;
 					}
 					score_add( pl_w, vs_w->bonus_hi, vs_w->bonus_lo ) ;
 					em = vs_w->ko_at_w ;
@@ -336,9 +382,13 @@ static void round_end_set( VS_SYS_WORK *vs_w )
 		vs_w->hyper_bg_req = 0 ;
 	}
 	if( vs_w->winner_id < 0 ){
+		kind = 5 ;
 		if( vs_w->time_over ) kind = 6 ;
-		else kind = 5 ;
 	}
+#ifdef TARGET_DC
+	vs_w->unk_8c = kind ;
+	win_pts_add( kind ) ;
+#endif
 	Sys->entry_stop = 1 ;
 	vs_w->vs_end_flag = 1 ;
 	if( vs_w->winner_id >= 0 ){
@@ -505,7 +555,11 @@ static void vs_move_exit( VS_SYS_WORK *vs_w )
 }
 
 /*==============================================================*/
+#ifdef TARGET_DC
+void vs_rule_set( VS_SYS_WORK *vs_w )
+#else
 static void vs_rule_set( VS_SYS_WORK *vs_w )
+#endif
 {
 	vs_w->speed_rate = 6 ;
 	vs_w->speed_cnt = 1 ;
@@ -606,7 +660,13 @@ static void win_cnt_set( VS_SYS_WORK *vs_w )
 /*==============================================================*/
 static void round_time_init( void )
 {
+#ifdef TARGET_DC	/* the home game's setting */
+	static Sint8 round_time_tbl[4] = { 30, 60, 99, 99 } ;
+
+	vs_sys_work.round_time = vs_sys_work.cpu_time = round_time_tbl[Sys->round_time_no] ;
+#else
 	vs_sys_work.round_time = vs_sys_work.cpu_time = 99 ;
+#endif
 	time_frame_set( &vs_sys_work ) ;
 }
 
@@ -620,7 +680,11 @@ static int round_time_ck( VS_SYS_WORK *vs_w )
 			if( !vs_w->round_time ) return 0 ;
 			vs_w->team_w[0][0]->fight_sec ++ ;
 			vs_w->team_w[1][0]->fight_sec ++ ;
+#ifdef TARGET_DC	/* the home game's clock can be off */
+			if( Sys->round_time_no != 3 && vs_w->round_time > 0 ){
+#else
 			if( vs_w->round_time > 0 ){
+#endif
 				vs_w->round_time -- ;
 				if( vs_w->round_time == 10 || vs_w->round_time == 20 ) na_req( 24 ) ;
 			}
@@ -652,6 +716,9 @@ int pl_win_end_ck( PLAYER_WORK *pl_w )
 
 	if( vs_w->vs_st < VS_WIN ) goto end ;
 	if( Sys->ending_flag ) goto keep ;
+#ifdef TARGET_DC
+	if( Sys->one_char ) goto keep ;
+#endif
 	if( vs_w->winner_id < 0 ) return 0 ;
 	if( vs_w->winner_id != pl_w->pl_no ) return 0 ;
 	if( vs_w->time_over ) return 0 ;
@@ -690,12 +757,94 @@ static void pl_stand_all( void )
 	}
 }
 
+#ifdef TARGET_DC
+/* the points a win earns for the shop, by how the fight ended */
+static int win_pts_tbl[7] = { 100, 120, 150, 200, 50, 0, 0 } ;
+
+/* the characters' names for the home rule of one character a side: as the Japanese game has
+   them, set left and set right, then as the others have them */
+static char *pl_name_j_tbl[59] = {
+	"RYU             ", "ZANGIEF         ", "GUILE           ", "MORRIGAN        ",
+	"ANAKARIS        ", "STRIDER HIRYU   ", "CYCLOPS         ", "WOLVERINE       ",
+	"PSYLOCKE        ", "ICEMAN          ", "ROGUE           ", "CAPTAIN AMERICA ",
+	"SPIDER-MAN      ", "HULK            ", "VENOM           ", "DOCTOR DOOM     ",
+	"TRON            ", "JILL            ", "HAYATO          ", "RUBY HEART      ",
+	"SONSON          ", "AMINGO          ", "MARROW          ", "CABLE           ",
+	"ABYSS           ", "ABYSS           ", "ABYSS           ", "CHUN-LI         ",
+	"ROCKMAN         ", "ROLL            ", "GOUKI           ", "BULLETA         ",
+	"FELICIA         ", "NASH            ", "SAKURA          ", "DAN             ",
+	"CAMMY           ", "DHALSIM         ", "VEGA            ", "KEN             ",
+	"GAMBIT          ", "JUGGERNAUT      ", "STORM           ", "SABRETOOTH      ",
+	"MAGNETO         ", "SHUMA-GORATH    ", "WAR MACHINE     ", "SILVER SAMURAI  ",
+	"OMEGA RED       ", "SPIRAL          ", "COLOSSUS        ", "IRON MAN        ",
+	"SENTINEL        ", "BLACKHEART      ", "THANOS          ", "JIN             ",
+	"CAPTAIN COMMANDO", "WOLVERINE       ", "KOBUN           ",
+} ;
+
+static char *pl_name_j_r_tbl[59] = {
+	"             RYU", "         ZANGIEF", "           GUILE", "        MORRIGAN",
+	"        ANAKARIS", "   STRIDER HIRYU", "         CYCLOPS", "       WOLVERINE",
+	"        PSYLOCKE", "          ICEMAN", "           ROGUE", " CAPTAIN AMERICA",
+	"      SPIDER-MAN", "            HULK", "           VENOM", "     DOCTOR DOOM",
+	"            TRON", "            JILL", "          HAYATO", "      RUBY HEART",
+	"          SONSON", "          AMINGO", "          MARROW", "           CABLE",
+	"           ABYSS", "           ABYSS", "           ABYSS", "         CHUN-LI",
+	"         ROCKMAN", "            ROLL", "           GOUKI", "         BULLETA",
+	"         FELICIA", "            NASH", "          SAKURA", "             DAN",
+	"           CAMMY", "         DHALSIM", "            VEGA", "             KEN",
+	"          GAMBIT", "      JUGGERNAUT", "           STORM", "      SABRETOOTH",
+	"         MAGNETO", "    SHUMA-GORATH", "     WAR MACHINE", "  SILVER SAMURAI",
+	"       OMEGA RED", "          SPIRAL", "        COLOSSUS", "        IRON MAN",
+	"        SENTINEL", "      BLACKHEART", "          THANOS", "             JIN",
+	"CAPTAIN COMMANDO", "       WOLVERINE", "           KOBUN",
+} ;
+
+static char *pl_name_e_tbl[59] = {
+	"RYU             ", "ZANGIEF         ", "GUILE           ", "MORRIGAN        ",
+	"ANAKARIS        ", "STRIDER HIRYU   ", "CYCLOPS         ", "WOLVERINE       ",
+	"PSYLOCKE        ", "ICEMAN          ", "ROGUE           ", "CAPTAIN AMERICA ",
+	"SPIDER-MAN      ", "HULK            ", "VENOM           ", "DOCTOR DOOM     ",
+	"T.BONNE         ", "JILL            ", "HAYATO          ", "RUBY HEART      ",
+	"SONSON          ", "AMINGO          ", "MARROW          ", "CABLE           ",
+	"ABYSS           ", "ABYSS           ", "ABYSS           ", "CHUN-LI         ",
+	"MEGAMAN         ", "ROLL            ", "AKUMA           ", "B.B.HOOD        ",
+	"FELICIA         ", "CHARLIE         ", "SAKURA          ", "DAN             ",
+	"CAMMY           ", "DHALSIM         ", "M.BISON         ", "KEN             ",
+	"GAMBIT          ", "JUGGERNAUT      ", "STORM           ", "SABRETOOTH      ",
+	"MAGNETO         ", "SHUMA-GORATH    ", "WAR MACHINE     ", "SILVER SAMURAI  ",
+	"OMEGA RED       ", "SPIRAL          ", "COLOSSUS        ", "IRON MAN        ",
+	"SENTINEL        ", "BLACKHEART      ", "THANOS          ", "JIN             ",
+	"CAPTAIN COMMANDO", "WOLVERINE       ", "SERVROT         ",
+} ;
+
+static char *pl_name_e_r_tbl[59] = {
+	"             RYU", "         ZANGIEF", "           GUILE", "        MORRIGAN",
+	"        ANAKARIS", "   STRIDER HIRYU", "         CYCLOPS", "       WOLVERINE",
+	"        PSYLOCKE", "          ICEMAN", "           ROGUE", " CAPTAIN AMERICA",
+	"      SPIDER-MAN", "            HULK", "           VENOM", "     DOCTOR DOOM",
+	"         T.BONNE", "            JILL", "          HAYATO", "      RUBY HEART",
+	"          SONSON", "          AMINGO", "          MARROW", "           CABLE",
+	"           ABYSS", "           ABYSS", "           ABYSS", "         CHUN-LI",
+	"         MEGAMAN", "            ROLL", "           AKUMA", "        B.B.HOOD",
+	"         FELICIA", "         CHARLIE", "          SAKURA", "             DAN",
+	"           CAMMY", "         DHALSIM", "         M.BISON", "             KEN",
+	"          GAMBIT", "      JUGGERNAUT", "           STORM", "      SABRETOOTH",
+	"         MAGNETO", "    SHUMA-GORATH", "     WAR MACHINE", "  SILVER SAMURAI",
+	"       OMEGA RED", "          SPIRAL", "        COLOSSUS", "        IRON MAN",
+	"        SENTINEL", "      BLACKHEART", "          THANOS", "             JIN",
+	"CAPTAIN COMMANDO", "       WOLVERINE", "         SERVROT",
+} ;
+
+static char **pl_name_tbl[4] = { pl_name_j_tbl, pl_name_j_r_tbl, pl_name_e_tbl, pl_name_e_r_tbl } ;
+#endif
+
 /****************************************************************/
 /*			The arcade's display: each side's wins in a row,	*/
 /*			or the player's score								*/
 /****************************************************************/
 void naomi_level_disp( void )
 {
+	PLAYER_WORK *pl_w ;
 	int side ;
 	Uint8 x ;
 	Uint8 wx ;
@@ -703,6 +852,9 @@ void naomi_level_disp( void )
 
 	if( vs_sys_w->vs_st == VS_EXIT ) return ;
 	if( flash_flag_get() ) return ;
+#ifdef TARGET_DC	/* training has its own */
+	if( Sys->home_mode == HOME_TRAINING ) return ;
+#endif
 	if( !Sys->vs_flag ){
 		if( Sys->play_side & 1 ) side = 0 ;
 		else side = 1 ;
@@ -712,16 +864,31 @@ void naomi_level_disp( void )
 			sprintf( buf, "WINS %2d", vs_sys_w->win_cnt[side] ) ;
 			STrPrint( wx, Sys->disp_line, 19, buf ) ;
 		}
+#ifdef TARGET_DC
+		pl_w = &pl_work[side] ;
+#endif
 		x = ( x + 15 ) * 3 ;
-		if( pl_work[side].score[1] ){
-			sprintf( buf, "%08x", pl_work[side].score[0] ) ;
+#ifdef TARGET_DC
+		if( pl_w->score[1] ){
+			if( 0 ) x -= 9 ;	/* left out of the build */
+#else
+		if( ( pl_w = &pl_work[side] )->score[1] ){
+#endif
+			sprintf( buf, "%08x", pl_w->score[0] ) ;
 			STrPrint( x, Sys->disp_line, 21, buf ) ;
-			sprintf( buf, "%3x", pl_work[side].score[1] ) ;
+			sprintf( buf, "%3x", pl_w->score[1] ) ;
 			STrPrint( x - 9, Sys->disp_line, 21, buf ) ;
 		} else {
-			sprintf( buf, "%8x", pl_work[side].score[0] ) ;
+			sprintf( buf, "%8x", pl_w->score[0] ) ;
 			STrPrint( x, Sys->disp_line, 21, buf ) ;
 		}
+#ifdef TARGET_DC	/* a score attack shows the time played on the other side */
+		if( Sys->home_mode == HOME_SCORE ){
+			wx = ( ( 1 - side ) * 27 + 15 ) * 3 ;
+			sprintf( buf, "%02d`%02d'%02d", pl_work[side].play_time / 3600, pl_work[side].play_time / 60 % 60, pl_work[side].play_time % 60 * 100 / 60 ) ;
+			STrPrint( wx, Sys->disp_line, 21, buf ) ;
+		}
+#endif
 	} else {
 		if( !vs_sys_w->win_cnt[0] ){
 			if( !vs_sys_w->vs_end_flag && vs_sys_w->vs_st < VS_END_WAIT ){
@@ -741,8 +908,71 @@ void naomi_level_disp( void )
 			sprintf( buf, "WINS %2d", vs_sys_w->win_cnt[1] ) ;
 			STrPrint( 96, Sys->disp_line, 19, buf ) ;
 		}
+#ifdef TARGET_DC	/* a home rule: one character a side, named */
+		if( Sys->one_char ){
+			int n ;
+
+			n = !Sys->cpu_level_type ? 0 : 2 ;
+			STrPrint( 6, Sys->disp_line + 25, 55, pl_name_tbl[n][pl_work[vs_sys_w->unk_8a[0]].pl_type] ) ;
+			STrPrint( 105, Sys->disp_line + 25, 55, pl_name_tbl[n + 1][pl_work[vs_sys_w->unk_8a[1]].pl_type] ) ;
+		}
+#endif
 	}
 }
+
+#ifdef TARGET_DC
+/*==============================================================*/
+/*			Training: the damage done to a side's player		*/
+/*==============================================================*/
+static void training_dm_disp( int side )
+{
+	PLAYER_WORK *pl_w ;
+	int x ;
+	char buf[32] ;
+
+	pl_w = vs_sys_w->team_w[side][0] ;
+	x = pl_w->pl_no * 102 + 6 ;
+	STrPrint( x, Sys->disp_line + 25, 52, "DAMAGE" ) ;
+	STrPrint( x + 36, Sys->disp_line + 25, 56, "%3d", pl_w->vital_dm ) ;
+	STrPrint( x, Sys->disp_line + 30, 53, "TOTAL DAMAGE" ) ;
+	STrPrint( x + 36, Sys->disp_line + 30, 56, "%3d", pl_w->combo_vital - pl_w->combo_damage ) ;
+	STrPrint( x, Sys->disp_line + 35, 55, "MAX COMBO" ) ;
+	STrPrint( x + 36, Sys->disp_line + 35, 56, "%3d", vs_sys_w->combo_max[pl_w->pl_no ^ 1] ) ;
+}
+
+/*==============================================================*/
+/*			Training: the damage each player does				*/
+/*==============================================================*/
+static void training_disp( void )
+{
+	if( vs_sys_w->vs_st != VS_FIGHT ) return ;
+	if( !Sys->damage_disp ) return ;
+	if( pause_work.side & 1 ) training_dm_disp( 1 ) ;
+	if( pause_work.side & 2 ) training_dm_disp( 0 ) ;
+}
+
+/*==============================================================*/
+/*			A player's win earns points for the shop			*/
+/*==============================================================*/
+static void win_pts_add( int kind )
+{
+	int side ;
+	int pts ;
+
+	if( Sys->home_mode == HOME_VERSUS ) return ;
+	side = vs_sys_work.winner_id ;
+	if( side < 0 ) return ;
+	if( pl_work[side].cpu_flag ) return ;
+	pts = win_pts_tbl[kind] ;
+	if( Sys->home_mode == HOME_NETWORK ){
+		/* a network game earns none */
+	} else d_point_add( pts ) ;
+#if BUILD_DATE >= 20000412	/* and more for each partner still standing */
+	pts = ( 2 - vs_sys_work.ko_cnt[side] ) * 50 ;
+	if( Sys->home_mode == HOME_ARCADE || Sys->home_mode == HOME_SCORE ) d_point_add( pts ) ;
+#endif
+}
+#endif
 
 /*==============================================================*/
 /*	End of File.												*/

@@ -1,5 +1,6 @@
 /* Task 1, the attract: the copyright, the title, the demos and the coin messages, until a player
-   starts (task 0 is task_init.c, task 2 game.c). */
+   starts (task 0 is task_init.c, task 2 game.c). The home game's has no coins: its start button
+   leads to the title, and the title's to the mode menu. */
 #include "player.h"
 #include "naomi.h"
 
@@ -12,7 +13,9 @@ extern void total_vol_set( int vol ) ;
 extern void total_vol_init( void ) ;
 extern void ex_sound_load( void ) ;
 extern void ex_se_req( Uint8 no ) ;
+#ifndef TARGET_DC
 extern Sint8 credit_enough_ck( int side, int cont ) ;
+#endif
 extern void demo_init( void ) ;
 extern void attract_opening_main( void ) ;
 extern void at03_ef4_set( void ) ;
@@ -32,6 +35,12 @@ extern void at01_ef_set_all( void ) ;
 extern void sys_mode_ef0_set( void ) ;
 extern void at03_ef8_set( void ) ;
 extern void load_init( void ) ;
+#ifdef TARGET_DC
+extern void load_stop( void ) ;
+extern void vms_boot_load( void ) ;
+extern void vms_point_save( void ) ;
+extern void disp_front_obj2( void ) ;
+#endif
 
 static void attract_init( void ) ;
 static void attract_logo( void ) ;
@@ -59,10 +68,32 @@ static void credit_disp( void ) ;
 static void coin_disp( void ) ;
 
 /* the light's direction for the attract's scenes */
+/* the frames the copyright stays, and each scene's song and textures */
+#ifdef TARGET_DC
+#define COPYRIGHT_TIME	60
+#define LOGO_STREAM	21
+#define TITLE_TEX	25
+#else
+#define COPYRIGHT_TIME	180
+#define LOGO_STREAM	13
+#define TITLE_TEX	11
+#endif
+
 static VEC3 light_vec[] = {
 	{ 0.0f, 1.0f, 1.0f },
 	{ 1.0f, 1.0f, 1.0f },
 } ;
+
+#ifdef TARGET_DC
+/* the day the home program was built (__DATE__); nothing reads it */
+#if BUILD_DATE >= 20000529
+static char build_date[] = "May 29 2000" ;
+#elif BUILD_DATE >= 20000412
+static char build_date[] = "Apr 12 2000" ;
+#else
+static char build_date[] = "Mar 03 2000" ;
+#endif
+#endif
 
 /****************************************************************/
 /*			Task 1: the attract, until a coin goes in or, in	*/
@@ -84,10 +115,35 @@ void task_attract( void )
 		attract_10,
 	} ;
 
+#ifdef TARGET_DC
+	int reset ;
+#endif
+
 	Sys->cpu_level_max = 0 ;
 	attract_jmp[Sys->task_step]() ;
 	nlRand() ;
 	Rnd() ;
+#ifdef TARGET_DC
+	/* the start button leads to the title */
+	reset = 0 ;
+	if( Sys->task_step != 10 ) reset = soft_reset_ck( 0 ) ;
+	if( reset ) return ;
+	if( Sys->play_mode != 64 ) return ;
+	if( ( sw_work[0].on & KEY_START ) || ( sw_work[1].on & KEY_START ) ){
+		if( Sys->task_step == 7 || Sys->task_step == 8 || Sys->task_step == 10 ) return ;
+		Sys->task_step = 7 ;
+		Sys->scene_no = 0 ;
+		stream_stop() ;
+		sound_all_off() ;
+		se_all_off() ;
+		total_vol_set( 127 ) ;
+		se_vol_up( 0, 1 ) ;
+		se_vol_up( 1, 1 ) ;
+		s3l_fade_in_set( 1 ) ;
+		na_req( 0 ) ;
+		load_stop() ;
+	}
+#else
 	test_sw_ck() ;
 	if( Sys->play_mode != 64 ) return ;
 	if( credit_conf->CoinFlag != NLA_FREEPLAY ){
@@ -119,6 +175,7 @@ void task_attract( void )
 		work_init() ;
 		back_color_set( 0 ) ;
 	}
+#endif
 }
 
 /*==============================================================*/
@@ -126,18 +183,36 @@ void task_attract( void )
 /*==============================================================*/
 static void attract_init( void )
 {
+#ifdef TARGET_DC
+	reset_lock = 0 ;
+#endif
 	Sys->task_step ++ ;
 	Sys->play_mode = 64 ;
 	Sys->task_stop = 0 ;
 	Sys->join_flag = 0 ;
+#ifdef TARGET_DC
+	/* after a game of these modes, the points are saved first */
+	if( Sys->ended_mode >= 0 ){
+		if( Sys->ended_mode == 0 || Sys->ended_mode == 1 || Sys->ended_mode == 2 || Sys->ended_mode == 7 ){
+			Sys->task_step = 10 ;
+			Sys->scene_no = 0 ;
+		}
+	} else
+#endif
 	if( Sys->attract_step ){
 		Sys->task_step = Sys->attract_step ;
 		Sys->attract_step = 0 ;
 	}
 	coin_blink = 1 ;
 	coin_timer = 20 ;
+#ifdef TARGET_DC
+	Sys->event_flag = 0 ;
+	Sys->no_challenge_flag = 0 ;
+	pause_init() ;
+#else
 	nlaChangeCreditSequence( 0, 0 ) ;
 	nlaChangeCreditSequence( 1, 0 ) ;
+#endif
 	Palette_Init() ;
 	Texture_Init() ;
 	memset( &sys_work.game_timer, 0, SYS_HALF ) ;
@@ -164,7 +239,7 @@ static void attract_copyright( void )
 static void attract_copyright_init( void )
 {
 	Sys->scene_no ++ ;
-	Sys->timer0 = 180 ;
+	Sys->timer0 = COPYRIGHT_TIME ;
 	Palette_Init() ;
 	Texture_Init() ;
 	work_init() ;
@@ -210,7 +285,11 @@ static void attract_copyright_move( void )
 
 	Sys->timer0 -- ;
 	if( !Sys->timer0 ){
+#ifdef TARGET_DC
+		if( !load_ck() ) Sys->timer0 ++ ;	/* the home game's says that the loads are done */
+#else
 		if( load_ck() ) Sys->timer0 ++ ;
+#endif
 		else {
 			Sys->task_step ++ ;
 			Sys->scene_no = 0 ;
@@ -223,7 +302,7 @@ static void attract_copyright_move( void )
 			mes ++ ;
 		}
 	}
-	if( Sys->timer0 == 155 ) demo_init() ;
+	if( Sys->timer0 == COPYRIGHT_TIME - 25 ) demo_init() ;
 }
 
 /*==============================================================*/
@@ -248,13 +327,16 @@ static void attract_title( void )
 /*==============================================================*/
 static void attract_title_init( void )
 {
+#ifdef TARGET_DC
+	if( !load_ck() ) return ;
+#endif
 	Sys->scene_no ++ ;
 	Sys->timer0 = 840 ;
 	Sys->timer1 = -90 ;
 	Palette_Init() ;
 	Texture_Init() ;
 	total_vol_init() ;
-	TexLoad( 11 ) ;
+	TexLoad( TITLE_TEX ) ;
 	work_init() ;
 	scr_work_init() ;
 	bright_init() ;
@@ -283,8 +365,17 @@ static void attract_title_move( void )
 {
 	Sys->timer0 -- ;
 	if( !Sys->timer0 ){
-		Sys->task_step ++ ;
-		Sys->scene_no = 0 ;
+#ifdef TARGET_DC
+		if( !load_ck() ){
+			Sys->timer0 ++ ;
+			coin_disp() ;
+			credit_disp() ;
+		} else
+#endif
+		{
+			Sys->task_step ++ ;
+			Sys->scene_no = 0 ;
+		}
 	} else {
 		coin_disp() ;
 		credit_disp() ;
@@ -346,7 +437,11 @@ static void attract_demo( void )
 /*==============================================================*/
 static void attract_demo_load( void )
 {
+#ifdef TARGET_DC
+	fight_load_start( 4 ) ;
+#else
 	fight_load_start( 0 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -366,6 +461,9 @@ static void attract_logo( void )
 	} ;
 
 	attract_logo_jmp[Sys->scene_no]() ;
+#if defined( TARGET_DC ) && BUILD_DATE >= 20000529
+	if( !Sys->scene_no ) return ;	/* still waiting for its files */
+#endif
 	work_list_move( W_SET ) ;
 	scr_move() ;
 	fog_set() ;
@@ -383,6 +481,9 @@ static void attract_scr_set( void )
 /*==============================================================*/
 static void attract_logo_init( void )
 {
+#ifdef TARGET_DC
+	if( !load_ck() ) return ;
+#endif
 	Sys->scene_no ++ ;
 	Sys->timer0 = 480 ;
 	Palette_Init() ;
@@ -399,10 +500,13 @@ static void attract_logo_init( void )
 	light_amb_set( 0.3f ) ;
 	fade_set( -1, 60, FADE_IN ) ;
 	at01_ef_set_all() ;
-	stream_req( 13 ) ;
+	stream_req( LOGO_STREAM ) ;
 	s3l_fade_in_set( 1 ) ;
 	stream_start() ;
 	demo_pl_set() ;
+#ifdef TARGET_DC
+	fight_load_start( 7 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -410,6 +514,12 @@ static void attract_logo_move( void )
 {
 	Sys->timer0 -- ;
 	if( !Sys->timer0 ){
+#ifdef TARGET_DC
+		if( !load_ck() ){
+			Sys->timer0 ++ ;
+			return ;
+		}
+#endif
 		Sys->task_step ++ ;
 		Sys->scene_no = 0 ;
 		stream_stop() ;
@@ -432,18 +542,26 @@ static void attract_coin( void )
 		attract_coin_move,
 	} ;
 
+#ifndef TARGET_DC
 	coin_disp() ;
 	credit_disp() ;
+#endif
 	attract_coin_jmp[Sys->scene_no]() ;
 	fog_set() ;
 	SysTransSet( disp_front_info ) ;
+#ifndef TARGET_DC
 	start_ck() ;
+#endif
 }
 
 /*==============================================================*/
 static void attract_coin_init( void )
 {
 	Sys->scene_no ++ ;
+#ifdef TARGET_DC
+	Sys->timer0 = 1800 ;
+	Sys->home_mode = HOME_ARCADE ;
+#endif
 	memset( &sys_work.game_timer, 0, SYS_HALF ) ;
 	memset( &vs_sys_work, 0, sizeof( vs_sys_work ) ) ;
 	Palette_Init() ;
@@ -476,10 +594,15 @@ static void attract_coin_init( void )
 	fade_set( 0, 60, FADE_IN ) ;
 	stream_stop() ;
 	ex_se_req( 1 ) ;
+#ifdef TARGET_DC
+	fight_load_start( 6 ) ;
+#else
 	load_init() ;
+#endif
 }
 
 /*==============================================================*/
+#ifndef TARGET_DC
 static void attract_coin_move( void )
 {
 	work_list_move( W_SYS ) ;
@@ -496,12 +619,62 @@ static void attract_10( void )
 {
 	Sys->task_step = 0 ;
 }
+#else
+/* the home title: the start button leads to the mode menu, and half a minute to the logo again */
+static void attract_coin_move( void )
+{
+	if( !fade_cnt() ) coin_disp() ;
+	if( -- Sys->timer0 < 0 ){
+		Sys->task_step = 1 ;
+		Sys->scene_no = 0 ;
+		Sys->routine_0 = 0 ;
+		Sys->routine_1 = 0 ;
+		Sys->routine_2 = 0 ;
+		Sys->routine_3 = 0 ;
+		Sys->exit_flag = 0 ;
+		work_init() ;
+	} else {
+		work_list_move( W_SYS ) ;
+		if( !fade_cnt() ){
+			start_ck() ;
+			if( Sys->task_no == 3 ){
+				se_all_off() ;
+				na_req( 2 ) ;
+			}
+		}
+	}
+}
+
+/*==============================================================*/
+/*			The memory card's check and load, when the game		*/
+/*			starts												*/
+/*==============================================================*/
+static void attract_08( void )
+{
+	vms_boot_load() ;
+	work_list_move( W_SYS ) ;
+	SysTransSet( disp_front_obj2 ) ;
+}
+
+/*==============================================================*/
+/*			The points' save, after a game						*/
+/*==============================================================*/
+static void attract_10( void )
+{
+	vms_point_save() ;
+	work_list_move( W_SYS ) ;
+	SysTransSet( disp_front_obj2 ) ;
+}
+#endif
 
 /*==============================================================*/
 static void attract_09( void )
 {
 	Sys->task_step = 0 ;
 	Sys->scene_no = 0 ;
+#ifdef TARGET_DC
+	fight_load_start( 6 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -514,10 +687,15 @@ static void start_ck( void )
 	Sint8 side = 0 ;
 	Sint8 i ;
 
+#ifdef TARGET_DC
+	if( sw_work[0].on & KEY_START ) side = 1 ;
+	if( sw_work[1].on & KEY_START ) side += 2 ;
+#else
 	if( sw_work[0].on & KEY_START ) side += credit_enough_ck( 0, 0 ) ;
 	if( side && Sys->no_challenge_flag ) goto skip ;
 	if( sw_work[1].on & KEY_START ) side += credit_enough_ck( 1, 0 ) ;
 skip:
+#endif
 	if( !side ) return ;
 	else {
 		if( Sys->event_flag ) side = 3 ;
@@ -534,7 +712,11 @@ skip:
 		if( Sys->entry_side & 2 ) pl_work[1].entry_routine_1 = ENTRY_PLAY ;
 		pl_work[0].side_bit = 1 ;
 		pl_work[1].side_bit = 2 ;
+#ifdef TARGET_DC
+		Sys->task_no = 3 ;		/* to the mode menu */
+#else
 		Sys->task_no = 2 ;
+#endif
 		Sys->task_step = 0 ;
 		Sys->scene_no = 0 ;
 		Sys->routine_0 = 0 ;
@@ -546,7 +728,9 @@ skip:
 		Sys->timer1 = 0 ;
 		Sys->timer2 = 0 ;
 		Sys->timer3 = 0 ;
+#ifndef TARGET_DC
 		stream_stop() ;
+#endif
 	}
 }
 
@@ -555,12 +739,14 @@ skip:
 /*==============================================================*/
 static void credit_disp( void )
 {
+#ifndef TARGET_DC
 	if( credit_conf->CoinFlag != NLA_FREEPLAY ){
 		STrPrint( 4, 108, 11, "%s", credit_str1 ) ;
 		if( credit_conf->ChuteType ){
 			STrPrint( ( 70 - strlen( credit_str2 ) ) * 2, 108, 11, "%s", credit_str2 ) ;
 		}
 	}
+#endif
 }
 
 /*==============================================================*/
@@ -574,6 +760,9 @@ static void coin_disp( void )
 		if( coin_blink == 0 ) coin_timer = 15 ;
 		else coin_timer = 20 ;
 	}
+#ifdef TARGET_DC
+	if( coin_blink == 1 ) STrPrint( 52, 98, 11, "PRESS START BUTTON" ) ;
+#else
 	if( credit_conf->CoinFlag == NLA_FREEPLAY ){
 		if( coin_blink == 1 ) STrPrint( 64, 98, 11, "FREE PLAY" ) ;
 		return ;
@@ -616,6 +805,7 @@ static void coin_disp( void )
 			else if( Sys->vms_mode != 0 ) STrPrint( 126, 98, 22, "^N" ) ;
 		}
 	}
+#endif
 }
 
 /*==============================================================*/

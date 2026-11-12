@@ -40,7 +40,7 @@ void SysTransSet( void ( *func )( void ) )
 }
 
 /****************************************************************/
-void STrPrint( Uint8 x, Uint8 y, int col, const char *fmt, ... )
+void STrPrint( Uint8 x, Uint8 y, Uint8 col, const char *fmt, ... )
 {
 	va_list ap ;
 	MES_WORK *mes ;

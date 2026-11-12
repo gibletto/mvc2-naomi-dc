@@ -2237,6 +2237,8 @@ static void justice_miss_move( PLAYER_WORK *pl_w, PL0B_LOCAL_W *lw )
 /*==============================================================*/
 /*			The one he caught comes down with him				*/
 /*==============================================================*/
+static void justice_strike( PLAYER_WORK *pl_w, PL0B_LOCAL_W *lw );
+
 static void justice_em_land( PLAYER_WORK *pl_w, PL0B_LOCAL_W *lw )
 {
 	PLAYER_WORK *em = lw->em_w ;
@@ -2258,6 +2260,10 @@ static void justice_em_land( PLAYER_WORK *pl_w, PL0B_LOCAL_W *lw )
 		em->acc.y = 0.0f ;
 		pl_w->routine_2 ++ ;
 		pl_w->routine_3 = 0 ;
+		/* from the European disc on, the next step starts on the frame they land */
+#if BUILD_DATE >= 20000412
+		justice_strike( pl_w, lw ) ;
+#endif
 	}
 }
 

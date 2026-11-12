@@ -26,6 +26,7 @@
 /* atck_no: the character's own records in the hit table, after the common ATCK_ ones */
 #define	pl30_at_coil_slam	0x2a	/* Carbonadium Coil: the caught opponent pulled in and slammed (shl30_01_chase_2) */
 #define	pl30_at_t_kick		0x30	/* The partner's jump-in attack (t_kick) */
+#define	pl30_at_destroyer	0x31	/* Omega Destroyer on the ground, as it starts (from the Japanese disc on) */
 #define	pl30_at_coil_throw	0x38	/* Carbonadium Coil hold: the opponent hurt and thrown (shl30_01_catch_hold) */
 #define	pl30_at_burrow		0x3c	/* Burrowing Coil (gamma assist; him and shl30_02 type 1) */
 #define	pl30_at_jdestroyer	0x3d	/* Omega Destroyer in the air: the dash (jdestroyer_dash_init) */

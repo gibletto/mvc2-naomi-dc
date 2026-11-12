@@ -173,8 +173,8 @@ static void hit_set( PLAYER_WORK *at_w, PLAYER_WORK *dm_w, Uint16 no )
 }
 
 /*==============================================================*/
-/*			The hit stop is stored through dh, a pointer		*/
-/*			that is never set									*/
+/*			The hit's data, for the attacker and for the		*/
+/*			one it hit											*/
 /*==============================================================*/
 static void hit_data_set( PLAYER_WORK *at_w, PLAYER_WORK *dm_w )
 {
@@ -202,7 +202,11 @@ static void hit_data_set( PLAYER_WORK *at_w, PLAYER_WORK *dm_w )
 		no &= 0x7f ;
 		hd = hd + no ;
 		dm_w->hit_data_adrs = hd ;
-		dh->hit_stop = at_w->hit_stop ;
+#if BUILD_DATE >= 20000529
+		dm_w->hit_stop = hd->hit_stop ;
+#else
+		dh->hit_stop = at_w->hit_stop ;	/* dh is never set: the hit stop is lost */
+#endif
 		ow = &pl_work[at_w->work_no] ;
 		dm_w->dm_at_w = ow ;
 		dm_w->dm_atck_no = at_w->atck_no ;

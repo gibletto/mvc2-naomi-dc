@@ -1,0 +1,184 @@
+; nlobjcem: libnlobj's cheap environment map, in assembler. For each vertex of a model that has a
+; normal, the normal is turned by the matrix in XMTRX and its x and y, halved and moved to 0.5,
+; become the vertex's texture coordinates. Sega keeps it with the code that sits on cache lines of
+; its own (P$32).
+
+          .SECTION  P$32,CODE,ALIGN=32
+          .EXPORT   _nlObjPutCheapEnvMap
+
+; nlObjPutCheapEnvMap: r4 the model. Its parts follow one another, each with a kind byte (-2 is
+; drawn without this), flags and its strips; a strip's vertices hold their normal as floats, or as
+; bytes in the parts of a kind below -2.
+_nlObjPutCheapEnvMap:
+          mov.l     @r4,r5
+          add       #60,r4
+          mova      consts,r0
+          mov.b     @r4,r2
+          cmp/pz    r5
+          fmov      @r0+,fr1
+          bf        done
+          fmov      @r0+,fr8
+          add       #44,r4
+          mov.l     @r0+,r7
+          mov       #-2,r6
+          mov.l     @r4+,r1
+part:
+          cmp/eq    r6,r2
+          bt        skip_part
+          tst       r1,r7               ; not environment mapped
+          bt        skip_part
+          cmp/gt    r6,r2
+          bf        strip_b
+
+; normals as floats
+strip:
+          mov       r1,r0
+          tst       #8,r0               ; a strip, else triangles: three vertices each
+          mov.l     @r4+,r5
+          bt/s      vertex
+          fmov      fr1,fr0
+          mov       r5,r0
+          shll      r5
+          add       r0,r5
+vertex:
+          mov.l     @r4,r2
+vertex_next:
+          mov       #1,r0
+          fldi0     fr7
+          add       #12,r4
+          tst       r0,r2
+          bt        no_normal
+          fmov      @r4+,fr4
+          fmov      @r4+,fr5
+          fmov      @r4,fr6
+          add       #8,r4
+          mov.l     @r4,r1
+          add       #36,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv4
+          and       r0,r1
+          fmov      fr1,fr2
+          fmov      fr1,fr3
+          fmac      fr0,fr4,fr2         ; u
+          fmac      fr0,fr5,fr3         ; v
+          flds      fr3,fpul
+          sts       fpul,r2
+          mov       #-8,r0
+          fmov      fr2,@(r0,r4)
+          dt        r5
+          mov       #-4,r0
+          and       r6,r2
+          or        r2,r1
+          mov.l     @r4,r2
+          mov.l     r1,@(r0,r4)
+          bf        vertex_next
+next_strip:
+          mov.l     @r4+,r1
+strip_end:
+          cmp/pl    r1
+          bt        strip
+          tst       r1,r1               ; 0 ends the model, a negative word the part
+          bt        done
+          add       #32,r4
+          mov.b     @r4,r2
+          add       #44,r4
+          bra       part
+          mov.l     @r4+,r1
+done:
+          rts
+          nop
+no_normal:
+          mov       r4,r0
+          add       #32,r0
+          dt        r5
+          pref      @r0
+          add       #-4,r4
+          bf        vertex
+          bra       strip_end
+          mov.l     @r4+,r1
+skip_part:
+          add       #-8,r4
+          mov.l     @r4+,r0
+          bra       next_strip
+          add       r0,r4
+
+; normals as bytes
+strip_b:
+          mov       r1,r0
+          tst       #8,r0
+          mov.l     @r4+,r5
+          bt/s      vertex_b
+          fmov      fr8,fr0
+          mov       r5,r0
+          shll      r5
+          add       r0,r5
+vertex_b:
+          mov.l     @r4,r2
+vertex_b_next:
+          mov       #1,r0
+          mov.l     @(12,r4),r3
+          tst       r0,r2
+          add       #13,r4
+          bt        no_normal_b
+          mov.b     @r4+,r2
+          exts.b    r3,r3
+          mov.b     @r4,r1
+          lds       r3,fpul
+          add       #14,r4
+          float     fpul,fr6
+          lds       r2,fpul
+          float     fpul,fr5
+          lds       r1,fpul
+          float     fpul,fr4
+          fldi0     fr7
+          mov.l     @r4,r1
+          add       #36,r4
+          pref      @r4
+          add       #-32,r4
+          ftrv      xmtrx,fv4
+          and       r0,r1
+          fmov      fr1,fr2
+          fmov      fr1,fr3
+          fmac      fr0,fr4,fr2
+          fmac      fr0,fr5,fr3
+          flds      fr3,fpul
+          sts       fpul,r2
+          mov       #-8,r0
+          fmov      fr2,@(r0,r4)
+          dt        r5
+          mov       #-4,r0
+          and       r6,r2
+          or        r2,r1
+          mov.l     @r4,r2
+          mov.l     r1,@(r0,r4)
+          bf        vertex_b_next
+          mov.l     @r4+,r1
+strip_b_end:
+          cmp/pl    r1
+          bt        strip_b
+          tst       r1,r1
+          bt        done_b
+          add       #32,r4
+          mov.b     @r4,r2
+          add       #44,r4
+          bra       part
+          mov.l     @r4+,r1
+done_b:
+          rts
+          nop
+no_normal_b:
+          mov       r4,r0
+          add       #32,r0
+          dt        r5
+          pref      @r0
+          add       #-5,r4
+          bf        vertex_b
+          bra       strip_b_end
+          mov.l     @r4+,r1
+          .ALIGN    4
+consts:   .DATA.L   H'3F000000          ; 0.5: the scale of a float normal
+          .DATA.L   H'3B800000          ; 1/256: of a byte normal
+          .DATA.L   H'00000100          ; the part's flag for the map
+
+          .END

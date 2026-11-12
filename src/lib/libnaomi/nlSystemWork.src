@@ -1,7 +1,7 @@
 ; nlSystemWork: the library's work, which GBR holds while it runs (the palette's mode and flag are
-; its first bytes), 0x64 bytes. It lies with the data the start-up leaves alone.
+; its first bytes), 0x64 bytes, in Sega's section for work aligned to a cache line.
 
-          .SECTION  BX,DATA,ALIGN=32
+          .SECTION  B$32,DATA,ALIGN=32
           .EXPORT   _NLSystemWork_
           .EXPORT   _nl_scale_factor
 

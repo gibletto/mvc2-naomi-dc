@@ -38,6 +38,12 @@ extern void obj_uv_begin( int *src, void *obj );
 extern int obj_uv_next( void );
 extern void obj_uv_get( Float *x, Float *y );
 extern void obj_uv_put( Float *x, Float *y );
+#ifdef TARGET_DC
+extern void load_side_set( Uint8 side );	/* am_load.c: the sides whose players' files are read */
+extern void pl_data_no_init( int side );
+extern void fight_load_start( int no );
+extern void load_stop2( void );
+#endif
 
 void sel_char_take( PLAYER_WORK *tw, Uint8 side );
 Uint32 sel_char_ck( PLAYER_WORK *tw, Uint8 side );
@@ -59,6 +65,13 @@ static void sel_in_init( void );
 static void sel_in_wait( void );
 static void sel_in_scr_move( void );
 static void sel_02( void );
+#ifdef TARGET_DC
+static int sel_stage_move( PLAYER_WORK *pl_w );
+static void sel_stage_init( void );
+static void sel_stage_wait( void );
+static void sel_stage_end( void );
+static void sel_pick_move( void );
+#endif
 static void sel_pick( void );
 static void sel_pl_move( PLAYER_WORK *pl_w );
 static void sel_pl_join( PLAYER_WORK *pl_w );
@@ -76,6 +89,9 @@ static void sel_pl_speed( PLAYER_WORK *pl_w );
 static void sel_pl_stage( PLAYER_WORK *pl_w );
 static void sel_pl_09( PLAYER_WORK *pl_w );
 static void sel_pl_end( PLAYER_WORK *pl_w );
+#ifdef TARGET_DC
+static void sel_dummy_join( PLAYER_WORK *pl_w );
+#endif
 static void sel_card_move( PLAYER_WORK *pl_w );
 static void sel_out( void );
 static void sel_out_init( void );
@@ -151,11 +167,22 @@ void SelectMainMove_yu( void )
 	static void ( *sel_jmp[7] )( void ) = {
 		sel_init, sel_in, sel_02, sel_pick, sel_out, sel_cpu_move, sel_exit
 	} ;
+#ifdef TARGET_DC
+	Sint8 i ;
 
-	sel_sw_on[0] = pl_work[0].side_sw.on ;
-	sel_sw_on[1] = pl_work[1].side_sw.on ;
-	sel_sw_now[0] = pl_work[0].side_sw.now ;
-	sel_sw_now[1] = pl_work[1].side_sw.now ;
+	/* the training's dummy joining: the other side's buttons work both cursors */
+	if( training_work.side != 0 && Sys->join_side ){
+		i = ( Sys->join_side - 1 ) ^ 1 ;
+		sel_sw_on[0] = sel_sw_on[1] = pl_work[i].side_sw.on ;
+		sel_sw_now[0] = sel_sw_now[1] = pl_work[i].side_sw.now ;
+	} else
+#endif
+	{
+		sel_sw_on[0] = pl_work[0].side_sw.on ;
+		sel_sw_on[1] = pl_work[1].side_sw.on ;
+		sel_sw_now[0] = pl_work[0].side_sw.now ;
+		sel_sw_now[1] = pl_work[1].side_sw.now ;
+	}
 	sel_jmp[Sys->routine_0]() ;
 }
 
@@ -166,6 +193,9 @@ void SelectMainMove_yu( void )
 static void sel_mask_set( Sint8 side )
 {
 	Uint32 on[2], off[2] ;
+#ifdef TARGET_DC
+	Uint32 full0, full1 ;	/* every character's bits */
+#endif
 
 	on[0] = pl_work[0].card_open[0] | pl_work[1].card_open[0] | Sys->char_open0 ;
 	on[1] = pl_work[0].card_open[1] | pl_work[1].card_open[1] | Sys->char_open1 ;
@@ -173,6 +203,37 @@ static void sel_mask_set( Sint8 side )
 	off[1] = pl_work[0].card_ex[1] | pl_work[1].card_ex[1] | Sys->char_open_all1 ;
 	sel_w.char_ex[side][0] = 0 ;
 	sel_w.char_ex[side][1] = 0 ;
+#ifdef TARGET_DC
+	/* a network game takes the characters both consoles agreed on */
+	if( Sys->home_mode == HOME_NETWORK ){
+		sel_w.char_open[side][0] = net_w.char_open[0] ;
+		sel_w.char_open[side][0] &= net_w.open_and[0] ;
+		sel_w.char_free[side][0] = sel_w.char_open[side][0] ;
+		sel_w.char_open[side][1] = net_w.char_open[1] ;
+		sel_w.char_open[side][1] &= net_w.open_and[1] ;
+		sel_w.char_free[side][1] = sel_w.char_open[side][1] ;
+		sel_w.char_ex[side][0] |= net_w.char_ex[0] ;
+		sel_w.char_ex[side][1] |= net_w.char_ex[1] ;
+		sel_w.same_flag = net_w.rule[14] ;
+	} else {
+		sel_w.char_open[side][0] = on[0] | 0x00ffff77 ;
+		sel_w.char_free[side][0] = sel_w.char_open[side][0] ;
+		sel_w.char_open[side][1] = on[1] | 0x02000004 ;
+		sel_w.char_free[side][1] = sel_w.char_open[side][1] ;
+		sel_w.char_ex[side][0] |= off[0] ;
+		sel_w.char_ex[side][1] |= off[1] ;
+	}
+	/* every character open, and opened again: any side may take the same one */
+	full0 = 0xf8ffffff ;
+	full1 = 0x07ffffff ;
+	if( sel_w.char_open[side][0] == full0 ){
+		if( sel_w.char_open[side][1] == full1 ){
+			if( sel_w.char_ex[side][0] == full0 ){
+				if( sel_w.char_ex[side][1] == full1 ) sel_w.same_flag = 1 ;
+			}
+		}
+	}
+#else
 	sel_w.char_open[side][0] = on[0] | 0xc0fcfaff ;
 	sel_w.char_free[side][0] = sel_w.char_open[side][0] ;
 	sel_w.char_open[side][1] = on[1] | 0x01803300 ;
@@ -180,6 +241,7 @@ static void sel_mask_set( Sint8 side )
 	sel_w.same_flag = 0 ;
 	sel_w.char_ex[side][0] |= off[0] ;
 	sel_w.char_ex[side][1] |= off[1] ;
+#endif
 }
 
 /*==============================================================*/
@@ -189,6 +251,13 @@ static void sel_init( void )
 {
 	VEC3 v ;
 
+#ifdef TARGET_DC
+	/* the players' files are read first */
+	if( !load_ck() ) return ;
+	load_side_set( Sys->play_side ) ;
+	if( !( Sys->play_side & 1 ) ) pl_data_no_init( 0 ) ;
+	if( !( Sys->play_side & 2 ) ) pl_data_no_init( 1 ) ;
+#endif
 	Sys->routine_0 ++ ;
 	Sys->routine_1 = 0 ;
 	Sys->routine_2 = 0 ;
@@ -197,8 +266,26 @@ static void sel_init( void )
 	work_init() ;
 	Palette_Init() ;
 	Texture_Init() ;
+#ifdef TARGET_DC
+	sel_w.stage_ex_cnt = vms_work.stage_ex_cnt ;
+	if( Sys->home_mode == HOME_VERSUS ){
+		sel_w.stage_cur = 0 ;
+		stage_no = 17 ;
+		tex_req_flag = 1 ;
+		tex_req_no = 29 ;
+		mode_cnt_up() ;
+	}
+#endif
 	Sys->sel_done_flag = 1 ;
 	sel_w.same_flag = 0 ;
+#ifdef TARGET_DC
+	/* the versus, and the training with the computer on both sides, have no speed to choose */
+	if( Sys->home_mode == HOME_VERSUS || training_work.unk_04 == 2 ){
+		sel_speed_side = -1 ;
+		Sys->join_side = 0 ;
+		goto speed_end ;
+	}
+#endif
 	sel_speed_side = 0 ;
 	if( Sys->play_side & 1 ) sel_speed_side = 2 ;
 	if( Sys->play_side & 2 ) sel_speed_side = 1 ;
@@ -209,6 +296,9 @@ static void sel_init( void )
 		sel_speed_side = Sys->join_side ;
 		Sys->join_side = 0 ;
 	}
+#ifdef TARGET_DC
+speed_end :
+#endif
 	Sys->entry_stop = 0 ;
 	Sys->join_flag = 0 ;
 	Sys->heart_step = 0 ;
@@ -257,16 +347,34 @@ static void sel_init( void )
 	fog_init() ;
 	bright_init() ;
 	scr_work_init() ;
-	scr_work.scr_type = 1 ;
-	scr_work.scr_routine[1] = 1 ;
-	scr_work.eye[0].x = 0.0f ;
-	scr_work.eye[0].y = 1080.0f ;
-	scr_work.eye[0].z = 0.1f ;
-	scr_work.target[0].x = 0.0f ;
-	scr_work.target[0].y = 95.0f ;
-	scr_work.target[0].z = 0.0f ;
-	scr_work.shift_y = 0.0f ;
-	Sys->timer0 = 100 ;
+#ifdef TARGET_DC
+	/* the versus starts with the camera already down on the stages */
+	if( Sys->home_mode == HOME_VERSUS ){
+		scr_work.scr_type = 1 ;
+		scr_work.scr_routine[1] = 4 ;
+		scr_work.eye[0].x = 0.0f ;
+		scr_work.eye[0].y = 190.0f ;
+		scr_work.eye[0].z = 812.3573f ;
+		scr_work.target[0].x = 0.0f ;
+		scr_work.target[0].y = 190.0f ;
+		scr_work.target[0].z = 0.0f ;
+		scr_work.shift_y = 0.0f ;
+		Sys->timer0 = 0 ;
+		scr_move() ;
+	} else
+#endif
+	{
+		scr_work.scr_type = 1 ;
+		scr_work.scr_routine[1] = 1 ;
+		scr_work.eye[0].x = 0.0f ;
+		scr_work.eye[0].y = 1080.0f ;
+		scr_work.eye[0].z = 0.1f ;
+		scr_work.target[0].x = 0.0f ;
+		scr_work.target[0].y = 95.0f ;
+		scr_work.target[0].z = 0.0f ;
+		scr_work.shift_y = 0.0f ;
+		Sys->timer0 = 100 ;
+	}
 	sel_w.join_flag = 0 ;
 	sel_w.cur_go_flag = 0 ;
 	sel_join_make() ;
@@ -280,6 +388,9 @@ static void sel_init( void )
 	v.z = 1.0f ;
 	light_dir_set( &v ) ;
 	SysTransSet( disp_all ) ;
+#ifdef TARGET_DC
+	fight_load_start( 0 ) ;
+#endif
 }
 
 /*--------------------------------------------------------------*/
@@ -307,6 +418,13 @@ static void sel_in_init( void )
 		sel_cpu_team_set( sel_w.cpu_side ) ;
 		sel_w.pick_flag[sel_w.cpu_side] = 0 ;
 	}
+#ifdef TARGET_DC
+	/* nobody plays yet: the computer's team, or the two new sides', is read ahead */
+	if( !Sys->play_side ){
+		if( Sys->new_side != 3 ) fight_load_start( sel_w.cpu_side + 15 ) ;
+		else fight_load_start( 24 ) ;
+	}
+#endif
 	if( sel_w.pick_flag[0] != 7 ) pl_work[0].route_no = nlRand() % 4 ;
 	if( sel_w.pick_flag[1] != 7 ) pl_work[1].route_no = nlRand() % 4 ;
 	stage_decide() ;
@@ -320,6 +438,9 @@ static void sel_in_wait( void )
 		Sys->routine_1 ++ ;
 		sel_globe_set() ;
 	}
+#ifdef TARGET_DC
+	if( Sys->home_mode == HOME_VERSUS ) return ;
+#endif
 	scr_move() ;
 }
 
@@ -332,9 +453,15 @@ static void sel_in_scr_move( void )
 	case 0:
 		Sys->routine_2 ++ ;
 		sel_w.ready_flag = 0 ;
-		song_req( 1 ) ;
+		scene_song_req( 1, 22 ) ;
 		ef05_set_all() ;
+#ifdef TARGET_DC
+		if( scr_work.scr_routine[0] != 2 ){
+			if( Sys->home_mode != HOME_VERSUS ) scr_move() ;
+		}
+#else
 		if( scr_work.scr_routine[0] != 2 ) scr_move() ;
+#endif
 		break ;
 	case 1:
 		scr_move() ;
@@ -342,7 +469,13 @@ static void sel_in_scr_move( void )
 		break ;
 	case 2:
 		if( sel_w.ready_flag == 1 ){
+#ifdef TARGET_DC
+			/* the versus chooses its stage first */
+			if( Sys->home_mode != HOME_VERSUS ) Sys->routine_0 = 3 ;
+			else Sys->routine_0 = 2 ;
+#else
 			Sys->routine_0 = 3 ;
+#endif
 			Sys->routine_1 = 0 ;
 			Sys->routine_2 = 0 ;
 			sel_w.ready_flag = 0 ;
@@ -353,6 +486,134 @@ static void sel_in_scr_move( void )
 	}
 }
 
+#ifdef TARGET_DC
+/*==============================================================*/
+/*			The versus: both players choose the stage, and		*/
+/*			their handicaps										*/
+/*==============================================================*/
+static void sel_02( void )
+{
+	static void ( *sel_02_jmp[3] )( void ) = { sel_stage_init, sel_stage_wait, sel_stage_end } ;
+
+	sel_02_jmp[Sys->routine_1]() ;
+	work_list_move( W_SET ) ;
+	work_list_move( W_EF ) ;
+	work_list_move( W_SHL ) ;
+	SysTransSet( disp_all ) ;
+}
+
+/*--------------------------------------------------------------*/
+/*	one player's stage cursor and handicap; nonzero once chosen	*/
+static int sel_stage_move( PLAYER_WORK *pl_w )
+{
+	/* the stages by the cursor, with stage 8's other look opened or not; 0 is a random one */
+	static const Uint8 stage_tbl_ex[18] = { 17, 0, 1, 2, 3, 4, 5, 6, 7, 11, 8, 9, 10, 12, 13, 14, 15, 16 } ;
+	static const Uint8 stage_tbl[17] = { 17, 0, 1, 2, 3, 4, 5, 6, 7, 11, 9, 10, 12, 13, 14, 15, 16 } ;
+	int old ;
+	Sint8 max ;
+
+	old = sel_w.stage_cur ;
+	max = sel_w.stage_ex_cnt + Sys->arcade_clear + 10 ;
+	if( sel_sw_on[pl_w->pl_index] & ( KEY_UP | KEY_DOWN ) ){
+		na_req( 1 ) ;
+		if( sel_sw_on[pl_w->pl_index] & KEY_UP ) sel_w.stage_cur = ( sel_w.stage_cur + max - 1 ) % max ;
+		if( sel_sw_on[pl_w->pl_index] & KEY_DOWN ) sel_w.stage_cur = ( sel_w.stage_cur + max + 1 ) % max ;
+	}
+	if( sel_sw_on[pl_w->pl_index] & ( KEY_LEFT | KEY_RIGHT ) ){
+		na_req( 4 ) ;
+		if( sel_sw_on[pl_w->pl_index] & KEY_LEFT ) pl_w->handicap = ( pl_w->handicap + 5 - 1 ) % 5 ;
+		if( sel_sw_on[pl_w->pl_index] & KEY_RIGHT ) pl_w->handicap = ( pl_w->handicap + 5 + 1 ) % 5 ;
+	}
+	if( sel_w.stage_cur != old ){
+		tex_req_flag = 1 ;
+		tex_req_no = 29 ;
+	}
+	if( Sys->arcade_clear ) stage_no = stage_tbl_ex[sel_w.stage_cur] ;
+	else stage_no = stage_tbl[sel_w.stage_cur] ;
+	if( sel_sw_on[pl_w->pl_index] & ( KEY_LP | KEY_HP | KEY_LK | KEY_HK ) ){
+		na_req( 2 ) ;
+		if( !sel_w.stage_cur ){
+			stage_no = nlRand() % 8 ;
+			tex_req_flag = 1 ;
+			tex_req_no = 29 ;
+		}
+		return 1 ;
+	}
+	return 0 ;
+}
+
+/*--------------------------------------------------------------*/
+static void sel_stage_init( void )
+{
+	if( sel_stage_move( &pl_work[0] ) || sel_stage_move( &pl_work[1] ) ){
+		Sys->routine_1 ++ ;
+		Sys->timer0 = 60 ;
+	}
+}
+
+/*--------------------------------------------------------------*/
+static void sel_stage_wait( void )
+{
+	Uint8 handicap ;
+
+	Sys->timer0 -- ;
+	if( Sys->timer0 <= 0 ){
+		Sys->routine_1 ++ ;
+		/* each side's members take its handicap */
+		handicap = pl_work[0].handicap ;
+		pl_work[2].handicap = handicap ;
+		pl_work[4].handicap = handicap ;
+		handicap = pl_work[1].handicap ;
+		pl_work[3].handicap = handicap ;
+		pl_work[5].handicap = handicap ;
+	}
+}
+
+/*--------------------------------------------------------------*/
+static void sel_stage_end( void )
+{
+	Sys->routine_0 = 3 ;
+	Sys->routine_1 = 0 ;
+	Sys->boss_flag = 0 ;
+}
+
+/*==============================================================*/
+/*			The sides join in, or drop out, until both have		*/
+/*			chosen												*/
+/*==============================================================*/
+static void sel_pick_move( void )
+{
+	Sint16 i ;
+
+	if( Sys->home_mode == HOME_NETWORK ){
+		sel_w.sel_timer -- ;
+		if( sel_w.sel_timer <= 0 ) sel_w.sel_timer = 0 ;
+	}
+	sel_pl_move( &pl_work[0] ) ;
+	sel_pl_move( &pl_work[1] ) ;
+	if( sel_end_bit == ( Sys->play_side | Sys->new_side ) ){
+		if( ( Sys->new_side | Sys->play_side ) == 3 ) Sys->routine_0 = 4 ;
+		else Sys->routine_0 = 5 ;
+		for( i = 0 ; i < 2 ; i ++ ){
+			pl_work[i].routine_1 = 0 ;
+			pl_work[i].routine_2 = 0 ;
+			pl_work[i].routine_3 = 0 ;
+		}
+		Sys->join_flag = 0 ;
+		Sys->heart_step = 0 ;
+	}
+	work_list_move( W_SET ) ;
+	work_list_move( W_EF ) ;
+	work_list_move( W_SHL ) ;
+	SysTransSet( disp_all ) ;
+}
+
+/*--------------------------------------------------------------*/
+static void sel_pick( void )
+{
+	sel_pick_move() ;
+}
+#else
 /*--------------------------------------------------------------*/
 static void sel_02( void )
 {
@@ -442,6 +703,7 @@ static void sel_pick( void )
 	work_list_move( W_SHL ) ;
 	SysTransSet( disp_all ) ;
 }
+#endif
 
 /*==============================================================*/
 /*			A side's step, or its memory card while one is		*/
@@ -481,7 +743,34 @@ static void sel_pl_join( PLAYER_WORK *pl_w )
 		sel_w.sel_timer = 0xe10 ;
 		pl_w->route_no = nlRand() % 4 ;
 		stage_decide() ;
+#ifdef TARGET_DC
+		/* the stage's files are read again for the new stage */
+		load_stop2() ;
+		fight_load_start( 17 ) ;
+#endif
 	}
+#ifdef TARGET_DC
+	/* a network game's default teams are the rules' */
+	if( Sys->home_mode == HOME_NETWORK ){
+		if( sel_w.same_flag ){
+			for( i = 0 ; i < 3 ; i ++ ){
+				pl_work[pl_w->pl_index + i * 2].load_type = net_w.def_team_tbl[pl_w->pl_index][0] ;
+				pl_work[pl_w->pl_index + i * 2].pl_type = pl_work[pl_w->pl_index + i * 2].load_type ;
+				pl_work[pl_w->pl_index + i * 2].pl_personal = 0 ;
+				pl_work[i * 2 + pl_w->pl_index].team_order = i ;
+			}
+		}
+		else{
+			for( i = 0 ; i < 3 ; i ++ ){
+				pl_work[pl_w->pl_index + i * 2].load_type = net_w.def_team_tbl[pl_w->pl_index][i] ;
+				pl_work[pl_w->pl_index + i * 2].pl_type = pl_work[pl_w->pl_index + i * 2].load_type ;
+				pl_work[pl_w->pl_index + i * 2].pl_personal = 0 ;
+				pl_work[i * 2 + pl_w->pl_index].team_order = i ;
+			}
+		}
+	}
+	else
+#endif
 	if( sel_w.same_flag ){
 		for( i = 0 ; i < 3 ; i ++ ){
 			pl_work[pl_w->pl_index + i * 2].load_type = def_team_tbl[pl_w->pl_index][0] ;
@@ -629,7 +918,9 @@ static void sel_pl_pick_char( PLAYER_WORK *pl_w )
 		face_tex_set( pl_w->timer1 * 2 + pl_w->pl_index ) ;
 		face2_tex_set( pl_w->timer1 * 2 + pl_w->pl_index ) ;
 	}
+#ifndef TARGET_DC
 	if( 0 ) sel_w.sel_timer = 1 ;
+#endif
 	if( !( sel_sw_on[pl_w->pl_index] & KEY_BUTTON ) ) return ;
 decide :
 	na_req( pl_w->pl_index * 2 + 65 ) ;
@@ -641,6 +932,11 @@ decide :
 	sel_w.pick_flag[pl_w->pl_index] |= 1 << pl_w->timer1 ;
 	sel_char_take( sel_char_w, pl_w->pl_index ) ;
 	pl_w->timer0 ++ ;
+#ifdef TARGET_DC
+	/* nobody plays yet: the member's files are read ahead */
+	if( !Sys->play_side ) fight_load_start( pl_w->timer1 * 2 + pl_w->pl_index + 18 ) ;
+	pl_cnt_up( sel_char_w->load_type ) ;
+#endif
 	sel_char_w->load_color = sel_color_get( pl_w, sel_char_w, sel_sw_on[pl_w->pl_index] ) ;
 }
 
@@ -683,6 +979,14 @@ static void sel_pl_pick_type( PLAYER_WORK *pl_w )
 		pl_w->routine_1 = 3 ;
 		pl_w->routine_2 = 0 ;
 		if( pl_w->timer1 >= 2 ) sel_w.end_flag[pl_w->pl_index] |= 0x80 ;
+#ifdef TARGET_DC
+		/* a whole team chosen: its files are read ahead, and the arcade's play is counted */
+		if( sel_w.pick_flag[pl_w->pl_index] == 0x77 ) fight_load_start( pl_w->pl_index + 13 ) ;
+		if( sel_w.pick_flag[0] == 0x77 ){
+			if( sel_w.pick_flag[1] == 0x77 ) fight_load_start( 2 ) ;
+		}
+		if( Sys->home_mode == HOME_ARCADE ) mode_cnt_up() ;
+#endif
 		break ;
 	}
 }
@@ -700,10 +1004,23 @@ static void sel_pl_pick_next( PLAYER_WORK *pl_w )
 			pl_w->master_w = &pl_work[pl_w->timer1 * 2 + pl_w->pl_index] ;
 			if( Sys->speed_fix ){
 				pl_w->routine_0 = 10 ;
+#ifdef TARGET_DC
+				Sys->game_speed = Sys->speed_fix ;
+				sel_w.speed_flag = 1 ;
+				sel_dummy_join( pl_w ) ;
+#else
 				Sys->game_speed = ( Sys->speed_fix - 1 ) & 1 ;
 				sel_w.speed_flag = 1 ;
+#endif
 			}
 			else{
+#ifdef TARGET_DC
+				/* the training's dummy side never chooses the speed */
+				if( training_work.side && Sys->join_side == pl_w->side_bit ){
+					pl_w->routine_0 = 10 ;
+					return ;
+				}
+#endif
 				if( sel_speed_side < 0 ){
 					sel_speed_side = pl_w->side_bit ;
 					pl_w->routine_0 = 7 ;
@@ -762,7 +1079,12 @@ static void sel_pl_speed( PLAYER_WORK *pl_w )
 		na_req( pl_w->pl_index * 2 + 65 ) ;
 		break ;
 	case 3:
-		if( sel_w.work_step[pl_w->pl_index] == 5 ) pl_w->routine_0 = 10 ;
+		if( sel_w.work_step[pl_w->pl_index] == 5 ){
+#ifdef TARGET_DC
+			sel_dummy_join( pl_w ) ;
+#endif
+			pl_w->routine_0 = 10 ;
+		}
 		break ;
 	}
 }
@@ -776,7 +1098,11 @@ static void sel_pl_stage( PLAYER_WORK *pl_w )
 	if( 0 ) stage_no = 0 ;
 	if( sel_sw_on[pl_w->pl_index] & KEY_LEFT ) stage_no -- ;
 	if( sel_sw_on[pl_w->pl_index] & KEY_RIGHT ) stage_no ++ ;
+#ifdef TARGET_DC
+	stage_no = ( stage_no + 17 ) % 17 ;	/* with the stages' other looks */
+#else
 	stage_no = ( stage_no + 9 ) % 9 ;
+#endif
 	if( sel_sw_on[pl_w->pl_index] & KEY_BUTTON ) pl_w->routine_0 = 10 ;
 	if( pl_w->pl_index == 1 ){ }
 	if( pl_w->pl_index == 1 ) x = 22 ;
@@ -798,12 +1124,32 @@ static void sel_pl_end( PLAYER_WORK *pl_w )
 	sel_end_bit |= pl_w->side_bit ;
 }
 
+#ifdef TARGET_DC
+/*--------------------------------------------------------------*/
+/* the training: once a side has its team, the other joins as the dummy */
+static void sel_dummy_join( PLAYER_WORK *pl_w )
+{
+	if( training_work.side != 0 && !Sys->join_side ){
+		if( pl_w->pl_index ){
+			Sys->join_side = 1 ;
+			Sys->new_side |= 1 ;
+		}
+		else{
+			Sys->join_side = 2 ;
+			Sys->new_side |= 2 ;
+		}
+	}
+}
+#endif
+
 /*==============================================================*/
 /*			The side's memory card: its result, and the			*/
-/*			characters and points it holds						*/
+/*			characters and points it holds; the console reads	*/
+/*			its cards elsewhere									*/
 /*==============================================================*/
 static void sel_card_move( PLAYER_WORK *pl_w )
 {
+#ifndef TARGET_DC
 	Uint32 m[2] ;
 	int ck ;
 
@@ -889,6 +1235,7 @@ static void sel_card_move( PLAYER_WORK *pl_w )
 		sel_w.char_ex[0][1] |= sel_w.char_ex[1][1] ;
 		break ;
 	}
+#endif
 }
 
 /*==============================================================*/
@@ -971,6 +1318,11 @@ static Sint8 sel_join_ck( Sint8 flag )
 		Sys->entry_stop = 1 ;
 		if( flag ) Sys->routine_1 = 7 ;
 		else Sys->routine_1 = 9 ;
+#ifdef TARGET_DC
+		/* the computer's team, now the new player's, is read again */
+		fight_load_start( sel_w.cpu_side + 13 ) ;
+		fight_load_start( 2 ) ;
+#endif
 		return 1 ;
 	}
 	return 0 ;
@@ -1107,6 +1459,10 @@ static void sel_cpu_scr_move( void )
 		fade_set( -1, 20, FADE_OUT ) ;
 		Sys->timer0 = 20 ;
 		Sys->entry_stop = 1 ;
+#ifdef TARGET_DC
+		fight_load_start( sel_w.cpu_side + 13 ) ;
+		fight_load_start( 2 ) ;
+#endif
 	}
 	else sel_join_ck( 0 ) ;
 }
@@ -1141,7 +1497,9 @@ static void sel_exit( void )
 	sel_w.heart_flag = 0 ;
 	sel_pl_clr() ;
 	Sys->sel_done_flag = 1 ;
+#ifndef TARGET_DC
 	card_flag_clr() ;
+#endif
 	sound_all_off() ;
 	stream_stop() ;
 }
@@ -1182,6 +1540,10 @@ static void sel_main_init( void )
 {
 	VEC3 v ;
 
+#ifdef TARGET_DC
+	if( !load_ck() ) return ;
+	load_side_set( Sys->play_side ) ;
+#endif
 	Sys->routine_1 ++ ;
 	Sys->routine_2 = 0 ;
 	Sys->routine_3 = 0 ;
@@ -1200,7 +1562,7 @@ static void sel_main_init( void )
 	sel_w.heart_flag = 0 ;
 	sel_pl_clr() ;
 	TexLoad( 5 ) ;
-	song_req( 1 ) ;
+	scene_song_req( 1, 22 ) ;
 	sel_w.join_flag = 3 ;
 	sel_back_w = sel_back_set() ;
 	sel_plate_set() ;
@@ -1224,6 +1586,9 @@ static void sel_main_init( void )
 	scr_work.target[0].z = 0.0f ;
 	scr_work.shift_y = 0.0f ;
 	scr_move() ;
+#ifdef TARGET_DC
+	fight_load_start( 0 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -1339,6 +1704,10 @@ static void sel_main_scr_move( void )
 		fade_set( -1, 20, FADE_OUT ) ;
 		Sys->timer0 = 20 ;
 		Sys->entry_stop = 1 ;
+#ifdef TARGET_DC
+		fight_load_start( sel_w.cpu_side + 13 ) ;
+		fight_load_start( 2 ) ;
+#endif
 	}
 	else sel_join_ck( 1 ) ;
 }
@@ -1712,6 +2081,9 @@ static void sel_pl_mask_set( PLAYER_WORK *pl_w )
 	Uint32 bit ;
 	Sint8 i ;
 	Uint8 hi ;
+#ifdef TARGET_DC
+	Uint32 full0, full1 ;	/* every character's bits */
+#endif
 
 	on[0] = pl_w->card_open[0] | Sys->char_open0 ;
 	on[1] = pl_w->card_open[1] | Sys->char_open1 ;
@@ -1719,6 +2091,23 @@ static void sel_pl_mask_set( PLAYER_WORK *pl_w )
 	off[1] = pl_w->card_ex[1] | Sys->char_open_all1 ;
 	sel_w.char_ex[pl_w->pl_index][0] = 0 ;
 	sel_w.char_ex[pl_w->pl_index][1] = 0 ;
+#ifdef TARGET_DC
+	sel_w.char_open[pl_w->pl_index][0] = on[0] | 0x00ffff77 ;
+	sel_w.char_free[pl_w->pl_index][0] = sel_w.char_open[pl_w->pl_index][0] ;
+	sel_w.char_open[pl_w->pl_index][1] = on[1] | 0x02000004 ;
+	sel_w.char_free[pl_w->pl_index][1] = sel_w.char_open[pl_w->pl_index][1] ;
+	sel_w.char_ex[pl_w->pl_index][0] |= off[0] ;
+	sel_w.char_ex[pl_w->pl_index][1] |= off[1] ;
+	/* every character open, and opened again: any side may take the same one */
+	full0 = 0xf8ffffff ;
+	full1 = 0x07ffffff ;
+	if( sel_w.char_open[pl_w->pl_index][0] != full0 ) goto team ;
+	if( sel_w.char_open[pl_w->pl_index][1] != full1 ) goto team ;
+	if( sel_w.char_ex[pl_w->pl_index][0] != full0 ) goto team ;
+	if( sel_w.char_ex[pl_w->pl_index][1] != full1 ) goto team ;
+	sel_w.same_flag = 1 ;
+team :	/* then the team's own characters */
+#else
 	sel_w.char_open[pl_w->pl_index][0] = on[0] | 0xc0fcfaff ;
 	sel_w.char_free[pl_w->pl_index][0] = sel_w.char_open[pl_w->pl_index][0] ;
 	sel_w.char_open[pl_w->pl_index][1] = on[1] | 0x01803300 ;
@@ -1726,6 +2115,7 @@ static void sel_pl_mask_set( PLAYER_WORK *pl_w )
 	sel_w.same_flag = 0 ;
 	sel_w.char_ex[pl_w->pl_index][0] |= off[0] ;
 	sel_w.char_ex[pl_w->pl_index][1] |= off[1] ;
+#endif
 	for( i = 0 ; i < 3 ; i ++ ){
 		hi = char_bit_get( &bit, pl_work[pl_w->pl_index + i * 2].load_type ) ;
 		sel_w.char_open[pl_w->pl_index][hi] |= bit ;
@@ -1741,6 +2131,25 @@ void sel_def_char_set( PLAYER_WORK *pl_w )
 	Uint8 no, i ;
 
 	no = pl_w->timer1 * 2 + pl_w->pl_index ;
+#ifdef TARGET_DC
+	/* a network game's default teams are the rules' */
+	if( Sys->home_mode == HOME_NETWORK ){
+		if( sel_w.same_flag ){
+			pl_work[no].load_type = pl_work[no].pl_type = net_w.def_team_tbl[pl_w->pl_index][0] ;
+			pl_work[no].pl_personal = 0 ;
+		}
+		else{
+			for( i = 0 ; i < 3 ; i ++ ){
+				if( sel_w.char_free[pl_w->pl_index][0] & net_w.def_team_bit[pl_w->pl_index][i] ){
+					pl_work[no].load_type = pl_work[no].pl_type = net_w.def_team_tbl[pl_w->pl_index][i] ;
+					pl_work[no].pl_personal = 0 ;
+					break ;
+				}
+			}
+		}
+		return ;
+	}
+#endif
 	if( sel_w.same_flag ){
 		pl_work[no].load_type = pl_work[no].pl_type = def_team_tbl[pl_w->pl_index][0] ;
 		pl_work[no].pl_personal = 0 ;

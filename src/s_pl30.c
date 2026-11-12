@@ -1108,6 +1108,11 @@ static void destroyer_init( PLAYER_WORK *pl_w )
 	pl_w->routine_2 ++ ;
 	sp_stand_set( pl_w ) ;
 	pl_sp_ef_set( pl_w ) ;
+	/* from the Japanese disc on, the hyper starts with its own attack set, not the one before it */
+#if BUILD_DATE >= 20000303
+	pl_w->atck_no = pl30_at_destroyer ;
+	HIT_RESET( pl_w ) ;
+#endif
 	pl_char_set( pl_w, Char_Super, 0 ) ;
 }
 

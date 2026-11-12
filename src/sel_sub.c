@@ -4,7 +4,11 @@
 
 #define FACE_TEX	( ( Uint8 * )0x0cdb0000 )	/* two 256 x 256 textures of 16 faces */
 #define FACE2_TEX	( ( Uint8 * )0x0cdf0000 )	/* each side's big face */
+#ifndef TARGET_DC
 #define NAME_PIC_TBL	( stream_tbl + 141 )	/* the files of the name pictures */
+#else
+#define NAME_PIC_FILE	( ( Sint32 * )0x0c520000 )	/* the name pictures' file: each one's offset, then the pictures */
+#endif
 
 
 /* the order of the 64 x 64 cells in a 256 x 256 texture */
@@ -158,6 +162,7 @@ void face2_tex_set( int pl )
 /****************************************************************/
 /*			Unpack a character's name picture for a side		*/
 /****************************************************************/
+#ifndef TARGET_DC
 void name_pic_set( int side, int no )
 {
 	const FILE_DATA *tbl ;
@@ -171,6 +176,22 @@ void name_pic_set( int side, int no )
 	dst = ( Uint16 * )( side * 0x20000 + 0x0c720000 ) ;
 	lz_unpack16( src, dst ) ;
 }
+#else
+/* The disc's name pictures are one file, with a table of their places at its head. */
+void name_pic_set( int side, int no )
+{
+	Sint32 *tbl ;
+	Sint16 *src ;
+	Uint16 *dst ;
+	int n = no ;
+
+	if( no >= 27 ) n -= 3 ;
+	tbl = NAME_PIC_FILE ;
+	src = ( Sint16 * )( tbl[n] + ( Uint8 * )tbl ) ;
+	dst = ( Uint16 * )( side * 0x20000 + 0x0c720000 ) ;
+	lz_unpack16( src, dst ) ;
+}
+#endif
 
 /****************************************************************/
 /*			Draw a score of eleven digits, hi's low three		*/
@@ -213,6 +234,11 @@ void score_tex_set( Uint32 hi, Uint32 lo, Uint8 *dst_top, const Uint8 *pos )
 	for( j = 0 ; j < 128 ; j ++ ) *dst++ = *src++ ;
 }
 
+#ifdef TARGET_DC
+#define WIN_THD	9		/* the first of the textures the wins are drawn in */
+#else
+#define WIN_THD	11
+#endif
 /****************************************************************/
 /*			Draw a count of wins in two digits, and the			*/
 /*			plural's letter after them							*/
@@ -226,15 +252,15 @@ void win_tex_set( Uint32 cnt, NLthd *thd )
 	no = cnt / 10 ;
 	if( !no ) no = 10 ;
 	src = ( Uint32 * )( tex + win_num_tbl[no] * 0x200 ) ;
-	dst = thd[12].address ;
+	dst = thd[WIN_THD + 1].address ;
 	for( j = 0 ; j < 0x200 ; j ++ ) *dst++ = *src++ ;
 	src = ( Uint32 * )( tex + win_num_tbl[cnt % 10] * 0x200 ) ;
-	dst = thd[14].address ;
+	dst = thd[WIN_THD + 3].address ;
 	for( j = 0 ; j < 0x200 ; j ++ ) *dst++ = *src++ ;
 	if( cnt > 1 ) no = 14 ;
 	else no = 10 ;
 	src = ( Uint32 * )( tex + win_num_tbl[no] * 0x200 ) ;
-	dst = ( Uint32 * )thd[11].address + 0x400 ;
+	dst = ( Uint32 * )thd[WIN_THD].address + 0x400 ;
 	for( j = 0 ; j < 0x200 ; j ++ ) *dst++ = *src++ ;
 }
 
@@ -259,8 +285,23 @@ void rank_tex_set( int no, int line )
 		do memset( dst_top + rank_pos_tbl[i] * 0x200, 0, 0x200 ) ; while( ++ i < 16 ) ;
 		return ;
 	}
+#ifndef TARGET_DC
 	if( Sys->vs_flag ) rank = &rank_win[no] ;
 	else rank = &rank_score[no] ;
+#else
+	/* the home game has a third ranking, the score attack's */
+	switch( Sys->rank_disp ){
+	case 0 :
+		rank = &rank_score[no] ;
+		break ;
+	case 1 :
+		rank = &rank_win[no] ;
+		break ;
+	case 2 :
+		rank = &rank_sa[no] ;
+		break ;
+	}
+#endif
 	tex = Sys->tex_buff ;
 	dst_top = Sys->tex_buff + rank_line_tbl[line] * 0x200 + 0x20000 ;
 	for( i = 0 ; i < 4 ; i ++ ){
@@ -292,6 +333,9 @@ void rank_tex_set( int no, int line )
 	j = 128 ;
 	do { *dst++ = *src++ ; j = j - 1 ; } while( j ) ;
 	for( i ++ ; i < 13 ; i ++ ){
+#ifdef TARGET_DC
+		if( 0 ) i = rank_num_tbl[i] ;	/* left out of the build */
+#endif
 		src = ( Uint32 * )( tex + rank_num_tbl[n = i + 1] * 0x200 ) ;
 		dst = ( Uint32 * )( dst_top + rank_pos_tbl[i] * 0x200 ) ;
 		j = 128 ;
@@ -304,7 +348,11 @@ void rank_tex_set( int no, int line )
 copy :
 	j = 128 ;
 	do { *dst++ = *src++ ; j = j - 1 ; } while( j ) ;
+#ifndef TARGET_DC
 	if( !Sys->vs_flag ) score_tex_set( rank->score_hi, rank->score, dst_top + 0x10000, rank_pos_tbl ) ;
+#else
+	if( Sys->rank_disp != 1 ) score_tex_set( rank->score_hi, rank->score, dst_top + 0x10000, rank_pos_tbl ) ;
+#endif
 }
 
 /****************************************************************/
@@ -382,8 +430,25 @@ void tex_req_send( void )
 		case 11 :
 		case 12 :
 			nlSetCommonTextureOffset( 0 ) ;
+#ifndef TARGET_DC
 			nlCommonTextureReloadA( 0x81d, ( Uint32 * )( Sys->tex_buff + 0x20000 ) ) ;
 			nlCommonTextureReloadA( 0x81f, ( Uint32 * )( Sys->tex_buff + 0x30000 ) ) ;
+#else
+			/* the ranking of wins has no scores */
+			switch( Sys->rank_disp ){
+			case 0 :
+				nlCommonTextureReloadA( 0x816, ( Uint32 * )( Sys->tex_buff + 0x20000 ) ) ;
+				nlCommonTextureReloadA( 0x817, ( Uint32 * )( Sys->tex_buff + 0x30000 ) ) ;
+				break ;
+			case 1 :
+				nlCommonTextureReloadA( 0x81b, ( Uint32 * )( Sys->tex_buff + 0x20000 ) ) ;
+				break ;
+			case 2 :
+				nlCommonTextureReloadA( 0x816, ( Uint32 * )( Sys->tex_buff + 0x20000 ) ) ;
+				nlCommonTextureReloadA( 0x817, ( Uint32 * )( Sys->tex_buff + 0x30000 ) ) ;
+				break ;
+			}
+#endif
 			break ;
 		case 13 : case 14 : case 15 : case 16 : case 17 : case 18 : case 19 : case 20 :
 		case 21 : case 22 : case 23 : case 24 : case 25 : case 26 : case 27 : case 28 :

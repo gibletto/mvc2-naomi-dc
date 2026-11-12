@@ -1,0 +1,13 @@
+; nl_inv_camera_vec: the camera's direction in the model's space, which the lighting code reads, and
+; the specular flag after it. Sega keeps these 16 bytes with the code, on a cache line of their own.
+
+          .SECTION  P$32,CODE,ALIGN=32
+          .EXPORT   _inv_camera_vec
+          .EXPORT   _nl_specular_flag
+
+_inv_camera_vec:
+          .DATA.L   0,0,0
+_nl_specular_flag:
+          .DATA.L   0
+
+          .END

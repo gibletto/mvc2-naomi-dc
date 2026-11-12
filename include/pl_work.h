@@ -229,14 +229,14 @@ typedef struct PLAYER_WORK {
 	struct PLAYER_WORK *target_w;	/* 20c: the opposing team's point character */
 	Uint8	air_guard_cnt;	/* 210: guards in this jump; no jump attack after one until landing */
 	Uint8	guard_cnt;	/* 211: hits guarded in a row; cleared by a hit and when guard stun ends */
-	Uint8	unk_212;		/* 212 */
+	Uint8	unk_212;	/* 212: cleared with stun_cnt and renda_cnt as each round starts; never read */
 	Uint8	unk_213;
 	void	*step_adrs;		/* 214: steps read one a frame: the knock-back's (Sint8) or the guard's command data */
 	Float	back_spd_x;		/* 218: the flying knock-back's x speed, stored before the reaction starts (and a throw's) */
 	Float	back_spd_y;		/* 21c: and its y speed */
 	Float	blow_spd;		/* 220: the knock-back's speed */
 	Float	blow_acc;		/* 224: and its change */
-	Uint8	unk_228;		/* 228 */
+	Uint8	unk_228;	/* 228: set with dm_elem by a hit of an element (3, 5) and cleared each frame; never read */
 	Sint8	elem_ef_cnt;	/* 229: element effects out on the player (dm00_0x, pls28_00), at most 4 */
 	Uint8	dm_elem;	/* 22a: the element of the last hit this player took, 1 to 5 */
 	Uint8	dm_elem_old;	/* 22b: dm_elem before the last hit or throw cleared it */
@@ -258,7 +258,7 @@ typedef struct PLAYER_WORK {
 	Uint8	fly_lever;		/* 23c: the stick's direction bits while flying */
 	Sint8	float_wait;		/* 23d: frames to the next step of the standing bob */
 	Sint8	float_st;		/* 23e: the standing bob's step, 0 to 39 */
-	Uint8	unk_23f;		/* 23f: counts down */
+	Uint8	unk_23f;	/* 23f: counted down each frame; nothing sets it */
 	Uint8	unk_240[0x248 - 0x240];
 	Uint8	hyper_stop_flag;	/* 248: the fight is stopped for a hyper combo's flash: a bit for each side */
 	Sint8	hyper_stop_timer;	/* 249: frames into the hyper stop */
@@ -290,7 +290,7 @@ typedef struct PLAYER_WORK {
 	Uint8	assist_dm_cnt;	/* 277: hits taken in the combo from the other side's partners; while any has some, no partner can be called */
 	Sint16	escape_timer;		/* 278: a throw escape's timer */
 	Sint8	cancel_timer;	/* 27a: frames left to cancel a special move into a hyper combo */
-	Uint8	unk_27b;		/* 27b */
+	Uint8	unk_27b;	/* 27b: set, 0 or 1, as a special move opens its cancel (cancel_timer 16); never read */
 	Sint16	combo_damage;	/* 27c: vital_new when the combo on the player began */
 	Sint8	armor_time;		/* 27e: from the armour table's first entry: the frames before the armour count resets */
 	Uint8	armor_max;		/* 27f: the armour's hit limit */
@@ -307,7 +307,7 @@ typedef struct PLAYER_WORK {
 	Uint8	jump_move_flag;	/* 29e: set once pl_jump_move has moved the player this frame; cleared each frame */
 	Uint8	snap_partner;	/* 29f: the partner a snapback brings in (1 or 2), set while the player is knocked off the screen by it */
 	Sint16	vital_red_wait;		/* 2a0: counted down by vital_red_timer; red vital comes back only at 0 */
-	Uint8	unk_2a2;		/* 2a2 */
+	Uint8	unk_2a2;	/* 2a2: set (1) by some characters' standing light punch; never read */
 	Uint8	unk_2a3;
 	Sint32	tlocal[0x80 / 4];	/* 2a4: the character's own work */
 	Uint8	wall_wide_timer;	/* 324: frames left in which pl_wall_wide_ck keeps the player on the screen with more room (a teleport) */
@@ -316,7 +316,7 @@ typedef struct PLAYER_WORK {
 	Sint8	hyper_bg;	/* 327: the hyper combo's screen effect */
 	Sint8	hyper_bg_tm;	/* 328: frames left of hyper_bg */
 	Uint8	hyper_team_bit;	/* 329: the work_no / 2 bit of each player in a team hyper combo */
-	Uint8	unk_32a[2];
+	Sint16	vital_fill_cnt;	/* 32a: the Dreamcast's training: frames after a hit before the vital fills again */
 	Sint16	vital_red_dm;	/* 32c: the red part taken off by the last hit (3/4 of its damage, at least 1) */
 	Sint16	vital_dm;	/* 32e: the vital the last hit took, which the bar shows falling */
 	Uint8	unk_330[0x340 - 0x330];
@@ -358,7 +358,7 @@ typedef struct PLAYER_WORK {
 	Uint8	stop_move_flag;	/* 3f0: lets the player move during its own side's hyper flash */
 	Sint8	stop_move_timer;	/* 3f1: frames left for stop_move_flag (3f0); clears it when it runs out */
 	Uint8	armor_timer_flag;	/* 3f2: set while the timed armour (armor_timer) is on */
-	Uint8	unk_3f3;
+	Sint8	drain_timer;	/* 3f3: the Dreamcast's home rule that drains the vital: frames to the next point */
 	Sint8	*chain_tbl;	/* 3f4: the normal attack's chain table, by button */
 	Sint8	delay_timer;	/* 3f8: frames left in the delayed-hyper-combo window */
 	Uint8	delay_flag;	/* 3f9: a partner may come in with a delayed hyper combo */
@@ -368,7 +368,7 @@ typedef struct PLAYER_WORK {
 	Sint8	gauge_no;		/* 410: the gauge a hit gives when its hit data gives none (set by pl_act) */
 	Uint8	team_no;	/* 411: the player's place in the team: 0 on point, then 1 and 2 */
 	Uint8	team_no_org;	/* 412: the place in the team the player started in */
-	Uint8	unk_413;
+	Uint8	one_char_flag;	/* 413: on the Dreamcast, set on the side's only character under the one_char home rule */
 	Uint32	pl_bit[2];	/* 414: the character's own bit (1 << its number) of 64, tested with FLAG_CK */
 	Float	ground_y;		/* 41c */
 	Sint16	vital_new;		/* 420 */
@@ -404,7 +404,7 @@ typedef struct PLAYER_WORK {
 	CPU_SCRIPT	cpu_event_sc;	/* 470: in mode 2, by event (cpu_event) */
 	CPU_SCRIPT	cpu_ex_sc;	/* 478: the one cpu_ex_flag runs, from cpu_ex_adrs */
 	Uint8	cpu_ex_flag;	/* 480: while set, the computer runs its fourth script instead of its mode */
-	Uint8	unk_481;		/* 481 */
+	Uint8	unk_481;	/* 481: s_pl1a's computer: the event it chose, 0 the far one, 1 the screen edge's; never read */
 	Uint8	cpu_lock_flag;	/* 482: while set, the computer keeps its current mode and command list */
 	Uint8	old_routine_1;	/* 483: routine_1 the frame before (the computer's event checks compare it) */
 	Float	em_dist_x;		/* 484: em_len_x less the nearest opponent's width */
@@ -425,7 +425,7 @@ typedef struct PLAYER_WORK {
 	Uint8	cpu_guard_ng_timer;		/* 4a5: counts down */
 	Sint8	cpu_air_jump_flag;	/* 4a6: 2 lets the computer make one air jump */
 	Sint8	cpu_guard_back_cnt;		/* 4a7 */
-	Sint8	unk_4a8;
+	Sint8	unk_4a8;	/* 4a8: the computer: -1 as it starts, 0 back in mode 0 (with em_atck_no); never read */
 	Sint8	fight_sec;		/* 4a9: the seconds the point player has fought */
 	Uint8	cpu_atck_level;		/* 4aa: the computer's atck_level for its command */
 	Uint8	cpu_atck_pk;		/* 4ab: the computer's atck_pk */
@@ -473,13 +473,14 @@ typedef struct PLAYER_WORK {
 	Uint8	score_rank;	/* 53d: the side's place in rank_score, 20 for none */
 	Uint8	win_rank;	/* 53e: the side's place in rank_win, 20 for none */
 	Uint8	team_order;	/* 53f: the place in the team chosen, copied to team_no for each fight */
-	Uint8	unk_540[3];	/* 540 */
-	Uint8	unk_543;
+	Uint8	vs_record[3];	/* 540: the side's versus wins, losses and draws, up to 99 each */
+	Uint8	handicap;	/* 543: the handicap picked with the stage, 0 to 4 (2 normal): its damage rate in handicap_tbl */
 	Uint32	card_open[2];	/* 544: the characters opened by the side's memory card, a bit for each */
 	Uint32	card_ex[2];	/* 54c */
-	Uint8	unk_554[0x558 - 0x554];
+	void	*prg_adrs;		/* 554: on the Dreamcast, where the character's program file is read to */
 	Uint32	play_time;	/* 558: frames the side has played in the arcade */
-	Uint8	unk_55c[0x5a4 - 0x55c];
+	Uint8	pic_buff_no;		/* 55c: on the Dreamcast, which of pic_adrs_tbl's buffers the player's files use */
+	Uint8	unk_55d[0x5a4 - 0x55d];
 } PLAYER_WORK;
 
 /* pl_tbl: a character's routines */
@@ -624,6 +625,7 @@ typedef struct PLAYER_WORK {
 #define OBJ_SHADOW	0x2000	/* drawn as a modifier volume (a shadow), not as a model */
 #define OBJ_MTX		0x4000	/* its own obj_mtx on top of base_mtx */
 #define OBJ_ENV		0x8000	/* drawn with a cheap environment map first */
+#define OBJ_FIT		0x10000	/* on the Dreamcast: made less tall on a screen that shows every line */
 
 /* the drawing and animation part of a work, tile_top to cpu_ex_adrs, which an effect copies whole
    from its master */

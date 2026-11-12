@@ -10,7 +10,9 @@
 #define NAME_LETTERS	46
 
 
+#ifndef TARGET_DC
 extern Sint8 credit_enough_ck( int side, int cont ) ;
+#endif
 
 static void entry_move( PLAYER_WORK *pl_w ) ;
 static void entry_wait( PLAYER_WORK *pl_w ) ;
@@ -63,10 +65,12 @@ static char *ord_tbl[] = { "^F", "^G", "^H", "^I", } ;
 void entry_main( void )
 {
 	Sys->cont_flag = 0 ;
-	if( !Sys->event_flag ){
-		entry_move( &pl_work[0] ) ;
-		entry_move( &pl_work[1] ) ;
-	}
+	if( Sys->event_flag ) return ;
+#ifdef TARGET_DC
+	if( Sys->home_mode == HOME_TRAINING ) return ;		/* no one joins a training game */
+#endif
+	entry_move( &pl_work[0] ) ;
+	entry_move( &pl_work[1] ) ;
 }
 
 /*==============================================================*/
@@ -79,6 +83,7 @@ static void entry_move( PLAYER_WORK *pl_w )
 	entry_jmp[pl_w->entry_routine_1]( pl_w ) ;
 }
 
+#ifndef TARGET_DC
 /*==============================================================*/
 /*			An empty side: what it takes to join in				*/
 /*==============================================================*/
@@ -148,6 +153,42 @@ static void entry_wait( PLAYER_WORK *pl_w )
 		}
 	}
 }
+#else
+/*==============================================================*/
+/*			An empty side: start joins in						*/
+/*==============================================================*/
+/* The home version: no coins, and a mode that takes no challenger (the flag below 0) says nothing. */
+static void entry_wait( PLAYER_WORK *pl_w )
+{
+	int x ;
+
+	if( Sys->ending_flag || Sys->entry_stop || Sys->join_flag || Sys->scene_no == 5 ) return ;
+	if( Sys->no_challenge_flag ){
+		int x1 ;
+
+		if( ( Sint8 )Sys->no_challenge_flag <= 0 ) return ;
+		if( pl_w->pl_index == 1 ) x1 = 104 ;
+		else x1 = 8 ;
+
+		STrPrint( x1, Sys->disp_line, 11, "NO CHALLENGER" ) ;
+		return ;
+	}
+	if( pl_w->entry_timer == 0 ){
+		pl_w->entry_timer = 40 ;
+		pl_w->entry_timer2 ++ ;
+		pl_w->entry_timer2 &= 3 ;
+	}
+	pl_w->entry_timer -- ;
+	if( pl_w->pl_index == 1 ) x = 100 ;
+	else x = 4 ;
+	STrPrint( x, Sys->disp_line, 11, "PRESS START BUTTON" ) ;
+	if( sw_work[pl_w->pl_index & 1].now & KEY_START ){
+		entry_init( pl_w ) ;
+		entry_start( pl_w ) ;
+		d_point_add( 100 ) ;
+	}
+}
+#endif
 
 /*--------------------------------------------------------------*/
 static void entry_play( PLAYER_WORK *pl_w )
@@ -184,6 +225,7 @@ static void entry_play_end( PLAYER_WORK *pl_w )
 		if( Sys->cont_enable || Sys->ending_flag ){
 			if( !Sys->vs_flag ){
 				cont_init( pl_w ) ;
+#ifndef TARGET_DC
 				if( !credit_conf->ChuteType ){
 					pl_w->cont_credit = credit_info.Player[0].Credit ;
 					pl_w->cont_remain = credit_info.Player[0].Remain ;
@@ -191,6 +233,7 @@ static void entry_play_end( PLAYER_WORK *pl_w )
 					pl_w->cont_credit = credit_info.Player[pl_w->pl_index].Credit ;
 					pl_w->cont_remain = credit_info.Player[pl_w->pl_index].Remain ;
 				}
+#endif
 			} else name_init( pl_w ) ;
 		} else name_init( pl_w ) ;
 	} else name_init( pl_w ) ;
@@ -202,7 +245,9 @@ static void entry_play_end( PLAYER_WORK *pl_w )
 static void entry_cont( PLAYER_WORK *pl_w )
 {
 	int x ;
+#ifndef TARGET_DC
 	Uint32 credit, remain ;
+#endif
 
 	Sys->cont_flag += pl_w->side_bit ;
 	if( Sys->ending_flag ) goto end ;
@@ -216,12 +261,14 @@ static void entry_cont( PLAYER_WORK *pl_w )
 		pl_w->entry_timer -- ;
 	}
 	STrPrint( x, Sys->disp_line, 11, "CONTINUE %1d", pl_w->entry_timer - 1 ) ;
+#ifndef TARGET_DC
 	if( sw_work[pl_w->pl_index & 1].now & KEY_START ){
 		if( credit_enough_ck( pl_w->pl_index, 1 ) ){
 			cont_add( pl_w ) ;
 			entry_start( pl_w ) ;
 		}
 	}
+	/* a coin starts the count again */
 	if( !credit_conf->ChuteType ){
 		credit = credit_info.Player[0].Credit ;
 		remain = credit_info.Player[0].Remain ;
@@ -235,6 +282,13 @@ static void entry_cont( PLAYER_WORK *pl_w )
 		pl_w->entry_timer = 10 ;
 		pl_w->entry_timer2 = 120 ;
 	}
+#else
+	if( sw_work[pl_w->pl_index & 1].now & KEY_START ){
+		cont_add( pl_w ) ;
+		entry_start( pl_w ) ;
+		d_point_add( 100 ) ;
+	}
+#endif
 	if( pl_w->entry_timer < 8 && pl_w->entry_timer != 0 && pl_w->entry_routine_1 == ENTRY_CONT ){
 		if( sw_work[pl_w->pl_index & 1].on & KEY_BUTTON ) pl_w->entry_timer -- ;
 	}
@@ -524,11 +578,26 @@ static void name_end_wait( PLAYER_WORK *pl_w )
 		pl_w->name_letter = 0 ;
 		for( i = 0 ; i < 4 ; i ++ ){
 			if( pl_w->name[i] == NAME_END || pl_w->name[i] == NAME_BS ) pl_w->name[i] = NAME_SPACE ;
+#ifdef TARGET_DC
+			/* the score attack has its own ranking */
+			if( pl_w->score_rank < 20 ){
+				if( Sys->home_mode != HOME_SCORE ){
+					rank_score[pl_w->score_rank].name[0] = pl_w->name[0] ;
+					rank_score[pl_w->score_rank].name[1] = pl_w->name[1] ;
+					rank_score[pl_w->score_rank].name[2] = pl_w->name[2] ;
+				} else {
+					rank_sa[pl_w->score_rank].name[0] = pl_w->name[0] ;
+					rank_sa[pl_w->score_rank].name[1] = pl_w->name[1] ;
+					rank_sa[pl_w->score_rank].name[2] = pl_w->name[2] ;
+				}
+			}
+#else
 			if( pl_w->score_rank < 20 ){
 				rank_score[pl_w->score_rank].name[0] = pl_w->name[0] ;
 				rank_score[pl_w->score_rank].name[1] = pl_w->name[1] ;
 				rank_score[pl_w->score_rank].name[2] = pl_w->name[2] ;
 			}
+#endif
 			if( pl_w->win_rank < 20 ){
 				rank_win[pl_w->win_rank].name[0] = pl_w->name[0] ;
 				rank_win[pl_w->win_rank].name[1] = pl_w->name[1] ;
@@ -579,9 +648,9 @@ void entry_init( PLAYER_WORK *pl_w )
 	pl_w->beat_flag[0] = 0 ;
 	pl_w->beat_flag[1] = 0 ;
 	pl_w->play_time = 0 ;
-	pl_w->unk_540[0] = 0 ;
-	pl_w->unk_540[1] = 0 ;
-	pl_w->unk_540[2] = 0 ;
+	pl_w->vs_record[0] = 0 ;
+	pl_w->vs_record[1] = 0 ;
+	pl_w->vs_record[2] = 0 ;
 }
 
 /*==============================================================*/
@@ -608,7 +677,7 @@ static void entry_start( PLAYER_WORK *pl_w )
 	Sys->join_side |= pl_w->side_bit ;
 	Sys->join_flag = 1 ;
 	Sys->heart_step = 0 ;
-	Sys->unk_af = 1 ;
+	Sys->entry_flag = 1 ;
 	pl_w->entry_routine_1 = ENTRY_PLAY ;
 	pl_w->entry_routine_2 = 0 ;
 }

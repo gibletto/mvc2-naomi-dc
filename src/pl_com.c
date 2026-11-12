@@ -10,6 +10,14 @@ extern Sint16 air_dash_y_tbl[];
 /* a command's move number, read as the low byte of com[2] */
 #define COM_NO( com )	( ( Uint8 * )&( com )[2] )[0]
 
+/* the frames more that a command's steps are waited for: the home game's option gives each side
+   some, but not over the network */
+#ifdef TARGET_DC
+#define COM_TIME_ADD( pl_w )	( Sys->home_mode != HOME_NETWORK ? option_w.com_time[( pl_w )->pl_no] * 10 : 0 )
+#else
+#define COM_TIME_ADD( pl_w )	0
+#endif
+
 static Uint8 dash_cancel_ck( PLAYER_WORK *pl_w );
 static Uint8 sjump_ukemi_ck( PLAYER_WORK *pl_w );
 static Uint8 cpu_partner_sel( PLAYER_WORK *pl_w );
@@ -198,6 +206,13 @@ Uint8 pl_sjump_ck( PLAYER_WORK *pl_w )
 
 	if( pl_w->routine_1 != PL_NORM ) return sjump_ukemi_ck( pl_w ) ;
 	if( !pl_w->hit_stop ) cw->ok_flag = 0 ;
+#ifdef TARGET_DC	/* the training's dummy, set to super jump */
+	if( Sys->home_mode == HOME_TRAINING && training_work.stance == 3 && training_work.side == 2 - ( pl_w->pl_index & 1 ) ){
+		cw->step = 0 ;
+		cw->ok_flag = 2 ;
+		return 1 ;
+	}
+#endif
 	if( !cw->step ){
 		if( pl_w->pl_sw_now & KEY_DOWN ){
 			cw->step = 1 ;
@@ -222,6 +237,13 @@ static Uint16 com_ukemi[] = { 3, COM_FREE, 0, 0, KEY_BACK, KEY_DOWN | KEY_BACK, 
 static Uint8 sjump_ukemi_ck( PLAYER_WORK *pl_w )
 {
 	if( pl_w->ukemi_flag > 0 ){
+#ifdef TARGET_DC	/* the training's dummy recovers by itself */
+		if( Sys->dummy_air_recover ){
+			pl_w->ukemi_flag = -1 ;
+			pl_w->atck_level = 1 ;
+			return 0 ;
+		}
+#endif
 		if( !com_nml_ck( pl_w, com_ukemi, &pl_w->sjump_w ) ) return 0 ;
 		pl_w->ukemi_flag = -1 ;
 		com_sw_set( pl_w, &pl_w->sjump_w ) ;
@@ -341,20 +363,35 @@ static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 		return 0 ;
 	}
 cpu :
+#ifdef TARGET_DC
+	if( pl_w->routine_1 != 0 ) return 0 ;
+#else
 	if( pl_w->routine_1 ) return 0 ;
+#endif
 	if( no <= 2 ){
 		if( pl_w->pl_stance == STANCE_DOWN || pl_w->pl_stance == STANCE_AIR ) return 0 ;
 	} else {
 		if( pl_w->pl_stance == STANCE_DOWN || pl_w->pl_stance == STANCE_AIR && pl_w->sjump_flag ) return 0 ;
 		if( pl_w->act_st == N_NML_ATCK && pl_w->atck_type == 2 ) return 0 ;
 	}
-	if( 0 ) flag = 0 ;
+#ifndef TARGET_DC
+	if( 0 ) flag = 0 ;	/* left out of the build */
+#endif
 	flag = vs_sys_w->team_w[pl_w->pl_no ^ 1][0]->assist_dm_cnt ;
 	flag |= vs_sys_w->team_w[pl_w->pl_no ^ 1][1]->assist_dm_cnt ;
 	flag |= vs_sys_w->team_w[pl_w->pl_no ^ 1][2]->assist_dm_cnt ;
+#ifdef TARGET_DC	/* the home rules: no partners, or partners at any time */
+	if( !Sys->partner_free && flag ) return 0 ;
+	if( vs_sys_work.vs_st >= VS_END_WAIT ) return 0 ;
+	if( Sys->partner_ng ) goto ng ;
+	if( !Sys->partner_free ){
+		if( vs_sys_work.be_cnt[pl_w->pl_no] > 1 ) return 0 ;
+	}
+#else
 	if( flag ) return 0 ;
 	if( vs_sys_work.vs_st >= VS_END_WAIT ) return 0 ;
 	if( vs_sys_work.be_cnt[pl_w->pl_no] > 1 ) return 0 ;
+#endif
 	if( 0 ) goto ng ;
 	if( pl_w->team_ng_timer ) return 0 ;
 	if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag ) return 0 ;
@@ -398,10 +435,18 @@ Uint8 pl_change_ck( PLAYER_WORK *pl_w )
 		if( pl_w->cpu_sp_no != 122 ) return 0 ;
 		no = cpu_partner_sel( pl_w ) ;
 	} else {
-		no = 1 ;
-		if( !sw_now_ck( pl_w, 0x0240, &sw, 0 ) ){
-			no = 2 ;
-			if( !sw_now_ck( pl_w, 0x0120, &sw, 0 ) ) return 0 ;
+#ifdef TARGET_DC	/* the training's dummy, set to change partners when its vital is low */
+		if( Sys->no_ko_flag && training_work.side > 0 && !( training_work.side & 1 << pl_w->pl_no ) && Sys->dummy_change ){
+			if( pl_w->vital_new > 20 ) return 0 ;
+			no = ( Rnd() & 1 ) + 1 ;
+		} else
+#endif
+		{
+			no = 1 ;
+			if( !sw_now_ck( pl_w, 0x0240, &sw, 0 ) ){
+				no = 2 ;
+				if( !sw_now_ck( pl_w, 0x0120, &sw, 0 ) ) return 0 ;
+			}
 		}
 	}
 	if( !sp_ok_ck( pl_w ) ) return 0 ;
@@ -498,6 +543,9 @@ Uint8 pl_chouhatsu_ck( PLAYER_WORK *pl_w, Uint8 no )
 	if( pl_w->cpu_flag ){
 		if( !pl_w->cpu_sp_flag || pl_w->cpu_sp_flag && pl_w->cpu_sp_no != no ) return 0 ;
 	} else {
+#ifdef TARGET_DC	/* start alone is the pause: the taunt is start and light kick */
+		if( !( pl_w->pl_new_lvbt & KEY_LK ) ) return 0 ;
+#endif
 		if( !( pl_w->pl_now_lvbt & KEY_START ) ) return 0 ;
 	}
 	if( pl_w->pl_stance != STANCE_STAND && pl_w->pl_stance != STANCE_CROUCH ){
@@ -550,7 +598,7 @@ static Uint8 com_nml_lever( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 		if( ++ cw->cnt == com[0] ){
 			if( com[1] & COM_NO_SW ) return com_ok( pl_w, com, cw, pl_w->pl_sw_new ) ;
 			cw->step = 2 ;
-			cw->timer = 15 ;
+			cw->timer = 15 + COM_TIME_ADD( pl_w ) ;
 			return com_nml_sw( pl_w, com, cw ) ;
 		}
 	}
@@ -637,7 +685,7 @@ static Uint8 com_tame_release( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 		return cw->step = 0 ;
 	}
 	cw->step ++ ;
-	cw->timer = 15 ;
+	cw->timer = 15 + COM_TIME_ADD( pl_w ) ;
 	return com_tame_lever( pl_w, com, cw ) ;
 }
 
@@ -651,7 +699,7 @@ static Uint8 com_tame_lever( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 		if( !( pl_w->pl_sw_new & com[5] ) ) return 0 ;
 	}
 	cw->step ++ ;
-	cw->timer = 15 ;
+	cw->timer = 15 + COM_TIME_ADD( pl_w ) ;
 	return com_tame_sw( pl_w, com, cw ) ;
 }
 
@@ -690,7 +738,7 @@ static Uint8 com_renda_start( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 	cw->timer = com[1] ;
 	if( com[0] == cw->cnt ){
 		cw->step = 2 ;
-		cw->timer = 14 ;
+		cw->timer = 14 + COM_TIME_ADD( pl_w ) ;
 		return com_renda_end( pl_w, com, cw ) ;
 	}
 	return 0 ;
@@ -706,7 +754,7 @@ static Uint8 com_renda_count( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 	cw->timer = com[1] ;
 	if( com[0] == cw->cnt ){
 		cw->step = 2 ;
-		cw->timer = 14 ;
+		cw->timer = 14 + COM_TIME_ADD( pl_w ) ;
 		return com_renda_end( pl_w, com, cw ) ;
 	}
 	return 0 ;
@@ -788,7 +836,7 @@ static Uint8 com_rot_turn( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 	if( !-- cw->cnt ){
 		pl_w->sjump_w.step = 0 ;
 		cw->step ++ ;
-		cw->timer = 15 ;
+		cw->timer = 15 + COM_TIME_ADD( pl_w ) ;
 		cw->cnt = 0 ;
 		return com_nml_sw( pl_w, com, cw ) ;
 	}
@@ -834,7 +882,7 @@ static Uint8 com_seq_next( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw )
 		com_timer_set( pl_w, cw ) ;
 		if( ++ cw->cnt == com[0] ){
 			cw->step = 2 ;
-			cw->timer = 15 ;
+			cw->timer = 15 + COM_TIME_ADD( pl_w ) ;
 		}
 	}
 	return 0 ;
@@ -926,10 +974,10 @@ static Uint8 com_hold_retry( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw, Uint1
 static Uint8 com_sw_ok( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw, Uint16 sw )
 {
 	if( sw & KEY_HEAVY ){
-		if( cw->timer - 4 >= 0 ) return com_ok( pl_w, com, cw, sw ) ;
+		if( cw->timer - COM_TIME_ADD( pl_w ) - 4 >= 0 ) return com_ok( pl_w, com, cw, sw ) ;
 		if( !( com[1] & ( COM_ALL_SW | 0x0600 ) ) ) sw &= ~KEY_HEAVY ;
 	}
-	if( ( sw & ( KEY_LIGHT | KEY_ASSIST ) ) && cw->timer - 2 >= 0 ) return com_ok( pl_w, com, cw, sw ) ;
+	if( ( sw & ( KEY_LIGHT | KEY_ASSIST ) ) && cw->timer - COM_TIME_ADD( pl_w ) - 2 >= 0 ) return com_ok( pl_w, com, cw, sw ) ;
 	cw->step = 0 ;
 	return 0 ;
 }
@@ -1037,7 +1085,12 @@ Uint8 sp_ok_hyper_ck( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void com_timer_set( PLAYER_WORK *pl_w, COM_WORK *cw )
 {
+#ifdef TARGET_DC
+	if( Sys->home_mode == HOME_NETWORK ) cw->timer = com_time_tbl[Rnd() & 31] ;
+	else cw->timer = com_time_tbl[Rnd() & 31] + option_w.com_time[pl_w->pl_no] * 10 ;
+#else
 	cw->timer = com_time_tbl[Rnd() & 31] ;
+#endif
 }
 
 /****************************************************************/

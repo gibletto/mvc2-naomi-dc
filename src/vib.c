@@ -36,7 +36,11 @@ VIB_DATA vib_tbl[9] = {
 } ;
 
 /* each side's two expansion sockets */
+#ifdef TARGET_DC
+Sint32 vib_port[2][2] = { { 1, 2 }, { 7, 8 } } ;
+#else
 Sint32 vib_port[2][2] = { { 7, 8 }, { 13, 14 } } ;
+#endif
 
 /****************************************************************/
 /*			The vertical blank									*/
@@ -86,6 +90,28 @@ void vib_init( void )
 /*			Ask for vibration no on side pl_no, unless a		*/
 /*			lower one is running								*/
 /****************************************************************/
+#ifdef TARGET_DC
+/* The home game's: the training shakes only the sides it is set to, the network game only this
+   console's pad, and no side whose packs are switched off. */
+void vib_req( int pl_no, int no )
+{
+	if( !pause_work.pause_flag ){
+		if( Sys->home_mode == HOME_TRAINING ){
+			if( !( pause_work.side & ( 1 << pl_no ) ) ) return ;
+		}
+	}
+	if( Sys->home_mode == HOME_NETWORK ){
+		if( net_side - 1 != pl_no ) return ;
+		pl_no = net_pad_bit ;
+		if( pl_no & 1 ) pl_no = 0 ;
+		else pl_no = 1 ;
+	}
+	if( ( !vib_w[pl_no].cnt || vib_w[pl_no].no >= no ) && ( option_w.vib_bit & ( 1 << pl_no ) ) ){
+		vib_w[pl_no].cnt = -1 ;
+		vib_w[pl_no].no = no ;
+	}
+}
+#else
 void vib_req( int pl_no, int no )
 {
 	if( !vib_w[pl_no].cnt || vib_w[pl_no].no >= no ){
@@ -93,6 +119,7 @@ void vib_req( int pl_no, int no )
 		vib_w[pl_no].no = no ;
 	}
 }
+#endif
 
 /****************************************************************/
 /*			Stop every pack										*/
@@ -121,10 +148,16 @@ void vib_move( void )
 	int i, j ;
 	int no ;
 
+#ifndef TARGET_DC
 	if( conf_vms_mode != 2 ) return ;
+#endif
 	vib_num = vib_pow = 0 ;
 	for( i = 0 ; i < 2 ; i ++ ){
+#ifdef TARGET_DC
+		vib_pow += port_peri[i]->info->max_pow ;
+#else
 		vib_pow += pad_peri[i]->info->max_pow ;
+#endif
 		for( j = 0 ; j < 2 ; j ++ ){
 			info = pdGetPeripheralInfo( vib_port[i][j] ) ;
 			vib_pow += info->max_pow ;
@@ -142,7 +175,11 @@ void vib_move( void )
 		if( vib_w[i].cnt < 0 ){
 			/* no is still the last side's here, as in the arcade's code */
 			vib_w[i].cnt = vib_tbl[no].time ;
+#ifdef TARGET_DC
+			if( ( Sys->task_no == 2 && !pl_work[i].cpu_flag ) || Sys->task_no == 3 || pause_work.pause_flag ){
+#else
 			if( ( Sys->task_no == 2 && !pl_work[i].cpu_flag ) || Sys->task_no == 3 ){
+#endif
 				for( j = 0 ; j < 2 ; j ++ ){
 					if( pdVibMxIsReady( vib_port[i][j] ) && vib_unit[i][j] && vib_ok[i] ){
 						no = vib_w[i].no ;

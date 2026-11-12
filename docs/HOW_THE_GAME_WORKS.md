@@ -813,6 +813,63 @@ the way out; and ROM BOARD TEST, which adds up every ROM on the ROM board and co
 
 ---
 
+## The Dreamcast version
+
+The home version is the same game, built from the same files with the switch `TARGET_DC` set. Most of what this
+tour has said holds for it unchanged: the frame loop, the works, the fight, the characters. The differences are in
+where things come from and in what is wrapped around the fight.
+
+### Loading from the disc
+
+The cartridge has all its ROMs on the bus at once, so the arcade's game reads its data where it lies. The Dreamcast
+has 16 MB of memory and a disc, so `src/dc/am_load.c` reads files instead: `file_name_tbl` names all 712 of them,
+and the scenes' and the fight's files are read in the background, through queues, while the game goes on drawing.
+
+The biggest change is the characters' code. On the arcade, all 59 character modules are linked into the program, and
+`pl_work_init` calls the right `plXX_tbl_set` from a table. On the Dreamcast they are not in the program at all. Each
+module is linked by itself, six times over, at six fixed addresses (0CE30000, 0CE38000, and so on, 32 KB apart):
+one for each of the six fighters of a match, two teams of three. Those are the files `S_PL00A.BIN` to `S_PL3AF.BIN`.
+When a fighter is set up, `tex_load.c` loads its character's file for its place, and `pl_work_init` calls the
+address of that place instead of a name:
+
+```c
+#ifdef TARGET_DC	/* the characters' modules load at six places, one for each player */
+	static void ( *tbl_set_jmp[6] )( PLAYER_WORK *pl_w ) = {
+		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce30000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce38000,
+		...
+```
+
+A loaded module calls back into the main program by name, so each file is linked against the main program's own
+symbols. That is why there are six of each: the same code, at six addresses.
+
+### The home menus
+
+There is no coin to wait for. The game starts at a ring of modes (`src/dc/home_menu.c`, drawn by the `dm0c_`
+files), numbered by `HOME_ARCADE` to `HOME_RECORDS` in `include/system.h`: arcade, versus, training, the options,
+the memory card, the network, the SECRET FACTOR, the score attack and the records. Arcade, versus, training and
+the score attack go into the arcade's own game with their rules set, and come back to the ring when it ends.
+
+- **Training** runs an ordinary fight with a pause menu over it (`pause_*.c`) and the settings in
+  `training_work`: how the dummy guards, whether it recovers in the air or changes partner, the speed, and gauges
+  that fill by themselves. They reach the fight through `Sys`, as `Sys->dummy_guard` and the rest.
+- **The SECRET FACTOR** (`secret.c` to `secret_3.c`, drawn by `dm0f_`) is a shop. Playing earns points, and the
+  shop offers three goods at a time: a hidden character, a second colour for one already opened, or the next of
+  seven extras (the first costs 1,000 points, and each after it 500 more). What has been bought is kept in the
+  memory card's save (`vms_work`).
+- **The memory card** menus (`secret_vm.c`, `vms.c`, drawn by `dm10_`) save and load that file, and the SECRET
+  FACTOR can also save a small game for the card's own screen.
+- **The options** (`dm0c_option.c` and the pages beside it) are the arcade's operator settings made into a menu, with
+  the screen's position and the pad's buttons added.
+
+### The network
+
+The disc has a modem lobby: an entry screen, rooms, player records, a chat log and a keyboard (`src/dc/kbd.c`
+reads a real one or draws one on screen, with the kana input and kana-kanji conversion of the Japanese release). It is
+drawn by the `dm0d_` files and speaks to the server through Sega's modem libraries. The USA disc still has all of
+it, but its network menu is switched off: `src/dc/net_menu.c` is an empty routine and an unused table.
+
+---
+
 ## Where to look in the source
 
 | You want | Start at |
@@ -837,3 +894,7 @@ the way out; and ROM BOARD TEST, which adds up every ROM on the ROM board and co
 | the computer | `src/em_play.c`, `src/em_script.c`, `src/cpu_level.c`, `include/cpu_cmd.h`, `data/taikiXX.c` |
 | sound | `src/sound.c` |
 | the test program | `src/test/main.c`, `src/test/test_mode.c` |
+| the Dreamcast's loading | `src/dc/am_load.c`, `src/tex_load.c`, `src/pl_sub.c` `pl_work_init` |
+| the home menus | `src/dc/home_menu.c`, `src/dc/secret.c`, `src/vms.c`, the `src/dc/dm*` files |
+| training | `src/pl_sw.c`, `src/dc/pause_*.c`, `include/system.h` `TRAINING_WORK` |
+| the network | `src/dc/dm0d_*.c`, `src/dc/kbd.c`, `src/dc/font.c` |

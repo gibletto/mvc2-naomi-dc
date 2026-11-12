@@ -32,11 +32,24 @@ static void set04_01_main( PLAYER_WORK *ew )
 	switch( ew->routine_0 ){
 	case 0:
 		ew->timer0 ++ ;
+#ifdef TARGET_DC	/* slower in the stage's other look */
+		if( stage_no == 4 ){
+			if( ew->timer0 >= 100 ) ew->timer0 = 0 ;
+		} else {
+			if( ew->timer0 >= 500 ) ew->timer0 = 0 ;
+		}
+#else
 		if( ew->timer0 >= 100 ) ew->timer0 = 0 ;
+#endif
 		obj_uv_begin( obj_stg->obj[3], ew->obj ) ;
 		while( obj_uv_next() == 0 ){
 			obj_uv_get( &x, &y ) ;
+#ifdef TARGET_DC
+			if( stage_no == 4 ) y += ew->timer0 * 0.01f ;
+			else y += ew->timer0 * 0.002f ;
+#else
 			y += ew->timer0 * 0.01f ;
+#endif
 			obj_uv_put( &x, &y ) ;
 		}
 		break ;

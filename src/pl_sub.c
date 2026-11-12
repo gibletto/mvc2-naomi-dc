@@ -150,6 +150,12 @@ void pl_init( void )
 		for( j = 0 ; j < 3 ; j ++ ){
 			pl_w = vs_sys_w->team_w[i][j] ;
 			pl_w->be_flag = j ? 0 : 1 ;
+#ifdef TARGET_DC	/* a home rule: one character a side */
+			if( Sys->one_char && !j ){
+				pl_w->one_char_flag = 1 ;
+				vs_sys_w->unk_8a[i] = pl_w->work_no ;
+			}
+#endif
 			pl_w->disp_flag = pl_w->be_flag ;
 			pl_char_set( pl_w, Char_Stand, 0 ) ;
 			pl_w->pl_tbl = ( void ( ** )( PLAYER_WORK *pl_w ) )&pl_tbl_buff[pl_w->work_no] ;
@@ -301,6 +307,14 @@ static void pl_work_set( PLAYER_WORK *pl_w )
 /****************************************************************/
 void pl_work_init( PLAYER_WORK *pl_w )
 {
+#ifdef TARGET_DC	/* the characters' modules load at six places, one for each player */
+	static void ( *tbl_set_jmp[6] )( PLAYER_WORK *pl_w ) = {
+		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce30000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce38000,
+		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce40000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce48000,
+		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce50000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce58000,
+	} ;
+	void ( *tbl_set )( PLAYER_WORK *pl_w ) ;
+#else
 	static void ( *tbl_set_jmp[59] )( PLAYER_WORK *pl_w ) = {
 		pl00_tbl_set, pl01_tbl_set, pl02_tbl_set, pl03_tbl_set, pl04_tbl_set, pl05_tbl_set,
 		pl06_tbl_set, pl07_tbl_set, pl08_tbl_set, pl09_tbl_set, pl0a_tbl_set, pl0b_tbl_set,
@@ -313,6 +327,7 @@ void pl_work_init( PLAYER_WORK *pl_w )
 		pl30_tbl_set, pl31_tbl_set, pl32_tbl_set, pl33_tbl_set, pl34_tbl_set, pl35_tbl_set,
 		pl36_tbl_set, pl37_tbl_set, pl38_tbl_set, pl39_tbl_set, pl3a_tbl_set
 	} ;
+#endif
 	Uint8 n ;
 
 	memset( &pl_w->act_st, 0, 0x238 ) ;
@@ -328,7 +343,12 @@ void pl_work_init( PLAYER_WORK *pl_w )
 	pl_w->target_w = vs_sys_w->team_w[pl_w->pl_no ^ 1][0] ;
 	pl_w->pl_type = pl_w->load_type ;
 	pl_w->pl_color = pl_w->load_color ;
+#ifdef TARGET_DC
+	tbl_set = tbl_set_jmp[pl_w->work_no] ;
+	tbl_set( pl_w ) ;
+#else
 	tbl_set_jmp[pl_w->pl_type]( pl_w ) ;
+#endif
 	pl_shadow_set( pl_w ) ;
 	if( pl_w->team_no ){ }
 	pl_w->weight = weight_tbl[pl_w->pl_type] ;
@@ -382,6 +402,9 @@ void pl_change_set( PLAYER_WORK *pl_w, PLAYER_WORK *nw )
 	pl_w->vital_red = pl_w->vital_new ;
 	pl_w->hit_flag = -1 ;
 	pl_w->vital_red_wait = 0 ;
+#ifdef TARGET_DC	/* the wait of the home rule that drains the vital */
+	pl_w->drain_timer = 100 ;
+#endif
 	em_round_init( pl_w ) ;
 }
 

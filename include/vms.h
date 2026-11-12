@@ -25,4 +25,21 @@ typedef struct VMS_SLOT {
 	Uint8	month, day, hour, minute, second, week;
 } VMS_SLOT;
 
+#ifdef TARGET_DC
+/* the play counts: how often each mode has been played, and each character in it */
+#define PL_TYPE_MAX	59
+typedef struct PLAY_CNT {
+	Uint16	ac_mode_cnt;	/* arcade */
+	Uint16	vs_mode_cnt;	/* versus */
+	Uint16	sa_mode_cnt;	/* score attack */
+	Uint16	tr_mode_cnt;	/* training */
+	Uint16	ne_mode_cnt;	/* network */
+	Uint16	ac_pl[PL_TYPE_MAX];
+	Uint16	vs_pl[PL_TYPE_MAX];
+	Uint16	sa_pl[PL_TYPE_MAX];
+	Uint16	tr_pl[PL_TYPE_MAX];
+	Uint16	ne_pl[PL_TYPE_MAX];
+} PLAY_CNT ;
+#endif
+
 #endif

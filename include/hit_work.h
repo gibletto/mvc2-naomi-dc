@@ -24,6 +24,7 @@ typedef struct { Uint8 buff[WORK_SIZE]; } WORK_BUFF;	/* one work of the pool */
 #define W_DM		10	/* damage effects (dmXX_YY) */
 #define W_SYS		11	/* gauges, messages, the scenes' own pieces */
 #define W_FRONT		12	/* in front of everything */
+#define W_PAUSE		13	/* the pause's menus (disp_pause) */
 /* work_get()'s mode: where the work joins its list */
 #define LIST_TOP	0
 #define LIST_END	1

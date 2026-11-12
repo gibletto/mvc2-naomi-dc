@@ -5,7 +5,13 @@
 
 #define SKIP_SW	0x360	/* the buttons that end the scene early */
 
+#ifdef TARGET_DC
+extern void load_stop( void );
+extern void load_side_set( Sint8 side );
+extern void fight_load_start( int no );	/* am_load.c: asks the disc for a scene's files */
+#else
 extern void load_init( void );
+#endif
 extern void sound_heart_ef0_set( void );
 extern void sound_heart_ef1_set( int no );
 
@@ -32,19 +38,25 @@ void Sound_Heart( void )
 /*==============================================================*/
 static void heart_init( void )
 {
+#ifdef TARGET_DC
+	load_stop() ;
+#else
 	load_init() ;
+#endif
 	Sys->heart_step ++ ;
 	Sys->timer0 = 300 ;
 	Sys->timer3 = 5 ;
+#ifndef TARGET_DC
 	stream_stop() ;
 	while( !nlaCheckWaitROMDMA() ) ;
+#endif
 	sound_all_off() ;
 	se_all_off() ;
 	work_list_kill( W_SYS ) ;
 	TexLoad( 8 ) ;
 	se_vol_up( 0, 1 ) ;
 	se_vol_up( 1, 1 ) ;
-	song_req( 3 ) ;
+	scene_song_req( 3, 24 ) ;
 	na_req( 47 ) ;
 	sound_heart_ef0_set() ;
 	sound_heart_ef1_set( 0 ) ;
@@ -56,6 +68,10 @@ static void heart_init( void )
 	sound_heart_ef1_set( 6 ) ;
 	sound_heart_ef1_set( 7 ) ;
 	work_list_move( W_MARK ) ;
+#ifdef TARGET_DC	/* the fight's files are read while the scene runs */
+	fight_load_start( 11 ) ;
+	fight_load_start( 12 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -81,7 +97,14 @@ static void heart_move( void )
 	work_list_move( W_SYS ) ;
 	Sys->timer0 -- ;
 	if( ( Sys->play_side & 1 && sw_work[0].now & SKIP_SW )
-	 || ( Sys->play_side & 2 && sw_work[1].now & SKIP_SW ) || !Sys->timer0 ) Sys->heart_step ++ ;
+	 || ( Sys->play_side & 2 && sw_work[1].now & SKIP_SW ) || !Sys->timer0 ){
+#ifdef TARGET_DC	/* it waits here until the fight's files are read */
+		Sys->timer0 = 1 ;
+		if( load_ck() ) Sys->heart_step ++ ;
+#else
+		Sys->heart_step ++ ;
+#endif
+	}
 }
 
 /*==============================================================*/
@@ -101,6 +124,9 @@ static void heart_end( void )
 	sound_all_off() ;
 	se_all_off() ;
 	stream_stop() ;
+#ifdef TARGET_DC
+	load_side_set( Sys->play_side ) ;
+#endif
 }
 
 /*==============================================================*/

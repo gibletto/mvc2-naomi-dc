@@ -7,16 +7,24 @@
 #define set_fpscr( cr )	_builtin_set_fpscr( cr )
 
 
+#ifdef TARGET_DC
+extern void system_init( void );
+extern void gd_door_ck( void );
+extern void net_vsync_wait( void );
+extern void system_exit( void );
+extern void vib_stop( void );
+#else
 extern void system_init( int a );
-extern void sys_data_load( void );
 extern void warning_disp( void );
 extern void jamma_err_init( void );
-extern void System_Init( void );
-extern void key_repeat( SW_WORK *sw );
-extern void SysTransReset2( void );
 extern void credit_str_set( void );
 extern void book_coin_ck( void );
 extern void jamma_err_ck( void );
+#endif
+extern void sys_data_load( void );
+extern void System_Init( void );
+extern void key_repeat( SW_WORK *sw );
+extern void SysTransReset2( void );
 extern void sound_vsync( void );
 extern void System_Main( void );
 extern void SysTrans( void );
@@ -33,10 +41,16 @@ void main( void )
 	cr &= ~3 ;	/* round to nearest */
 	set_fpscr( cr ) ;
 	Sys = &sys_work ;
+#ifdef TARGET_DC
+	system_init() ;
+	sys_data_load() ;
+	nlWaitVSync() ;
+#else
 	system_init( 0 ) ;
 	sys_data_load() ;
 	warning_disp() ;
 	jamma_err_init() ;
+#endif
 	System_Init() ;
 	while( 1 ){
 		nlWaitVSync() ;
@@ -44,14 +58,25 @@ void main( void )
 		key_repeat( &sw_work[0] ) ;
 		key_repeat( &sw_work[1] ) ;
 		SysTransReset2() ;
+#ifdef TARGET_DC
+		/* the console goes back to its menu when the door opens, once a card save is over */
+		gd_door_ck() ;
+		if( exit_req == 1 && vms_work.save_busy != 1 ){
+			vib_stop() ;
+			nlWaitVSync() ;
+			net_vsync_wait() ;
+			system_exit() ;
+		}
+#else
 		credit_str_set() ;
 		book_coin_ck() ;
 		jamma_err_ck() ;
+#endif
 		sound_vsync() ;
 		vsync_flag = 0 ;
 		vsync_count = 0 ;
 		System_Main() ;
-		vms_main() ;
+		vms_check() ;
 		SysTrans() ;
 		SysTrans2() ;
 		vsync_wait() ;

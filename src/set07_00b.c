@@ -116,11 +116,10 @@ static void set07_00b_wave( PLAYER_WORK *ew )
 	ew->work1 = ew->work1 + 0x100 ;
 	ew->work2 = ew->work2 + 0x80 ;
 	ew->work3 = ew->work3 + 64 ;
-	ew->work1 &= 0xffff ;
-	ew->work2 &= 0xffff ;
-	ew->work3 &= 0xffff ;
-	if( 1 ) lw = SET07_00B_LW( ew ) ;
-	else lw = ( SET07_00B_LOCAL_W * )ew ;
+	EF_WK( ew )->work[1] &= 0xffff ;	/* through the work's own view (the ROM's code) */
+	EF_WK( ew )->work[2] &= 0xffff ;
+	EF_WK( ew )->work[3] &= 0xffff ;
+	lw = SET07_00B_LW( ew ) ;
 	ang0 = lw->ang0 ;
 	ang1 = lw->ang1 ;
 	ang2 = lw->ang2 ;

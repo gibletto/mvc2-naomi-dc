@@ -17,6 +17,11 @@ typedef struct VEC3 {
 	Float	x, y, z;
 } VEC3;
 
+/* a point before its divide by w */
+typedef struct VEC4 {
+	Float	x, y, z, w;
+} VEC4;
+
 /* a model's alpha and fade colour, the 16 bytes at PLAYER_WORK's 074 that effects copy whole */
 typedef struct FADE_COL {
 	Float	trnsl, r, g, b;
@@ -43,9 +48,6 @@ typedef struct MATRIX {
 } MATRIX;
 
 #include "nl.h"
-
-extern Float draw_vertex_work[];	/* and the work areas nlInitDrawModel is given */
-extern Sint32 draw_light_work[];
 
 /* a distance in the dots of Capcom's older boards (384 across, 224 down), as this screen has it */
 #define DOT_X( n )	( ( n ) * 1.6666666f )

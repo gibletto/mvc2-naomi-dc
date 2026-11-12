@@ -12,7 +12,11 @@ extern void obj_uv_clear( void *obj ) ;
 #define RANK_PAGE_OBJ( w )	( ( w )->dir )	/* the model's number in the ranking's file */
 
 /* the model of each page, where it starts and ends (the type picks the place), and its turn in degrees */
+#ifdef TARGET_DC	/* the home game's second ranking has the first's pages */
+static Uint8 rank_page_obj_tbl[16] = { 8, 10, 12, 15, 14, 8, 10, 12, 15, 14, 31, 29, 30, 0, 0, 0 } ;
+#else
 static Uint8 rank_page_obj_tbl[16] = { 8, 10, 12, 15, 14, 22, 24, 18, 26, 14, 31, 29, 30, 0, 0, 0 } ;
+#endif
 static VEC3 rank_page_pos_tbl[8] = {
 	{ -30.44f, -24.4f, 53.71f },
 	{ -29.89f, -25.22f, 53.66f },

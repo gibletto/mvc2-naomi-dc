@@ -184,6 +184,10 @@ static Uint8 strike_ck( PLAYER_WORK *pl_w )
 	pl_w->routine_2 = pl_w->routine_3 = 0 ;
 	pl_w->pl_sp_type = pl02_sp_strike ;
 	act_st_set( pl_w, N_SUPER ) ;
+	/* from the European disc on, a hyper combo sets the attack level too */
+#if BUILD_DATE >= 20000412
+	pl_w->atck_level = 1 ;
+#endif
 	return 1 ;
 }
 
@@ -271,6 +275,9 @@ static int strike_delay_ck( PLAYER_WORK *pl_w )
 	if( !com_nml_ck( pl_w, com_strike, &pl_w->com_w3 ) ) return 0 ;
 	if( !*pl_w->gauge_level ) return 0 ;
 	pl_w->delay_sp_type = 3 ;
+#if BUILD_DATE >= 20000412	/* the level, as in strike_ck */
+	pl_w->atck_level = 1 ;
+#endif
 	return 1 ;
 }
 
@@ -2454,6 +2461,9 @@ void	pl02_sp_unison( PLAYER_WORK *pl_w )
 	switch( pl_w->pl_personal ){
 	case 0:
 		pl_w->pl_sp_type = pl02_sp_strike ;
+#if BUILD_DATE >= 20000412	/* the level, as in strike_ck */
+		pl_w->atck_level = 1 ;
+#endif
 		break ;
 	case 1:
 		pl_w->pl_sp_type = pl02_sp_hurricane ;
@@ -2472,6 +2482,9 @@ void	pl02_sp_gattai( PLAYER_WORK *pl_w )
 	switch( pl_w->pl_personal ){
 	case 0:
 		pl_w->pl_sp_type = pl02_sp_strike ;
+#if BUILD_DATE >= 20000412	/* the level, as in strike_ck */
+		pl_w->atck_level = 1 ;
+#endif
 		break ;
 	case 1:
 		pl_w->pl_sp_type = pl02_sp_hurricane ;

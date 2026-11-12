@@ -1,4 +1,4 @@
-# Marvel vs. Capcom 2 - NAOMI program source
+# Marvel vs. Capcom 2 - NAOMI and Dreamcast program source
 
 **AI Disclosure**:
 Yes, this used Claude, the same way the 3rd Strike decomp did.
@@ -21,6 +21,8 @@ arcade's exact bytes, and the finished file is the cartridge's program ROM:
 The ROM holds two programs, the game and the operator's test menu, and the fighting data of the 59 characters
 (moves, hit boxes, the computer's play). All of that is built from this source. The pictures, models and sound
 are in the cartridge's other ROMs and are not part of this.
+
+The same source also builds the Dreamcast version, from the USA disc (see The Dreamcast version below).
 
 For a tour of how the game itself works (the frame loop, inputs, special moves, hit boxes, damage), read
 `docs/HOW_THE_GAME_WORKS.md`.
@@ -60,15 +62,65 @@ No other version of the compiler or the libraries will do. Sega's libraries are 
 their modules are linked straight from `libwin.zip`. The modules that the zip only has in a later version than the
 one Capcom linked are built from `src/lib`.
 
+## The Dreamcast version
+
+The same source also builds the Dreamcast version: the USA disc's main program, and the characters' code,
+which the disc keeps in files of its own. It is the same game with a home menu around it: options, a training
+mode, a shop that sells the extra characters and colours for points, a memory card save, and a network lobby
+with a software keyboard. Capcom built it from the arcade's source in the spring of 2000, so most of the files
+are the arcade's own.
+
+A file that differs between the two says so with `#ifdef TARGET_DC`, and where the disc changed between its
+releases, with the build's date (`#if BUILD_DATE >= 20000412`). The files only the home version has are in
+`src/dc`, and the Dreamcast's own build of a Sega library module is in `src/dc/lib`. Every routine comes out as
+the disc's exact bytes:
+
+    1ST_READ.BIN    1,809,817 bytes   sha1 b0c3604e3494b12f751793a74fc9b494ed67a30c
+
+and so do the 354 character files (`S_PL00A.BIN` and the rest: each character's code, linked for each of the
+six places a fighter's code can be loaded). `dcovl.sha1` lists them.
+
+To build it you need the arcade's two zips, and two of Sega's Katana SDKs for the libraries only the Dreamcast
+has. The Internet Archive item `dc_sdks` has them:
+
+- "Sega Katana Development Software - Release 10.zip", sha1 6b063a04e543f851ace49e5aef49488e4d976ce4: `mdmapi.lib`, `modem.lib`,
+  `nt_utl.lib` and `shinobi.lib`
+- "Sega Katana Development Software - Release 9.zip", sha1 a8b0d630851bd90b39dceb65cd2957bd13208383: `cri_adxn.lib`
+
+Both are needed: Release 10 has no `cri_adxn.lib`, and Release 9's Shinobi is another build. Each zip holds a
+disc image with an installer. Install them, then set `SDK_LIBS` to six folders, in this order (the arcade's,
+with Release 10's library folder fourth and Release 9's last):
+
+    set SDK_LIBS=C:\libwin\lib\zero;C:\libwin\lib;C:\libwin\libsrc\libjamma\zero;C:\KATANA\Lib;C:\pcv51r08\lib;C:\KATANA_R9\Lib
+
+and run `build.bat dc` (or `make dc`). The build writes `build/mvc2dc.bin` and the characters' files in
+`build/ovl/`, and checks their SHA-1s. It needs nothing from your disc.
+
+Things that were learned on the way:
+
+- **A module can be more than one file.** The compiler empties its pool of constants at the end of each file.
+  The disc's pools break at five places where one file never would, so the home game's SECRET FACTOR is six
+  files (`src/dc/secret.c` and the rest).
+- **A routine can be too big to optimise.** At about 256 branches in one routine, SHC gives up on it ("Function
+  not optimized") and keeps every local in memory. `secret_factor_3_save` is one. Its code only matches with
+  the same number of branches, so it uses a statement that makes no code, `VM_NOP()`, where Capcom's source
+  most likely had a macro that was empty in this build.
+- **Some of the fake matches are the disc's.** A few routines here only match with a statement that never
+  runs (`if( 0 ) ... ;`, marked "left out of the build"). The compiler still counts what it reads and writes,
+  so it can change which register a value gets. These are the routines where nothing more natural has been
+  found yet, and they are a good place to start contributing.
+
 ## Layout
 
     src/           game code, a file for each of Capcom's
     src/lib/       the modules of Sega's libraries that the SDK has no matching version of (see Sega's libraries)
     src/test/      the test menu's own code
+    src/dc/        the files only the Dreamcast version has (src/dc/lib: its builds of Sega's modules)
     data/          the characters' fighting data
     include/       headers; player.h includes the shared ones (pl_work.h has PLAYER_WORK)
     docs/          HOW_THE_GAME_WORKS.md: a tour of the game's code
-    mvc2.sub       link order and section addresses (mvc2test.sub for the test menu)
+    mvc2.sub       link order and section addresses (mvc2test.sub for the test menu, mvc2dc.sub for the Dreamcast)
+    dcovl.sha1     the SHA-1s of the Dreamcast's characters' files
     functions.tsv  every routine of the game program: arcade address, size, name, file
     tools/         mvc2rom.py: reads your ROM; chrpack.py: packs the characters' data
     rom/           your ROM goes here
@@ -97,9 +149,10 @@ options. The options Capcom used were sitting in the ROM's unused space:
 `-extra=a=400` is not in the manual. It makes the assembler stage put a `nop` after each `mov Rm,R0`, and the game
 code has 3,325 of them.
 
-With these options, the compiler builds all the C here (18,306 routines in 700 files, and the test menu's three
-files) to the arcade's exact bytes. Nothing is patched afterwards. The few assembler files (`.src`) are ones that were assembler to begin with:
-the start-up, the cache routines, a table, and some of Sega's library modules.
+With these options, the compiler builds all the C here to the exact bytes: the arcade's 18,306 routines in 700 files
+(and the test menu's three files), and the Dreamcast's 18,991 routines in 773 files, 73 of them the home version's
+own. Nothing is patched afterwards. The few assembler files (`.src`) are ones that were assembler to begin with: the
+start-up, the cache routines, a table, and some of Sega's library modules.
 
 Not every file saw the same headers. The machine code shows how each file thought a routine was declared, and
 for a few routines the files do not agree: two dozen of them pass `pl_char_set` its animation number as an `int`,

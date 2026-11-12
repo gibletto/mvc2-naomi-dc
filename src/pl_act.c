@@ -1128,6 +1128,19 @@ void act_st_set( PLAYER_WORK *pl_w, Uint8 act )
 		if( act == N_SPECIAL ) pl_w->cancel_timer = 0xff ;
 		if( act == N_SUPER ){
 			if( pl_w->old_act_st == N_SPECIAL ) pl_w->team_type = 0 ;
+#ifdef TARGET_DC	/* a home rule: a player may join the chain of hyper combos again */
+			if( pl_w->team_type != 6 ){
+				if( !Sys->delay_hyper_free ) vs_sys_work.hyper_bit[pl_w->pl_no] = ( 1 << pl_w->work_no / 2 ) + 0x10 ;
+				else vs_sys_work.hyper_bit[pl_w->pl_no] = 0x10 ;
+				vs_sys_work.hyper_cnt[pl_w->pl_no] = 1 ;
+				vs_sys_work.hyper_chain_cnt[pl_w->pl_no] = 1 ;
+			} else {
+				if( !Sys->delay_hyper_free ) vs_sys_work.hyper_bit[pl_w->pl_no] |= 1 << pl_w->work_no / 2 ;
+				vs_sys_work.hyper_cnt[pl_w->pl_no] ++ ;
+				if( Sys->delay_hyper_free && ( Sint8 )vs_sys_work.hyper_cnt[pl_w->pl_no] > 3 ) vs_sys_work.hyper_cnt[pl_w->pl_no] = 1 ;
+				if( ++ vs_sys_work.hyper_chain_cnt[pl_w->pl_no] > 3 ) vs_sys_work.hyper_chain_cnt[pl_w->pl_no] = 3 ;
+			}
+#else
 			if( pl_w->team_type != 6 ){
 				vs_sys_work.hyper_bit[pl_w->pl_no] = ( 1 << pl_w->work_no / 2 ) + 0x10 ;
 				vs_sys_work.hyper_cnt[pl_w->pl_no] = 1 ;
@@ -1137,6 +1150,7 @@ void act_st_set( PLAYER_WORK *pl_w, Uint8 act )
 				vs_sys_work.hyper_cnt[pl_w->pl_no] ++ ;
 				if( ++ vs_sys_work.hyper_chain_cnt[pl_w->pl_no] > 3 ) vs_sys_work.hyper_chain_cnt[pl_w->pl_no] = 3 ;
 			}
+#endif
 			w = vs_sys_w->team_w[pl_w->pl_no][1] ;
 			memset( &w->com_w, 0, 104 ) ;
 		}

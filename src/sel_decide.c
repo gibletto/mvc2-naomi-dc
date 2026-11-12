@@ -1,6 +1,7 @@
 /* What the select scene decides once the teams are chosen: each member's colour and the stage
   , and a debug print of the free texture memory. */
 #include "player.h"
+#include "select.h"
 
 extern Sint8 sel_color_get( PLAYER_WORK *pl_w, PLAYER_WORK *tw, Sint16 sw ) ;
 
@@ -11,6 +12,11 @@ Sint8 stage_tbl[4][8] = {
 	{ 6, 5, 0, 7, 1, 3, 2, 8 },
 	{ 3, 6, 2, 4, 7, 1, 5, 8 },
 } ;
+
+#ifdef TARGET_DC
+/* each stage's other look, once it is opened */
+Sint8 stage_ex_tbl[9] = { 9, 10, 2, 12, 13, 14, 15, 16, 8 } ;
+#endif
 
 /****************************************************************/
 /*			The colour of each of the side's three players,		*/
@@ -46,10 +52,47 @@ static void stage_no_set( void )
 	}
 }
 
+#ifdef TARGET_DC
+/*==============================================================*/
+/*			The stage, by the home game's mode: the versus's	*/
+/*			is chosen, the training has its own, the network	*/
+/*			game takes one both sides agree on; the others		*/
+/*			show an opened stage's other look half the time		*/
+/*==============================================================*/
+static void mode_stage_no_set( void )
+{
+	int mode, r ;
+	Sint8 max ;
+
+	if( Sys->home_mode == HOME_VERSUS ) return ;
+	if( Sys->home_mode == HOME_TRAINING ){
+		stage_no = 11 ;
+		return ;
+	}
+	if( Sys->home_mode == HOME_NETWORK ){
+		stage_no = ( net_win_cnt + net_vs_win_cnt + net_win_add + net_vs_win_add ) & 7 ;
+		return ;
+	}
+	stage_no_set() ;
+	mode = Sys->home_mode ;
+	if( ( !mode || mode == 7 ) && sel_w.stage_ex_cnt ){
+		r = nlRand() ;
+		if( r & 1 ){
+			max = sel_w.stage_ex_cnt - 1 ;
+			if( stage_no <= max ) stage_no = stage_ex_tbl[stage_no] ;
+		}
+	}
+}
+#endif
+
 /****************************************************************/
 void stage_decide( void )
 {
+#ifdef TARGET_DC
+	mode_stage_no_set() ;
+#else
 	stage_no_set() ;
+#endif
 }
 
 /****************************************************************/
@@ -60,7 +103,9 @@ void tex_mem_disp( void )
 	Uint32 mem ;
 
 	mem = nlCommonTextureGetFreeMem() ;
-	mem -= 0x800000 ;
+#ifndef TARGET_DC
+	mem -= 0x800000 ;	/* the board has twice the console's texture memory */
+#endif
 	STrPrint( 8, 20, 0, "%x/%x", mem, 0x400000 ) ;
 }
 

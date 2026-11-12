@@ -62,6 +62,19 @@ typedef struct { Uint8 buff[0x1d0] ; } AT02_WORK_BUFF ;
 #define AT02_NEXT_W( w )	( ( ( AT02_WORK_BUFF * )( w ) ) ++ )	/* the cast is used as an lvalue */
 #endif
 
+/* a frame of the demo: the home game's is timed again, to the stream that is its music, and it
+   has no later frames for the faster display */
+#ifdef TARGET_DC
+#define AT02_FRAME( board, home )	( home )
+#else
+#define AT02_FRAME( board, home )	( board )
+#endif
+/* the frames the two runs of name tiles start and end at */
+#define AT02_NAME1_IN	AT02_FRAME( 573, 563 )
+#define AT02_NAME1_OUT	AT02_FRAME( 848, 838 )
+#define AT02_NAME2_IN	AT02_FRAME( 1060, 1050 )
+#define AT02_NAME2_OUT	AT02_FRAME( 1335, 1327 )
+
 /****************************************************************/
 /*			A point's step to another: its difference over a	*/
 /*			count of frames										*/
@@ -100,21 +113,45 @@ static Float at02_name_pos[59 * 4] = {
 	-1.5f, 0.0f, 8.0f, 1.0f,
 	-1.5f, 0.0f, 5.0f, 1.2f,
 	-1.5f, 0.0f, 6.0f, 1.02f,
+#ifdef TARGET_DC
+	-1.5f, 0.0f, -8.01f, 1.0f,
+#else
 	-1.5f, 0.0f, 7.0f, 1.0f,
+#endif
 	-1.5f, 0.0f, 4.0f, 1.36f,
 	-1.5f, 0.0f, 3.0f, 1.0f,
 	1.5f, 0.0f, 11.04f, 1.21f,
+#ifdef TARGET_DC
+	1.5f, -0.08f, -9.0f, 1.05f,
+#else
 	1.5f, -0.01f, 10.24f, 1.05f,
+#endif
+#ifdef TARGET_DC
+	1.34f, -0.05f, 7.0f, 1.0f,
+#else
 	1.5f, -0.05f, -9.7f, 1.0f,
+#endif
 	1.5f, 0.0f, 7.75f, 1.13f,
+#ifdef TARGET_DC
+	1.5f, -0.09f, 6.0f, 1.0f,
+#else
 	1.5f, -0.05f, -10.47f, 1.0f,
+#endif
 	1.5f, 0.0f, 8.52f, 1.1f,
 	1.5f, -0.02f, 9.52f, 1.0f,
 	1.5f, 0.0f, 3.0f, 1.32f,
 	1.5f, 0.0f, 4.0f, 1.1f,
 	1.5f, 0.0f, 5.0f, 1.2f,
+#ifdef TARGET_DC
+	-1.5f, -0.18f, 1e+01f, 0.85f,
+#else
 	-1.5f, -0.12f, -9.320001f, 0.85f,
+#endif
+#ifdef TARGET_DC
+	-1.5f, 0.0f, 9.0f, 1.0f,
+#else
 	-1.5f, 0.0f, -10.17f, 1.0f,
+#endif
 	-1.5f, 0.0f, 10.76f, 1.0f,
 	-1.5f, 0.0f, 13.93f, 1.08f,
 	-1.5f, 0.0f, 13.0f, 0.95f,
@@ -124,41 +161,101 @@ static Float at02_name_pos[59 * 4] = {
 	0.0f, 0.0f, 0.0f, 0.0f,
 	0.0f, 0.0f, 0.0f, 0.0f,
 	0.0f, 0.0f, 0.0f, 0.0f,
+#ifdef TARGET_DC
+	-1.5f, -0.03f, -7.42f, 0.91f,
+#else
 	-1.5f, -0.03f, -7.62f, 0.9f,
+#endif
+#ifdef TARGET_DC
+	-1.48f, -0.1f, -11.81f, 0.9f,
+#else
 	-1.48f, -0.03f, -11.76f, 0.9f,
+#endif
+#ifdef TARGET_DC
+	-1.5f, -0.1f, -10.89f, 0.9f,
+#else
 	-1.5f, -0.03f, -10.84f, 0.9f,
+#endif
 	-1.5f, 0.0f, 1.0f, 1.0f,
+#ifdef TARGET_DC
+	-1.5f, -0.17f, -8.91f, 0.86f,
+#else
 	-1.5f, -0.15f, 1e+01f, 0.86f,
+#endif
 	-1.5f, 0.0f, -0.53f, 1.0f,
 	-1.5f, 0.0f, -4.42f, 1.02f,
+#ifdef TARGET_DC
+	-1.5f, -0.09f, 7.15f, 1.0f,
+#else
 	-1.5f, -0.1f, -8.36f, 1.0f,
+#endif
 	-1.5f, 0.0f, -2.53f, 1.0f,
 	-1.5f, 0.0f, -3.52f, 1.0f,
 	-1.5f, 0.0f, -5.42f, 1.0f,
 	-1.5f, 0.0f, -6.32f, 1.2f,
+#ifdef TARGET_DC
+	-1.5f, -0.03f, -1.53f, 1.05f,
+#else
 	-1.5f, -0.03f, -1.53f, 1.053f,
+#endif
 	1.5f, 0.0f, 2.0f, 1.1f,
 	1.5f, 0.0f, 1.0f, 1.63f,
 	1.5f, 0.0f, -8.0f, 1.15f,
 	1.5f, 0.0f, -3.0f, 1.2f,
+#ifdef TARGET_DC
+	1.5f, -0.05f, -9.7f, 1.1f,
+#else
 	1.5f, 0.0f, 7.0f, 1.1f,
+#endif
+#ifdef TARGET_DC
+	1.5f, 0.0f, -10.47f, 1.35f,
+#else
 	1.5f, 0.0f, 6.0f, 1.35f,
+#endif
 	1.5f, 0.0f, -4.0f, 1.05f,
+#ifdef TARGET_DC
+	1.5f, 0.0f, -11.47f, 1.1f,
+#else
 	1.5f, 0.0f, -11.320001f, 1.1f,
+#endif
+#ifdef TARGET_DC
+	1.5f, 0.0f, -12.47f, 1.1f,
+#else
 	1.48f, 0.0f, 0.0f, 1.1f,
+#endif
 	1.5f, -0.07f, -7.0f, 1.0f,
 	1.5f, 0.0f, -2.0f, 1.3f,
 	1.5f, 0.0f, -5.0f, 1.05f,
+#ifdef TARGET_DC
+	1.5f, 0.0f, 0.0f, 1.73f,
+#else
 	1.5f, 0.0f, -12.47f, 1.73f,
+#endif
 	1.5f, 0.0f, -6.0f, 1.66f,
 	1.5f, 0.0f, -1.0f, 1.5f,
 	-1.5f, -0.05f, 2.0f, 1.0f,
+#ifdef TARGET_DC
+	-1.5f, 0.0f, -9.94f, 1.02f,
+#else
 	-1.5f, 0.0f, 9.0f, 1.02f,
+#endif
+#ifdef TARGET_DC
+	1.5f, -0.01f, 10.24f, 1.2f,
+#else
 	1.5f, 0.0f, -9.0f, 1.2f,
+#endif
 	-1.5f, -0.15f, 0.18f, 0.7f,
 } ;
+#ifdef TARGET_DC
+static Uint8 at02_name_ord0[28] = { 19, 20, 21, 18, 16, 17, 0, 34, 2, 1, 4, 5, 55, 30, 58, 32, 39, 35, 36, 33, 37, 38, 27, 3, 31, 56, 29, 28 } ;
+#else
 static Uint8 at02_name_ord0[28] = { 19, 20, 21, 18, 31, 56, 0, 3, 2, 1, 4, 5, 55, 30, 58, 32, 39, 35, 36, 33, 37, 38, 27, 34, 16, 17, 29, 28 } ;
+#endif
+#ifdef TARGET_DC
+static Uint8 at02_name_ord1[28] = { 23, 22, 6, 57, 12, 11, 9, 8, 10, 15, 14, 13, 40, 41, 52, 54, 50, 43, 46, 51, 53, 49, 42, 7, 44, 45, 47, 48 } ;
+#else
 static Uint8 at02_name_ord1[28] = { 23, 22, 6, 7, 12, 11, 9, 44, 45, 15, 14, 13, 40, 41, 48, 54, 50, 43, 46, 51, 53, 49, 42, 57, 8, 10, 47, 52 } ;
+#endif
 static AT02_CAM_KEY at02_cam_a[4] = {
 	{ 0, 0, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -15.0f } },
 	{ 235, 0, { 6.68f, 0.0f, -7.36f }, { 6.68f, 0.0f, -15.0f } },
@@ -269,7 +366,11 @@ static AT02_KEY_SCL at02_key_k08[16] = {
 	{ 380, 1230, { 6.0f, 6.0f } },
 	{ -1, -630, { 3.0f, 3.0f } },
 } ;
+#ifdef TARGET_DC
+static AT02_KEY_SCL at02_key_k09[20] = {
+#else
 static AT02_KEY_SCL at02_key_k09[21] = {
+#endif
 	{ 0, 0, { 3.0f, 1.0f } },
 	{ 60, 180, { 1.0f, 1.0f } },
 	{ 120, 360, { 3.0f, 3.0f } },
@@ -286,8 +387,12 @@ static AT02_KEY_SCL at02_key_k09[21] = {
 	{ 60, 180, { 1.0f, 1.0f } },
 	{ 120, 360, { 2.0f, 2.0f } },
 	{ 180, 540, { 3.0f, 3.0f } },
+#ifdef TARGET_DC
+	{ 260, 900, { 2.0f, 2.0f } },
+#else
 	{ 240, 720, { 3.0f, 3.0f } },
 	{ 260, 900, { 1.0f, 1.0f } },
+#endif
 	{ 320, 990, { 3.0f, 1.0f } },
 	{ 380, 1080, { 6.0f, 6.0f } },
 	{ -1, -630, { 3.0f, 3.0f } },
@@ -443,67 +548,67 @@ static AT02_KEY_POS at02_key_k48[3] = {
 AT02_REC at02_rec[64] = {
 	{ 0, 46, 1, 0.0f, { 0.0f, 0.0f, -1e+01f }, at02_key_k46, 1 },
 	{ 0, 48, 1, 0.0f, { 0.0f, 0.0f, -1e+01f }, at02_key_k48, 2 },
-	{ 120, 0, 0, 1.0f, { 0.0f, 0.0f, -15.1f }, 0, 0 },
-	{ 120, 1, 1, 1.0f, { 0.0f, 0.0f, -4.0f }, at02_key_k01a, 1 },
-	{ 120, 3, 0, 1.0f, { 0.0f, 0.0f, -15.0f }, 0, 2 },
-	{ 120, 4, 2, 1.0f, { 0.0f, 0.0f, -15.0f }, at02_key_k04, 3 },
-	{ 120, 5, 2, 1.0f, { 0.0f, 0.0f, -15.0f }, at02_key_k05, 4 },
-	{ 120, 6, 6, 1.0f, { 0.0f, 0.0f, -15.02f }, at02_key_k06, 5 },
-	{ 120, 7, 6, 1.0f, { 0.0f, 0.0f, -15.04f }, at02_key_k07, 6 },
-	{ 120, 8, 6, 1.0f, { 0.0f, 0.0f, -15.03f }, at02_key_k08, 7 },
-	{ 120, 9, 6, 1.0f, { 0.0f, 0.0f, -15.05f }, at02_key_k09, 8 },
-	{ 328, 10, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k10, 9 },
-	{ 348, 11, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k10, 10 },
-	{ 368, 12, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k10, 11 },
-	{ 408, 13, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k13, 12 },
-	{ 463, 14, 3, 1.0f, { 7.0f, 0.5f, -14.0f }, at02_key_k14, 9 },
-	{ 463, 16, 3, 1.0f, { 1e+01f, -0.5f, -14.0f }, at02_key_k16, 10 },
-	{ 493, 33, 1, 1.0f, { 13.0f, 0.0f, -14.8f }, at02_key_k33, 11 },
-	{ 513, 31, 1, 0.0f, { 9.0f, -2.0f, -12.0f }, at02_key_k31, 9 },
-	{ 523, 35, 5, 1.0f, { 25.0f, -3.0f, -12.0f }, at02_key_k35, 10 },
-	{ 573, 50, 0, 1.0f, { 0.0f, 0.0f, 0.0f }, 0, 35 },
-	{ 573, 52, 0, 1.0f, { 0.0f, 0.0f, 0.0f }, 0, 36 },
-	{ 848, 18, 5, 1.0f, { 13.0f, 4.5f, -14.0f }, at02_key_k18, 9 },
-	{ 856, 43, 0, 1.1f, { 7.5f, 3.0f, -13.99f }, 0, 31 },
-	{ 863, 19, 5, 1.0f, { 13.0f, 1.5f, -14.0f }, at02_key_k19, 10 },
-	{ 863, 29, 4, 1.0f, { 4.75f, 3.0f, -13.95f }, at02_key_k29b, 20 },
-	{ 871, 43, 0, 1.1f, { 7.5f, 1.0f, -13.99f }, 0, 32 },
-	{ 878, 20, 5, 1.0f, { 13.0f, -1.5f, -14.0f }, at02_key_k20, 11 },
-	{ 878, 29, 4, 1.0f, { 4.75f, 1.0f, -13.95f }, at02_key_k29a, 21 },
-	{ 886, 43, 0, 1.1f, { 7.5f, -1.0f, -13.99f }, 0, 33 },
-	{ 893, 21, 5, 1.0f, { 13.0f, -4.5f, -14.0f }, at02_key_k21, 12 },
-	{ 893, 29, 4, 1.0f, { 4.75f, -1.0f, -13.95f }, at02_key_k29a, 22 },
-	{ 901, 43, 0, 1.1f, { 7.5f, -3.0f, -13.99f }, 0, 34 },
-	{ 908, 29, 4, 1.0f, { 4.75f, -3.0f, -13.95f }, at02_key_k29b, 23 },
-	{ 918, 47, 5, 1.0f, { 1.0f, 1.0f, 1.0f }, at02_key_k47, 17 },
-	{ 980, 34, 1, 1.0f, { 9.48f, 0.0f, -1e+01f }, at02_key_k34, 13 },
-	{ 990, 32, 1, 0.0f, { 0.0f, -2.0f, -6.0f }, at02_key_k32, 14 },
-	{ 1010, 37, 5, 1.0f, { -35.8f, -3.5f, -13.0f }, at02_key_k37, 15 },
-	{ 1335, 22, 4, 1.0f, { 4.5f, -4.8f, -14.0f }, at02_key_k22, 13 },
-	{ 1350, 23, 4, 1.0f, { -6.0f, -5.5f, -14.0f }, at02_key_k22, 14 },
-	{ 1350, 24, 4, 1.0f, { 6.0f, -6.5f, -14.0f }, at02_key_k22, 15 },
-	{ 1351, 43, 0, 1.1f, { 4.5f, -4.8f, -13.99f }, 0, 31 },
-	{ 1365, 25, 4, 1.0f, { -7.0f, -2.5f, -14.0f }, at02_key_k22, 16 },
-	{ 1365, 26, 4, 1.0f, { 6.0f, -8.0f, -14.0f }, at02_key_k22, 17 },
-	{ 1366, 43, 0, 1.1f, { -6.0f, -5.5f, -13.99f }, 0, 32 },
-	{ 1366, 43, 0, 1.1f, { 6.0f, -6.5f, -13.99f }, 0, 34 },
-	{ 1380, 27, 4, 1.0f, { -8.0f, 0.5f, -14.0f }, at02_key_k22, 18 },
-	{ 1380, 28, 4, 1.0f, { 6.0f, -9.5f, -14.0f }, at02_key_k22, 19 },
-	{ 1381, 43, 0, 1.1f, { -7.0f, -2.5f, -13.99f }, 0, 34 },
-	{ 1381, 43, 0, 1.1f, { 6.0f, -8.0f, -13.99f }, 0, 33 },
-	{ 1385, 29, 4, 1.0f, { -5.25f, 0.5f, -13.95f }, at02_key_k29b, 24 },
-	{ 1385, 30, 4, 1.0f, { 3.53f, -9.5f, -13.93f }, at02_key_k30a, 25 },
-	{ 1396, 43, 0, 1.1f, { -8.0f, 0.5f, -13.99f }, 0, 32 },
-	{ 1396, 43, 0, 1.1f, { 6.0f, -9.5f, -13.99f }, 0, 34 },
-	{ 1400, 29, 4, 1.0f, { -3.25f, -5.5f, -13.95f }, at02_key_k29c, 26 },
-	{ 1400, 30, 4, 1.0f, { 3.53f, -8.0f, -13.92f }, at02_key_k30a, 27 },
-	{ 1400, 30, 4, 1.0f, { 2.45f, -9.58f, -13.92f }, at02_key_k30c, 28 },
-	{ 1415, 29, 4, 1.0f, { -4.25f, -2.5f, -13.95f }, at02_key_k29a, 29 },
-	{ 1415, 30, 4, 1.0f, { 3.53f, -6.5f, -13.91f }, at02_key_k30b, 30 },
-	{ 1425, 29, 4, 1.0f, { 1.75f, -4.8f, -13.95f }, at02_key_k29a, 31 },
-	{ 1525, 40, 5, 0.0f, { 0.0f, 0.0f, -13.0f }, at02_key_k40, 32 },
-	{ 1525, 39, 7, 0.0f, { 0.0f, 0.0f, -13.0f }, at02_key_k39, 33 },
-	{ 1605, 45, 0, 0.0f, { 0.0f, 0.0f, 0.0f }, 0, 34 },
+	{ AT02_FRAME( 120, 110 ), 0, 0, 1.0f, { 0.0f, 0.0f, -15.1f }, 0, 0 },
+	{ AT02_FRAME( 120, 110 ), 1, 1, 1.0f, { 0.0f, 0.0f, -4.0f }, at02_key_k01a, 1 },
+	{ AT02_FRAME( 120, 110 ), 3, 0, 1.0f, { 0.0f, 0.0f, -15.0f }, 0, 2 },
+	{ AT02_FRAME( 120, 110 ), 4, 2, 1.0f, { 0.0f, 0.0f, -15.0f }, at02_key_k04, 3 },
+	{ AT02_FRAME( 120, 110 ), 5, 2, 1.0f, { 0.0f, 0.0f, -15.0f }, at02_key_k05, 4 },
+	{ AT02_FRAME( 120, 110 ), 6, 6, 1.0f, { 0.0f, 0.0f, -15.02f }, at02_key_k06, 5 },
+	{ AT02_FRAME( 120, 110 ), 7, 6, 1.0f, { 0.0f, 0.0f, -15.04f }, at02_key_k07, 6 },
+	{ AT02_FRAME( 120, 110 ), 8, 6, 1.0f, { 0.0f, 0.0f, -15.03f }, at02_key_k08, 7 },
+	{ AT02_FRAME( 120, 110 ), 9, 6, 1.0f, { 0.0f, 0.0f, -15.05f }, at02_key_k09, 8 },
+	{ AT02_FRAME( 328, 318 ), 10, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k10, 9 },
+	{ AT02_FRAME( 348, 338 ), 11, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k10, 10 },
+	{ AT02_FRAME( 368, 358 ), 12, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k10, 11 },
+	{ AT02_FRAME( 408, 398 ), 13, 2, 0.0f, { 0.0f, 0.0f, -14.8f }, at02_key_k13, 12 },
+	{ AT02_FRAME( 463, 453 ), 14, 3, 1.0f, { 7.0f, 0.5f, -14.0f }, at02_key_k14, 9 },
+	{ AT02_FRAME( 463, 453 ), 16, 3, 1.0f, { 1e+01f, -0.5f, -14.0f }, at02_key_k16, 10 },
+	{ AT02_FRAME( 493, 483 ), 33, 1, 1.0f, { 13.0f, 0.0f, -14.8f }, at02_key_k33, 11 },
+	{ AT02_FRAME( 513, 503 ), 31, 1, 0.0f, { 9.0f, -2.0f, -12.0f }, at02_key_k31, 9 },
+	{ AT02_FRAME( 523, 513 ), 35, 5, 1.0f, { 25.0f, -3.0f, -12.0f }, at02_key_k35, 10 },
+	{ AT02_FRAME( 573, 563 ), 50, 0, 1.0f, { 0.0f, 0.0f, 0.0f }, 0, 35 },
+	{ AT02_FRAME( 573, 563 ), 52, 0, 1.0f, { 0.0f, 0.0f, 0.0f }, 0, 36 },
+	{ AT02_FRAME( 848, 852 ), 18, 5, 1.0f, { 13.0f, 4.5f, -14.0f }, at02_key_k18, 9 },
+	{ AT02_FRAME( 856, 860 ), 43, 0, 1.1f, { 7.5f, 3.0f, -13.99f }, 0, 31 },
+	{ AT02_FRAME( 863, 867 ), 19, 5, 1.0f, { 13.0f, 1.5f, -14.0f }, at02_key_k19, 10 },
+	{ AT02_FRAME( 863, 867 ), 29, 4, 1.0f, { 4.75f, 3.0f, -13.95f }, at02_key_k29b, 20 },
+	{ AT02_FRAME( 871, 875 ), 43, 0, 1.1f, { 7.5f, 1.0f, -13.99f }, 0, 32 },
+	{ AT02_FRAME( 878, 882 ), 20, 5, 1.0f, { 13.0f, -1.5f, -14.0f }, at02_key_k20, 11 },
+	{ AT02_FRAME( 878, 882 ), 29, 4, 1.0f, { 4.75f, 1.0f, -13.95f }, at02_key_k29a, 21 },
+	{ AT02_FRAME( 886, 890 ), 43, 0, 1.1f, { 7.5f, -1.0f, -13.99f }, 0, 33 },
+	{ AT02_FRAME( 893, 897 ), 21, 5, 1.0f, { 13.0f, -4.5f, -14.0f }, at02_key_k21, 12 },
+	{ AT02_FRAME( 893, 897 ), 29, 4, 1.0f, { 4.75f, -1.0f, -13.95f }, at02_key_k29a, 22 },
+	{ AT02_FRAME( 901, 905 ), 43, 0, 1.1f, { 7.5f, -3.0f, -13.99f }, 0, 34 },
+	{ AT02_FRAME( 908, 912 ), 29, 4, 1.0f, { 4.75f, -3.0f, -13.95f }, at02_key_k29b, 23 },
+	{ AT02_FRAME( 918, 938 ), 47, 5, 1.0f, { 1.0f, 1.0f, 1.0f }, at02_key_k47, 17 },
+	{ AT02_FRAME( 980, 970 ), 34, 1, 1.0f, { 9.48f, 0.0f, -1e+01f }, at02_key_k34, 13 },
+	{ AT02_FRAME( 990, 980 ), 32, 1, 0.0f, { 0.0f, -2.0f, -6.0f }, at02_key_k32, 14 },
+	{ AT02_FRAME( 1010, 1000 ), 37, 5, 1.0f, { -35.8f, -3.5f, -13.0f }, at02_key_k37, 15 },
+	{ AT02_FRAME( 1335, 1327 ), 22, 4, 1.0f, { 4.5f, -4.8f, -14.0f }, at02_key_k22, 13 },
+	{ AT02_FRAME( 1350, 1342 ), 23, 4, 1.0f, { -6.0f, -5.5f, -14.0f }, at02_key_k22, 14 },
+	{ AT02_FRAME( 1350, 1342 ), 24, 4, 1.0f, { 6.0f, -6.5f, -14.0f }, at02_key_k22, 15 },
+	{ AT02_FRAME( 1351, 1343 ), 43, 0, 1.1f, { 4.5f, -4.8f, -13.99f }, 0, 31 },
+	{ AT02_FRAME( 1365, 1357 ), 25, 4, 1.0f, { -7.0f, -2.5f, -14.0f }, at02_key_k22, 16 },
+	{ AT02_FRAME( 1365, 1357 ), 26, 4, 1.0f, { 6.0f, -8.0f, -14.0f }, at02_key_k22, 17 },
+	{ AT02_FRAME( 1366, 1358 ), 43, 0, 1.1f, { -6.0f, -5.5f, -13.99f }, 0, 32 },
+	{ AT02_FRAME( 1366, 1358 ), 43, 0, 1.1f, { 6.0f, -6.5f, -13.99f }, 0, 34 },
+	{ AT02_FRAME( 1380, 1372 ), 27, 4, 1.0f, { -8.0f, 0.5f, -14.0f }, at02_key_k22, 18 },
+	{ AT02_FRAME( 1380, 1372 ), 28, 4, 1.0f, { 6.0f, -9.5f, -14.0f }, at02_key_k22, 19 },
+	{ AT02_FRAME( 1381, 1373 ), 43, 0, 1.1f, { -7.0f, -2.5f, -13.99f }, 0, 34 },
+	{ AT02_FRAME( 1381, 1373 ), 43, 0, 1.1f, { 6.0f, -8.0f, -13.99f }, 0, 33 },
+	{ AT02_FRAME( 1385, 1377 ), 29, 4, 1.0f, { -5.25f, 0.5f, -13.95f }, at02_key_k29b, 24 },
+	{ AT02_FRAME( 1385, 1377 ), 30, 4, 1.0f, { 3.53f, -9.5f, -13.93f }, at02_key_k30a, 25 },
+	{ AT02_FRAME( 1396, 1388 ), 43, 0, 1.1f, { -8.0f, 0.5f, -13.99f }, 0, 32 },
+	{ AT02_FRAME( 1396, 1388 ), 43, 0, 1.1f, { 6.0f, -9.5f, -13.99f }, 0, 34 },
+	{ AT02_FRAME( 1400, 1392 ), 29, 4, 1.0f, { -3.25f, -5.5f, -13.95f }, at02_key_k29c, 26 },
+	{ AT02_FRAME( 1400, 1392 ), 30, 4, 1.0f, { 3.53f, -8.0f, -13.92f }, at02_key_k30a, 27 },
+	{ AT02_FRAME( 1400, 1392 ), 30, 4, 1.0f, { 2.45f, -9.58f, -13.92f }, at02_key_k30c, 28 },
+	{ AT02_FRAME( 1415, 1407 ), 29, 4, 1.0f, { -4.25f, -2.5f, -13.95f }, at02_key_k29a, 29 },
+	{ AT02_FRAME( 1415, 1407 ), 30, 4, 1.0f, { 3.53f, -6.5f, -13.91f }, at02_key_k30b, 30 },
+	{ AT02_FRAME( 1425, 1417 ), 29, 4, 1.0f, { 1.75f, -4.8f, -13.95f }, at02_key_k29a, 31 },
+	{ AT02_FRAME( 1525, 1547 ), 40, 5, 0.0f, { 0.0f, 0.0f, -13.0f }, at02_key_k40, 32 },
+	{ AT02_FRAME( 1525, 1547 ), 39, 7, 0.0f, { 0.0f, 0.0f, -13.0f }, at02_key_k39, 33 },
+	{ AT02_FRAME( 1605, 1627 ), 45, 0, 0.0f, { 0.0f, 0.0f, 0.0f }, 0, 34 },
 	{ 65535, 0, 0, 0.0f, { 0.0f, 0.0f, 0.0f }, 0, 0 },
 } ;
 Sint16 at02_ang[12] = { 38, 14, -14, -38, 175, 0, -120, 0, -90, -150, 0, -68 } ;
@@ -741,9 +846,14 @@ void at02_w_set( int no, void *key )
 static void at02_w_main( PLAYER_WORK *ew )
 {
 	int no = ew->sub_prio ;
+#ifdef TARGET_DC
+	int lim = 1467 ;
+
+#else
 	int lim = 1445 ;
 
 	if( Sys->monitor_31k ) lim = 1463 ;
+#endif
 	if( Sys->timer1 >= lim ){
 		if( no >= 20 && no <= 31 ){
 			ew->scale.x -= 0.065f ;
@@ -776,23 +886,23 @@ static void at02_w_main( PLAYER_WORK *ew )
 		if( -- ew->timer1 == 0 ) goto kill ;
 		break ;
 	case 13:
-		if( Sys->timer1 == 455 ) ew->pl_color = 2 ;
+		if( Sys->timer1 == AT02_FRAME( 455, 445 ) ) ew->pl_color = 2 ;
 		break ;
 	case 14:
 	case 16:
-		if( Sys->timer1 == 493 ) goto kill ;
-		if( Sys->timer1 > 473 ){
+		if( Sys->timer1 == AT02_FRAME( 493, 483 ) ) goto kill ;
+		if( Sys->timer1 > AT02_FRAME( 473, 463 ) ){
 			at02_uv_main( ew ) ;
 			return ;
 		}
 		break ;
 	case 31:
-		if( Sys->timer1 == 533 ){
+		if( Sys->timer1 == AT02_FRAME( 533, 523 ) ){
 			ew->fade.trnsl = ew->fade.r = ew->fade.g = ew->fade.b = 1.0f ;
 		}
 		break ;
 	case 32:
-		if( Sys->timer1 == 1010 ){
+		if( Sys->timer1 == AT02_FRAME( 1010, 1000 ) ){
 			ew->fade.trnsl = ew->fade.r = ew->fade.g = ew->fade.b = 1.0f ;
 		}
 		break ;
@@ -826,7 +936,7 @@ static void at02_w_main( PLAYER_WORK *ew )
 	case 57:
 	case 58:
 	case 59:
-		if( Sys->timer1 >= 1060 ) ew->rot[1] = nlArcTan2( at02_eye.z - ew->pos.z, at02_eye.x - ew->pos.x ) & 0xffff ;
+		if( Sys->timer1 >= AT02_NAME2_IN ) ew->rot[1] = nlArcTan2( at02_eye.z - ew->pos.z, at02_eye.x - ew->pos.x ) & 0xffff ;
 		else ew->rot[1] = nlArcTan2( at02_eye.x - ew->pos.x, at02_eye.z - ew->pos.z ) + 0x8000 ;
 		return ;
 	}
@@ -908,18 +1018,18 @@ static void at02_name_disp( void )
 	bits[1] = Sys->char_open1 ;
 	if( at02_name_no < 28 ){
 		i = at02_name_no % 5 ;
-		if( Sys->timer1 >= 1060 ) no = at02_name_ord0[at02_name_no] ;
+		if( Sys->timer1 >= AT02_NAME2_IN ) no = at02_name_ord0[at02_name_no] ;
 		else no = at02_name_ord1[at02_name_no] ;
 		e = &at02_name_pos[no * 4] ;
 		pos.x = e[0] * 10.0f ;
 		pos.y = e[1] * 10.0f ;
 		pos.z = e[2] * 10.0f ;
-		if( Sys->timer1 >= 1060 ) add = -5.0f ;
+		if( Sys->timer1 >= AT02_NAME2_IN ) add = -5.0f ;
 		else if( at02_name_no == 13 || at02_name_no == 27 ) add = 12.0f ;
 		else add = 6.0f ;
 		pos.x += add ;
 		nlProjectScreen( &pos, &scr.x ) ;
-		if( Sys->timer1 >= 1060 && !( scr.x > 640.0f ) || Sys->timer1 < 1060 && !( scr.x < 0.0f ) ){
+		if( Sys->timer1 >= AT02_NAME2_IN && !( scr.x > 640.0f ) || Sys->timer1 < AT02_NAME2_IN && !( scr.x < 0.0f ) ){
 			ew = at02_w[13 + i] ;
 			tex_req_flag = 1 ;
 			tex_req_no = 6 + i ;
@@ -932,7 +1042,7 @@ static void at02_name_disp( void )
 			ew->scale.z = e[3] ;
 			ew->scale.y = ew->scale.z ;
 			ew->scale.x = ew->scale.y ;
-			if( Sys->timer1 >= 1060 ) ew->rot[1] = 4338 ;
+			if( Sys->timer1 >= AT02_NAME2_IN ) ew->rot[1] = 4338 ;
 			else ew->rot[1] = 28343 ;
 			if( no < 32 ){
 				if( bits[0] & ( 1 << no ) ) on = 1 ;
@@ -953,10 +1063,10 @@ static void at02_name_disp( void )
 		ew = &stack_w ;
 #endif
 		pos = ew->pos ;
-		if( Sys->timer1 >= 1060 ) pos.x += 20.0f ;
+		if( Sys->timer1 >= AT02_NAME2_IN ) pos.x += 20.0f ;
 		else pos.x -= 20.0f ;
 		nlProjectScreen( &pos, &scr.x ) ;
-		if( Sys->timer1 >= 1060 && scr.x < 0.0f || Sys->timer1 < 1060 && scr.x > 640.0f ){
+		if( Sys->timer1 >= AT02_NAME2_IN && scr.x < 0.0f || Sys->timer1 < AT02_NAME2_IN && scr.x > 640.0f ){
 			ew->disp_flag = 0 ;
 			ew->be_flag = 0 ;
 		}
@@ -1020,6 +1130,9 @@ extern void fade_set( int a, int b, int c ) ;
 extern void ex_se_req( Uint8 no ) ;
 extern void stream_req( Sint8 no ) ;
 extern void stream_start( void ) ;
+#ifdef TARGET_DC
+extern void fight_load_start( int no ) ;
+#endif
 
 /*==============================================================*/
 /*			The frames of the demo: the back colour, the		*/
@@ -1029,7 +1142,9 @@ extern void stream_start( void ) ;
 static void at02_script( void )
 {
 	PLAYER_WORK *ew ;
+#ifndef TARGET_DC
 	Sint32 f ;
+#endif
 	int i ;
 
 	switch( Sys->timer1 ){
@@ -1044,12 +1159,22 @@ static void at02_script( void )
 	case 60:
 		fade_set( 0, 60, FADE_OUT ) ;
 		break ;
+#ifdef TARGET_DC
+	case 90:	/* the stream is asked for sooner */
+		stream_req( 19 ) ;
+		stream_start() ;
+		break ;
+	case 110:
+		fade_set( 0, 120, FADE_IN ) ;
+		break ;
+#else
 	case 120:
 		stream_req( 11 ) ;
 		stream_start() ;
 		fade_set( 0, 120, FADE_IN ) ;
 		break ;
-	case 493:
+#endif
+	case AT02_FRAME( 493, 483 ):
 		at02_back_col[0] = 0xff0000ff ;
 		at02_back_col[1] = 0xff000000 ;
 		tex_req_flag = 1 ;
@@ -1065,10 +1190,12 @@ static void at02_script( void )
 		ew->work_func = &at02_key_k09[7] ;
 		ew->timer0 = 1 ;
 		break ;
-	case 573:
+	case AT02_NAME1_IN:
 		at02_back_col[0] = -1 ;
 		at02_back_col[1] = -1 ;
+#ifndef TARGET_DC
 		if( 0 ) at02_name_no = -1 ;
+#endif
 		fog_work.on = 1 ;
 		at02_name_no = 0 ;
 		for( i = 0 ; i < 9 ; i ++ ){
@@ -1085,7 +1212,7 @@ static void at02_script( void )
 			at02_w_kind_set( ew, i - 13 ) ;
 		}
 		break ;
-	case 848:
+	case AT02_NAME1_OUT:
 		at02_back_col[0] = 0xff000000 ;
 		at02_back_col[1] = 0xff000000 ;
 		fog_work.on = 0 ;
@@ -1118,7 +1245,7 @@ static void at02_script( void )
 			ew->disp_flag = 0 ;
 		}
 		break ;
-	case 980:
+	case AT02_FRAME( 980, 970 ):
 		at02_back_col[0] = 0xffff0000 ;
 		at02_back_col[1] = 0xff000000 ;
 		tex_req_flag = 1 ;
@@ -1145,10 +1272,12 @@ static void at02_script( void )
 			ew->disp_flag = 0 ;
 		}
 		break ;
-	case 1060:
+	case AT02_NAME2_IN:
 		at02_back_col[0] = -1 ;
 		at02_back_col[1] = -1 ;
+#ifndef TARGET_DC
 		if( 0 ) at02_rec_no = -1 ;
+#endif
 		fog_work.on = 1 ;
 		at02_name_no = 0 ;
 		for( i = 0 ; i < 9 ; i ++ ){
@@ -1166,7 +1295,7 @@ static void at02_script( void )
 			ew->disp_flag = 1 ;
 		}
 		break ;
-	case 1335:
+	case AT02_NAME2_OUT:
 		at02_back_col[0] = 0xff000000 ;
 		at02_back_col[1] = 0xff000000 ;
 		fog_work.on = 0 ;
@@ -1193,6 +1322,24 @@ static void at02_script( void )
 			ew->be_flag = 0 ;
 		}
 		break ;
+#ifdef TARGET_DC
+	case 1547:
+		ew = at02_w[3] ;
+		ew->spd.z = 0.25f ;
+		ew->type = 1 ;
+		break ;
+	case 1557:
+		ew = at02_w[4] ;
+		ew->spd.z = 0.25f ;
+		ew->type = 1 ;
+		ew = at02_w[0] ;
+		ew->pl_color = 2 ;
+		ew = at02_w[2] ;
+		ew->pl_color = 2 ;
+		break ;
+	case 1717:
+		fade_set( -1, 5, FADE_OUT ) ;
+#else
 	case 1525:
 		if( Sys->monitor_31k ) break ;
 		ew = at02_w[3] ;
@@ -1233,8 +1380,20 @@ static void at02_script( void )
 		if( !Sys->monitor_31k ) break ;
 		fade_set( -1, 5, FADE_OUT ) ;
 		break ;
+#endif
 	}
-	if( 0 ){
+#ifdef TARGET_DC
+	while( at02_rec[at02_rec_no].frame == Sys->timer1 ){
+		ew = at02_rec_set( at02_rec_no ) ;
+		if( at02_rec_no >= 9 && at02_rec_no <= 11 ) ew->timer1 = 80 ;
+		if( at02_rec_no == 12 ) ew->timer1 = 90 ;
+		at02_rec_no ++ ;
+	}
+	if( 0 ) at02_rec_no = 28 ;	/* left out of the build */
+	if( 0 ) at02_name_no = 80 ;	/* left out of the build */
+	if( 0 ) at02_rec_no = 28 ;	/* left out of the build */
+#else
+	if( 0 ){	/* left out of the build */
 		at02_rec_no = 28 ;
 		at02_name_no = 80 ;
 	}
@@ -1248,6 +1407,7 @@ static void at02_script( void )
 			at02_rec_no ++ ;
 		}
 	} while( f == Sys->timer1 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -1300,7 +1460,7 @@ static void at02_start( void )
 		cam_w->obj_flag = 0 ;
 		at02_cam_no = 0 ;
 		return ;
-	case 848:
+	case AT02_NAME1_OUT:
 		nlMatrixMode( 3 ) ;
 		nlUnitMatrix() ;
 		nlPerspective( 0x4000, 1.3333334f, 0.1f, 12000.0f ) ;
@@ -1309,21 +1469,21 @@ static void at02_start( void )
 		cam_w->timer0 = 1 ;
 		cam_w->work_func = at02_cam_keys[at02_cam_no ++] ;
 		break ;
-	case 573:
-	case 1060:
+	case AT02_NAME1_IN:
+	case AT02_NAME2_IN:
 		nlMatrixMode( 3 ) ;
 		nlUnitMatrix() ;
 		nlPerspective( 0x975, 1.3333334f, 0.1f, 12000.0f ) ;
 		nlMatrixMode( 1 ) ;
-	case 120:
-	case 493:
-	case 980:
-	case 1445:
+	case AT02_FRAME( 120, 110 ):
+	case AT02_FRAME( 493, 483 ):
+	case AT02_FRAME( 980, 970 ):
+	case AT02_FRAME( 1445, 1467 ):
 		cam_w->obj_flag = 0 ;
 		cam_w->timer0 = 1 ;
 		cam_w->work_func = at02_cam_keys[at02_cam_no ++] ;
 		break ;
-	case 1335:
+	case AT02_NAME2_OUT:
 		nlMatrixMode( 3 ) ;
 		nlUnitMatrix() ;
 		nlPerspective( 0x4000, 1.3333334f, 0.1f, 12000.0f ) ;
@@ -1400,6 +1560,9 @@ static void at02_init( void )
 	ex_sound_load2() ;
 	total_vol_init() ;
 	TexLoad( 12 ) ;
+#ifdef TARGET_DC
+	fight_load_start( 5 ) ;	/* read the title's files meanwhile */
+#endif
 	Sys->timer1 = 0 ;
 	at02_start() ;
 	at02_script() ;
@@ -1413,7 +1576,11 @@ static void at02_init( void )
 static void at02_main( void )
 {
 	PLAYER_WORK *cam_w, *ew ;
+#ifdef TARGET_DC
+	int i ;
+#else
 	int i, end ;
+#endif
 
 	back_color_set2( at02_back_col[0], at02_back_col[1] ) ;
 	Sys->timer1 ++ ;
@@ -1430,7 +1597,7 @@ static void at02_main( void )
 	nlMakeModelViewProjectMatrix( 640.0f, 480.0f ) ;
 	nlGetMatrix( &at02_view_mtx ) ;
 	nlPopMatrix( 1 ) ;
-	if( ( Sys->timer1 >= 573 && Sys->timer1 < 848 ) || ( Sys->timer1 >= 1060 && Sys->timer1 < 1335 ) ){
+	if( ( Sys->timer1 >= AT02_NAME1_IN && Sys->timer1 < AT02_NAME1_OUT ) || ( Sys->timer1 >= AT02_NAME2_IN && Sys->timer1 < AT02_NAME2_OUT ) ){
 		at02_name_disp() ;
 	}
 	for( i = 0 ; i < 40 ; i ++ ){
@@ -1439,12 +1606,19 @@ static void at02_main( void )
 	for( i = 0 ; i < 40 ; i ++ ){
 		if( ( ew = at02_w[i] ) && ew->be_flag ) at02_obj_disp( ew ) ;
 	}
+#ifdef TARGET_DC
+	if( Sys->timer1 > 1722 ){
+		Sys->scene_no = 0 ;
+		Sys->task_step ++ ;
+	}
+#else
 	end = 1700 ;
 	if( Sys->monitor_31k ) end = 1718 ;
 	if( Sys->timer1 > end ){
 		Sys->scene_no = 0 ;
 		Sys->task_step ++ ;
 	}
+#endif
 	fog_set() ;
 }
 

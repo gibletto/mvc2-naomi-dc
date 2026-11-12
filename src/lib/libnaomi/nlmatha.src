@@ -1,0 +1,89 @@
+; nlmatha: libnaomi's fast angle routines, in assembler: an arctangent in 256ths of a turn from a
+; table, and sine and cosine by the FPU's fsca. Sega keeps them with the code that sits on cache
+; lines of its own (P$32).
+
+          .SECTION  P$32,CODE,ALIGN=32
+          .EXPORT   _nlAtan256, _nlAtan256tbl
+          .EXPORT   _nlFastSin, _nlFastCos, _nlFastSinCos
+
+; nlAtan256: the angle of the vector (fr5, fr4), 0 to 255. The smaller of the two over the larger
+; looks up the first eighth of a turn; the octant gives what to add and whether to negate it.
+_nlAtan256:
+          fldi0     fr0
+          fcmp/gt   fr4,fr0
+          bf        y_plus
+          fneg      fr4
+y_plus:
+          movt      r2
+          fcmp/gt   fr5,fr0
+          bf        x_plus
+          fneg      fr5
+x_plus:
+          movt      r0
+          fcmp/gt   fr5,fr4
+          fmov      fr4,fr0
+          shll2     r2
+          bf        ordered
+          fmov      fr5,fr4             ; the larger one divides
+          fmov      fr0,fr5
+          or        #2,r0
+ordered:
+          fdiv      fr5,fr4
+          or        r0,r2
+          shll      r2
+          mova      octant,r0
+          mov.w     @(r0,r2),r2
+          mova      scale,r0
+          fmov      @r0+,fr0
+          shlr      r2                  ; the low bit: negate the table's angle
+          fmov      @r0+,fr5
+          fmac      fr0,fr4,fr5         ; the ratio as an index, rounded
+          ftrc      fr5,fpul
+          sts       fpul,r1
+          extu.b    r1,r1
+          mov.b     @(r0,r1),r0
+          bf        add_base
+          neg       r0,r0
+add_base:
+          rts
+          add       r2,r0
+; for each octant, its base angle doubled, and 1 where the table's angle is taken away
+octant:   .DATA.W   H'0000,H'0101,H'0081,H'0080,H'0201,H'0100,H'0180,H'0181
+scale:    .DATA.L   H'43000000          ; 128.0
+          .DATA.L   H'3F000000          ; 0.5
+
+; the angle of each ratio 0/128 to 128/128
+_nlAtan256tbl:
+          .DATA.B   0,0,1,1,1,2,2,2,3,3,3,3,4,4,4,5
+          .DATA.B   5,5,6,6,6,7,7,7,8,8,8,8,9,9,9,10
+          .DATA.B   10,10,11,11,11,11,12,12,12,13,13,13,13,14,14,14
+          .DATA.B   15,15,15,15,16,16,16,17,17,17,17,18,18,18,18,19
+          .DATA.B   19,19,19,20,20,20,20,21,21,21,21,22,22,22,22,23
+          .DATA.B   23,23,23,23,24,24,24,24,25,25,25,25,25,26,26,26
+          .DATA.B   26,26,27,27,27,27,27,28,28,28,28,28,29,29,29,29
+          .DATA.B   29,29,30,30,30,30,30,31,31,31,31,31,31,32,32,32
+          .DATA.B   32
+          .ALIGN    4
+
+; nlFastSin, nlFastCos: the sine or cosine of r4, in 65536ths of a turn
+_nlFastSin:
+          lds       r4,fpul
+          rts
+          .DATA.W   H'F0FD           ; fsca fpul,dr0 (an opcode the assembler does not know)
+          .ALIGN    4
+
+_nlFastCos:
+          lds       r4,fpul
+          .DATA.W   H'F0FD           ; fsca fpul,dr0
+          rts
+          fmov      fr1,fr0
+
+; nlFastSinCos: both, the sine to @r5 and the cosine to @r6
+_nlFastSinCos:
+          lds       r4,fpul
+          .DATA.W   H'F0FD           ; fsca fpul,dr0
+          fmov      fr0,@r5
+          rts
+          fmov      fr1,@r6
+
+          .END

@@ -1,7 +1,11 @@
-/* The sound requests: the sound driver's calls for sequences, packs and volumes, the s3l streams,
-   the players' voices and sound effects panned to their place on the screen, and the sound test. */
+/* The sound requests: the sound driver's calls for sequences, packs and volumes, the s3l streams
+   (on the Dreamcast, ADX files from the disc), the players' voices and sound effects panned to
+   their place on the screen, and the sound test. */
 #include "player.h"
 #include "naomi.h"
+#ifdef TARGET_DC
+#include "adx.h"
+#endif
 
 /* Shinobi / Kamui */
 extern Sint32 nlsndPackLoad( void *PackAddress, Sint32 Port ) ;
@@ -11,12 +15,14 @@ extern Sint32 nlsndControlChange( Uint32 Pack, Uint32 MidiCh, Uint32 Command, Si
 extern Sint32 nlsndSeqRequest( Uint32 Request ) ;
 extern Sint32 nlsndRemainMem( void ) ;
 extern char *nlsndVersion( void ) ;
+#ifndef TARGET_DC
 extern int s3lInit( int mono, int stereo, int quad ) ;
 extern int s3lSetStereoPort( int p, Uint32 start, int loop ) ;
 extern int s3lSetVolume( int p, int vol ) ;
 extern int s3lStartPort( int p ) ;
 extern int s3lStopPort( int p ) ;
 extern void s3lIntr( void ) ;
+#endif
 
 #define SND_ALL_SOUND_OFF	0x0100a0
 #define SND_ALL_SE_OFF		0x0300a0
@@ -40,6 +46,19 @@ extern void s3lIntr( void ) ;
 #define BANK_NA		0x3d
 
 extern void file_load( Sint32 no, void *adrs, Sint32 a ) ;
+#ifdef TARGET_DC
+extern void file_load3( Sint32 no, void *adrs, Sint32 a ) ;	/* am_load.c: without the wait for the music */
+extern char *file_name_tbl[] ;	/* am_load.c: every file on the disc, by number */
+extern ADXT adxt ;		/* system.c: the music's player */
+
+/* the files of the stages' songs, which play 2 dB lower than the others */
+#define STAGE_SONG_TOP	124
+#define STAGE_SONG_END	134
+
+#define EX_SOUND_ADRS	( ( void * )0x0ccde000 )	/* where the attract's pack is read to */
+#else
+#define EX_SOUND_ADRS	( ( void * )0x0c420000 )
+#endif
 extern int dbg_flag_ck( int a, int b ) ;
 extern void get_2d_pos( VEC3 *pos, Float *scr ) ;
 extern const Uint8 *voice_tbl[] ;	/* each character's voices for the other voice type */
@@ -99,10 +118,24 @@ const Uint8 heavy_se_tbl[17] = {
 const Uint8 dm_se_tbl[3] = { 0x3c, 0x3d, 0x3e } ;
 
 /* the streamed music: its stream, and whether it loops */
+#ifdef TARGET_DC
+/* the home stages have their songs again, and the scenes' songs are streams too */
+const Sint32 stream_no_tbl[30] = {
+	0x7c, 0x7d, 0x7e, 0x7f, 0x80, 0x81, 0x82, 0x83, 0x84, 0x7c,
+	0x7d, 0x87, 0x7f, 0x80, 0x81, 0x82, 0x83, 0x85, 0x86, 0x89,
+	0x8a, 0x88, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x91, 0x2c6
+} ;
+const Uint8 stream_loop_tbl[30] = {
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 0,
+	0, 0, 1, 1, 0, 0, 1, 1, 1, 1
+} ;
+#else
 const Sint32 stream_no_tbl[14] = {
 	0x7c, 0x7d, 0x7e, 0x7f, 0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x88, 0x89, 0x87
 } ;
 const Uint8 stream_loop_tbl[14] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0 } ;
+#endif
 
 /* each character's sound pack */
 const Sint32 pl_snd_file_tbl[59] = {
@@ -125,6 +158,9 @@ const Uint8 hit_se_tbl[29] = {
 
 SOUND_WORK snd_w ;
 SOUND_LOG snd_log ;
+#ifdef TARGET_DC
+Sint32 stream_no = -1 ;	/* the file of the song asked for, until it starts */
+#endif
 
 /****************************************************************/
 void sound_req( Uint32 code )
@@ -148,6 +184,9 @@ void sound_req_direct( Uint32 code )
 void sound_all_off( void )
 {
 	nlsndSystemControl( 0, SND_ALL_SOUND_OFF, 0 ) ;
+#ifdef TARGET_DC
+	if( adxt ) ADXT_Stop( adxt ) ;
+#endif
 }
 
 /****************************************************************/
@@ -170,11 +209,24 @@ void song_vol_set( Sint8 pack, Uint8 vol )
 }
 
 /****************************************************************/
+#ifdef TARGET_DC
+/* the music's volume, from 0 to 127 as the board's, in ADX's tenths of a decibel */
+void s3l_vol_set( Uint8 vol )
+{
+	Sint32 db ;
+
+	db = ( ( vol & 127 ) - 127 ) * 7 ;
+	if( stream_no >= STAGE_SONG_TOP && stream_no <= STAGE_SONG_END ) db -= 90 ;
+	else db -= 70 ;
+	if( adxt ) ADXT_SetOutVol( adxt, db ) ;
+}
+#else
 void s3l_vol_set( Uint8 vol )
 {
 	vol &= 127 ;
 	s3lSetVolume( snd_w.s3l_port, vol ) ;
 }
+#endif
 
 /****************************************************************/
 void fade_out_set( Uint16 pack, Uint8 spd )
@@ -241,15 +293,23 @@ void se_vol_up( Uint16 pack, Uint8 spd )
 /****************************************************************/
 void s3l_fade_out_set( Uint8 spd )
 {
+#ifdef TARGET_DC
+	snd_w.s3l_spd = -1000 / spd ;
+#else
 	spd &= 127 ;
 	snd_w.s3l_spd = -( Float )( snd_w.vol_max / spd ) ;
+#endif
 }
 
 /****************************************************************/
 void s3l_fade_in_set( Uint8 spd )
 {
+#ifdef TARGET_DC
+	snd_w.s3l_spd = 1000 / spd ;
+#else
 	spd &= 127 ;
 	snd_w.s3l_spd = snd_w.vol_max / spd ;
+#endif
 }
 
 /****************************************************************/
@@ -281,7 +341,9 @@ void sound_init( void )
 	Uint32 i ;
 
 	for( i = 0 ; i < 8 ; i ++ ) snd_w.vol[i] = 127.0f ;
+#ifndef TARGET_DC
 	snd_w.s3l_init = s3lInit( 1, 1, 0 ) ;
+#endif
 	snd_w.s3l_spd = 0.0f ;
 	snd_w.s3l_vol = 127.0f ;
 	snd_w.vol_max = 127 ;
@@ -352,11 +414,16 @@ void pl_sound_load( void )
 void com_sound_load( void )
 {
 	load_log_set( nlsndRemainMem() ) ;
+#ifdef TARGET_DC
+	/* the songs' pack is not on the disc */
+	file_load3( 0x2aa, ( void * )0x0cc00000, 1 ) ;
+#else
 	file_load( 0x340, ( void * )0x0c420000, 1 ) ;
 	nlsndPackLoad( ( void * )0x0c420000, 0 ) ;
 	sound_req( ( 10 << 16 ) + SEQ_SONG ) ;
 	load_log_set( nlsndRemainMem() ) ;
 	file_load( 0x33f, ( void * )0x0cc00000, 1 ) ;
+#endif
 	nlsndPackLoad( ( void * )0x0cc00000, 1 ) ;
 	load_log_set( nlsndRemainMem() ) ;
 }
@@ -366,8 +433,8 @@ void ex_sound_load( void )
 {
 	nlsndPackFree( 7 ) ;
 	load_log_set( nlsndRemainMem() ) ;
-	file_load( 123, ( void * )0x0c420000, 1 ) ;
-	nlsndPackLoad( ( void * )0x0c420000, 7 ) ;
+	file_load( 123, EX_SOUND_ADRS, 1 ) ;
+	nlsndPackLoad( EX_SOUND_ADRS, 7 ) ;
 	load_log_set( nlsndRemainMem() ) ;
 }
 
@@ -376,8 +443,10 @@ void ex_sound_load2( void )
 {
 	nlsndPackFree( 7 ) ;
 	load_log_set( nlsndRemainMem() ) ;
-	file_load( 123, ( void * )0x0c420000, 1 ) ;
-	nlsndPackLoad( ( void * )0x0c420000, 7 ) ;
+#ifndef TARGET_DC
+	file_load( 123, EX_SOUND_ADRS, 1 ) ;
+#endif
+	nlsndPackLoad( EX_SOUND_ADRS, 7 ) ;
 	load_log_set( nlsndRemainMem() ) ;
 }
 
@@ -394,11 +463,59 @@ void staff_sound_load( void )
 /****************************************************************/
 void sound_vsync( void )
 {
+#ifndef TARGET_DC
 	s3lIntr() ;
 	while( !nlaCheckWaitROMDMA() ) ;
+#endif
 	s3l_fade_move() ;
 }
 
+#ifdef TARGET_DC
+/****************************************************************/
+/*			Stops the music and keeps the next song's file		*/
+/*			for stream_start									*/
+/****************************************************************/
+void stream_req( Sint8 no )
+{
+	if( Sys->demo_sound || Sys->play_mode != 64 ){
+		if( adxt ) ADXT_Stop( adxt ) ;
+		stream_no = stream_no_tbl[no] ;
+	}
+}
+
+/****************************************************************/
+/*			Starts the song stream_req asked for				*/
+/****************************************************************/
+void stream_start( void )
+{
+	Sint32 vol ;
+
+	if( Sys->demo_sound || Sys->play_mode != 64 ){
+		if( !dbg_flag_ck( 3, 6 ) && !Sys->no_bgm_flag ){
+			if( stream_no >= 0 ){
+				if( adxt ){
+					if( 0 ) stream_start_flag = 1 ;	/* set below, once the volume is */
+					vol = ADXT_GetOutVol( adxt ) ;
+				}
+				if( stream_no >= STAGE_SONG_TOP && stream_no <= STAGE_SONG_END ) vol -= 90 ;
+				else vol -= 70 ;
+				if( adxt ){
+					stream_start_flag = 1 ;
+					ADXT_SetOutVol( adxt, vol ) ;
+					ADXT_StartFname( adxt, file_name_tbl[stream_no] ) ;
+				}
+				stream_no = -1 ;
+			}
+		}
+	}
+}
+
+/****************************************************************/
+void stream_stop( void )
+{
+	if( adxt ) ADXT_Stop( adxt ) ;
+}
+#else
 /****************************************************************/
 void stream_req( Sint8 no )
 {
@@ -434,6 +551,7 @@ void stream_stop( void )
 {
 	s3lStopPort( snd_w.s3l_port ) ;
 }
+#endif
 
 /****************************************************************/
 void stream_dummy( void )
@@ -1000,7 +1118,9 @@ void dbg_na_req( Uint8 no )
 /****************************************************************/
 void dbg_song_req( Uint8 no )
 {
+#ifndef TARGET_DC
 	song_req( no ) ;
+#endif
 }
 
 /****************************************************************/

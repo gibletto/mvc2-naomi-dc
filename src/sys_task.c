@@ -2,6 +2,9 @@
    system textures are loaded, and each frame runs the system task Sys->task_no picks. */
 #include "player.h"
 #include "naomi.h"
+#ifdef TARGET_DC
+#include "shinobi.h"
+#endif
 
 extern void vms_init( void ) ;
 
@@ -20,12 +23,17 @@ extern void vib_move( void ) ;
 extern void task_init( void ) ;
 extern void task_attract( void ) ;
 extern void task_game( void ) ;
+#ifndef TARGET_DC
 extern void test_mode_jump( void ) ;
+#else
+static void task_menu( void ) ;
+#endif
 
 void Palette_Init( void ) ;
 void Texture_Init( void ) ;
 static void sys_task( void ) ;
 
+#ifndef TARGET_DC
 /****************************************************************/
 /*			The system's set-up, once at power on				*/
 /****************************************************************/
@@ -53,7 +61,7 @@ void System_Init( void )
 	Sys->event_flag = conf_event_flag ;
 	Sys->no_challenge_flag = conf_no_challenge_flag ;
 	Sys->open_lv = conf_open_lv ;
-	Sys->unk_4d = 2 ;
+	Sys->round_time_no = 2 ;
 	vib_init() ;
 	Sys->unk_2b = 0 ;
 	Sys->develop_flag = 0 ;
@@ -76,6 +84,64 @@ void System_Init( void )
 	else mono_set() ;
 	vms_init() ;
 }
+#else
+/****************************************************************/
+/*			The system's set-up, once at power on				*/
+/****************************************************************/
+/* The home version: the settings come from the option menu's work, the cable says what the
+   screen is, and the attract begins with the memory card check. */
+void System_Init( void )
+{
+	SortModeSet( 1 ) ;
+	Sys = &sys_work ;
+	memset( &sys_work, 0, SYS_HALF ) ;
+	Sys->play_mode = 32 ;
+	Sys->monitor_31k = 0 ;
+#if BUILD_DATE >= 20000412
+	unk_8C26A964 = 6 ;
+	unk_8C26A965 = 0 ;
+	unk_8C26A966 = 0 ;
+#endif
+	Sys->cpu_level_type = 1 ;		/* the country: this disc is the USA's */
+	switch( syCblCheck() ){
+	case SYE_CBL_VGA :
+		Sys->monitor_31k = 1 ;
+		option_w.unk_18 = 0 ;
+		break ;
+	case SYE_CBL_NTSC :
+		option_w.unk_18 = 1 ;
+		break ;
+	case SYE_CBL_PAL :
+		option_w.unk_18 = 2 ;
+		break ;
+	}
+	Sys->attract_step = 8 ;
+	Sys->ended_mode = -1 ;
+	sys_set_load() ;
+	pause_init() ;
+	vib_init() ;
+	Sys->unk_2b = 0 ;
+	Sys->develop_flag = 0 ;
+	task_wait = 3 ;
+	stage_no = 0 ;
+	dbg_mode = 0 ;
+	tex_req_flag = 0 ;
+	tex_req_no = 0 ;
+	sprite_keep_flag = 0 ;
+	Sys->char_open0 = 0x00ffff77 ;
+	Sys->char_open1 = 0x02000004 ;
+	Palette_Init() ;
+	Texture_Init() ;
+	fade_init() ;
+	bright_init() ;
+	fog_init( 10 ) ;
+	dbg_flag_init() ;
+	rank_data_init() ;
+	if( Sys->stereo ) stereo_set() ;
+	else mono_set() ;
+	vms_init() ;
+}
+#endif
 
 /****************************************************************/
 /*			Free the palettes, and give each of col_work's		*/
@@ -101,7 +167,9 @@ void Texture_Init( void )
 	nlFreeCommonTextureAll() ;
 	nlSetCommonTextureOffset( 0 ) ;
 	nlDispStripLoadTexture( 0, sys_font_thd ) ;
+#ifndef TARGET_DC
 	nlSpriteLoadTextureOnce( sys_font_thd, 0, 1 ) ;
+#endif
 	nlSetCommonTextureOffset( 2 ) ;
 	nlSpriteLoadTexture( sys_spr_thd, 0 ) ;
 	nlSetCommonTextureOffset( 0 ) ;
@@ -122,6 +190,15 @@ void Texture_Init( void )
 	obj_dm09 = NULL ;
 	obj_dm0a = NULL ;
 	obj_dm0b = NULL ;
+#ifdef TARGET_DC
+	/* the home menus' */
+	obj_dm0c = NULL ;
+	obj_dm0d = NULL ;
+	obj_dm0f = NULL ;
+	obj_dm10 = NULL ;
+	obj_dm11 = NULL ;
+	obj_dm12 = NULL ;
+#endif
 }
 
 /****************************************************************/
@@ -142,7 +219,11 @@ static void sys_task( void )
 		task_init,
 		task_attract,
 		task_game,
+#ifndef TARGET_DC
 		test_mode_jump,
+#else
+		task_menu,
+#endif
 	} ;
 
 	if( !task_wait ){
@@ -152,8 +233,16 @@ static void sys_task( void )
 		back_color_disp() ;
 		fade_move() ;
 	}
+#ifdef TARGET_DC
+	/* a network game counts its frames itself */
+	if( !net_play_flag ){
+		Sys->game_timer0 ++ ;
+		if( ( Sys->wave_ang += 80 ) >= 0x10000 ) Sys->wave_ang = 0 ;
+	}
+#else
 	Sys->game_timer0 ++ ;
 	if( ( Sys->wave_ang += 80 ) >= 0x10000 ) Sys->wave_ang = 0 ;
+#endif
 	vib_move() ;
 }
 
@@ -182,6 +271,16 @@ int game_staff_ck( void )
 	return 0 ;
 }
 
+#ifdef TARGET_DC
+/*==============================================================*/
+/*	The home menu takes the test menu's place					*/
+/*==============================================================*/
+static void task_menu( void )
+{
+	home_menu() ;
+}
+
+#endif
 /*==============================================================*/
 /*	End of File.												*/
 /*==============================================================*/

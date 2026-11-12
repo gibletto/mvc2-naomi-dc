@@ -121,8 +121,10 @@ typedef struct {
 	Uint16	send_line[2];
 	Uint16	recv_line[2];
 	Uint16	vover_count[2];
+#ifndef KD_DC	/* the console's kd (on the disc) has no application block */
 	Uint32	job_blocked_count;
 	Uint32	reserved;
+#endif
 } KDS_SYSTEMINFO;
 
 typedef void ( *KD_CALLBACK )( Sint32 device, Sint32 seqno, KDS_DEVICE *dev, KDS_DEVICEINFO *info );

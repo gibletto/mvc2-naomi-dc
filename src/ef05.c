@@ -15,8 +15,16 @@ extern void sel_obj_pos_add( PLAYER_WORK *wk, Sint16 no, Float x, Float y );
 extern PLAYER_WORK *sel_port_set( PLAYER_WORK *ew );
 extern void sel_port_fly_set( PLAYER_WORK *ew );
 
-/* where each portrait stands, and the offset of its picture in the texture */
+/* where each portrait stands, and the offset of its picture in the texture. The home game moved
+   some characters to other cells: it keeps the board's places, which the portraits fly in to,
+   and has the new ones after them */
+#ifdef TARGET_DC
+static VEC3 ef05_board_pos_tbl[59] = {
+#else
+#define ef05_board_pos_tbl	ef05_pos_tbl
+
 VEC3 ef05_pos_tbl[59] = {
+#endif
 	{ -56.0f, 52.0f, 183.0f },
 	{ -57.0f, 17.0f, 189.0f },
 	{ -52.0f, 84.0f, 172.0f },
@@ -77,6 +85,70 @@ VEC3 ef05_pos_tbl[59] = {
 	{ 9e+01f, -52.0f, 169.0f },
 	{ -77.0f, -114.0f, 143.0f },
 } ;
+
+#ifdef TARGET_DC
+VEC3 ef05_pos_tbl[59] = {
+	{ -56.0f, 52.0f, 183.0f },
+	{ -57.0f, 17.0f, 189.0f },
+	{ -52.0f, 84.0f, 172.0f },
+	{ -9e+01f, -52.0f, 169.0f },
+	{ -57.0f, -17.0f, 189.0f },
+	{ -52.0f, -84.0f, 172.0f },
+	{ 18.0f, 84.0f, 179.0f },
+	{ 16.0f, 114.0f, 162.0f },
+	{ 56.0f, 52.0f, 183.0f },
+	{ 57.0f, 17.0f, 189.0f },
+	{ 18.0f, -84.0f, 179.0f },
+	{ 19.0f, -17.0f, 197.0f },
+	{ 57.0f, -17.0f, 189.0f },
+	{ 52.0f, -84.0f, 172.0f },
+	{ 56.0f, -52.0f, 183.0f },
+	{ 19.0f, -52.0f, 191.0f },
+	{ -19.0f, -52.0f, 191.0f },
+	{ -18.0f, -84.0f, 179.0f },
+	{ -19.0f, -17.0f, 197.0f },
+	{ -19.0f, 17.0f, 197.0f },
+	{ -19.0f, 52.0f, 191.0f },
+	{ -18.0f, 84.0f, 179.0f },
+	{ 19.0f, 52.0f, 191.0f },
+	{ 19.0f, 17.0f, 197.0f },
+	{ -1.0f, -1.0f, -1.0f },
+	{ -1.0f, -1.0f, -1.0f },
+	{ -1.0f, -1.0f, -1.0f },
+	{ -16.0f, -114.0f, 162.0f },
+	{ -47.0f, 114.0f, 156.0f },
+	{ -47.0f, -114.0f, 156.0f },
+	{ -93.0f, 17.0f, 174.0f },
+	{ -9e+01f, 52.0f, 169.0f },
+	{ -77.0f, 114.0f, 143.0f },
+	{ -125.0f, 17.0f, 153.0f },
+	{ -56.0f, -52.0f, 183.0f },
+	{ -85.0f, 84.0f, 159.0f },
+	{ -85.0f, -84.0f, 159.0f },
+	{ -125.0f, -17.0f, 153.0f },
+	{ -122.0f, -52.0f, 148.0f },
+	{ -122.0f, 52.0f, 148.0f },
+	{ 93.0f, 17.0f, 174.0f },
+	{ 93.0f, -17.0f, 174.0f },
+	{ 47.0f, -114.0f, 156.0f },
+	{ 122.0f, 52.0f, 148.0f },
+	{ 9e+01f, -52.0f, 169.0f },
+	{ 47.0f, 114.0f, 156.0f },
+	{ 85.0f, 84.0f, 159.0f },
+	{ 9e+01f, 52.0f, 169.0f },
+	{ 16.0f, -114.0f, 162.0f },
+	{ 125.0f, -17.0f, 153.0f },
+	{ 122.0f, -52.0f, 148.0f },
+	{ 85.0f, -84.0f, 159.0f },
+	{ 77.0f, -114.0f, 143.0f },
+	{ 125.0f, 17.0f, 153.0f },
+	{ 77.0f, 114.0f, 143.0f },
+	{ -93.0f, -17.0f, 174.0f },
+	{ -16.0f, 114.0f, 162.0f },
+	{ 52.0f, 84.0f, 172.0f },
+	{ -77.0f, -114.0f, 143.0f },
+} ;
+#endif
 
 static Float ef05_uv_tbl[59][2] = {
 	{ 0.0f, 1.0f },
@@ -142,6 +214,18 @@ static Float ef05_uv_tbl[59][2] = {
 
 /* by character: how its portrait is turned and how long it takes to arrive; the second byte is unused here */
 const EF05_CELL ef05_cell_tbl[60] = {
+#ifdef TARGET_DC
+	2, 2, 2, 3, 2, 1, 1, 5, 2, 4, 2, 6,
+	4, 1, 4, 0, 5, 2, 5, 3, 4, 6, 4, 4,
+	5, 4, 5, 6, 5, 5, 4, 5, 3, 5, 3, 6,
+	3, 4, 3, 3, 3, 2, 3, 1, 4, 2, 4, 3,
+	0, 0, 0, 0, 0, 0, 3, 7, 2, 0, 2, 7,
+	1, 3, 1, 2, 1, 0, 0, 3, 2, 5, 1, 1,
+	1, 6, 0, 4, 0, 5, 0, 2, 6, 3, 6, 4,
+	5, 7, 7, 2, 6, 5, 5, 0, 6, 1, 6, 2,
+	4, 7, 7, 4, 7, 5, 6, 6, 6, 7, 7, 3,
+	6, 0, 1, 4, 3, 0, 5, 1, 1, 7, 0, 0,
+#else
 	2, 2, 2, 3, 2, 1, 2, 5, 2, 4, 2, 6,
 	4, 1, 5, 2, 4, 0, 5, 3, 5, 0, 4, 4,
 	5, 4, 5, 6, 5, 5, 4, 5, 1, 2, 1, 1,
@@ -152,6 +236,7 @@ const EF05_CELL ef05_cell_tbl[60] = {
 	5, 7, 7, 5, 5, 1, 4, 6, 6, 1, 6, 2,
 	4, 7, 7, 4, 7, 2, 6, 6, 6, 7, 7, 3,
 	6, 0, 1, 4, 3, 6, 6, 5, 1, 7, 0, 0,
+#endif
 } ;
 
 static void ef05_char_set( Sint32 no );
@@ -181,6 +266,9 @@ static void ef05_char_set( Sint32 no )
 {
 	PLAYER_WORK *ew ;
 	Sint32 rnd ;
+#ifdef TARGET_DC
+	Uint8 col, row ;
+#endif
 
 	if( no >= 24 && no <= 26 ) return ;
 	if( !( ew = work_get( 0, W_SET, LIST_END ) ) ) return ;
@@ -191,23 +279,54 @@ static void ef05_char_set( Sint32 no )
 	ew->base_mtx = &sel_back_w->obj_mtx ;
 	ew->obj = obj_dm01->obj[ew->type + 10] ;
 	ew->sub_type = no ;
+#ifdef TARGET_DC	/* it takes the place, and the model, of the board's character in its cell */
+	col = ef05_cell_tbl[ew->sub_type].col ;
+	row = ef05_cell_tbl[ew->sub_type].row ;
+	ew->routine_3 = ef05_grid_tbl[row][col] ;
+	if( ew->sub_type != ew->routine_3 ){
+		if( ew->routine_3 >= 27 ) ew->type = ew->routine_3 - 3 ;
+		else ew->type = ew->routine_3 ;
+		ew->obj = obj_dm01->obj[ew->type + 10] ;
+		sel_obj_pos_add( ew, ew->type + 10, ef05_uv_tbl[ew->sub_type][0] - ef05_uv_tbl[ew->routine_3][0], ef05_uv_tbl[ew->routine_3][1] - ef05_uv_tbl[ew->sub_type][1] ) ;
+	}
+#else
 	ew->routine_3 = ew->sub_type ;
+#endif
 	switch( ew->sub_type ){
+#ifdef TARGET_DC
+	case 39:
+	case 33:
+	case 37:
+	case 38:
+	case 32:
+	case 35:
+	case 36:
+	case 58:
+	case 54:
+	case 46:
+	case 51:
+	case 52:
+	case 43:
+	case 53:
+	case 49:
+	case 50:
+#else
 	case 32:
 	case 58:
 	case 54:
 	case 52:
+#endif
 		ew->ef_no = 1 ;
 		break ;
 	default:
 		ew->ef_no = 0 ;
 		break ;
 	}
-	if( ef05_pos_tbl[ew->routine_3].x < 0.0f ) ew->pos.x = ef05_pos_tbl[ew->routine_3].x + -900.0f ;
-	else ew->pos.x = ef05_pos_tbl[ew->routine_3].x + 900.0f ;
-	if( ef05_pos_tbl[ew->routine_3].y >= 173.0f ) ew->pos.y = ef05_pos_tbl[ew->routine_3].y + 100.0f ;
-	else ew->pos.y = ef05_pos_tbl[ew->routine_3].y + -100.0f ;
-	ew->pos.z = ef05_pos_tbl[ew->routine_3].z + 800.0f ;
+	if( ef05_board_pos_tbl[ew->routine_3].x < 0.0f ) ew->pos.x = ef05_board_pos_tbl[ew->routine_3].x + -900.0f ;
+	else ew->pos.x = ef05_board_pos_tbl[ew->routine_3].x + 900.0f ;
+	if( ef05_board_pos_tbl[ew->routine_3].y >= 173.0f ) ew->pos.y = ef05_board_pos_tbl[ew->routine_3].y + 100.0f ;
+	else ew->pos.y = ef05_board_pos_tbl[ew->routine_3].y + -100.0f ;
+	ew->pos.z = ef05_board_pos_tbl[ew->routine_3].z + 800.0f ;
 	ef05_timer_set( ew ) ;
 	rnd = nlRand() ;
 	ew->timer0 += rnd & 3 ;
@@ -287,8 +406,8 @@ static void ef05_main( PLAYER_WORK *ew )
 static void ef05_come( PLAYER_WORK *ew )
 {
 	ew->routine_0 ++ ;
-	move_set_xy( ew, ew->timer0, ef05_pos_tbl[ew->routine_3].x, ef05_pos_tbl[ew->routine_3].y, 2, 2 ) ;
-	ew->spd.z = ( ef05_pos_tbl[ew->routine_3].z - ew->pos.z ) / ew->timer0 ;
+	move_set_xy( ew, ew->timer0, ef05_board_pos_tbl[ew->routine_3].x, ef05_board_pos_tbl[ew->routine_3].y, 2, 2 ) ;
+	ew->spd.z = ( ef05_board_pos_tbl[ew->routine_3].z - ew->pos.z ) / ew->timer0 ;
 	ew->acc.z = 0.0f ;
 }
 
@@ -298,7 +417,7 @@ static void ef05_stay( PLAYER_WORK *ew )
 	ew->timer0 -- ;
 	if( ew->timer0 < 0 ){
 		ew->routine_0 ++ ;
-		ew->pos = ef05_pos_tbl[ew->routine_3] ;
+		ew->pos = ef05_board_pos_tbl[ew->routine_3] ;
 		sel_w.ready_flag = 1 ;
 	}
 	else{

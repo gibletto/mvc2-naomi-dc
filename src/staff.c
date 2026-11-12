@@ -10,6 +10,18 @@
 #define STAFF_END	0xff	/* the end of the credits */
 #define STAFF_CODE	0xf0	/* the codes start here */
 
+/* the home game's roll has its own music file, credits the network's staff and shows two
+   pictures fewer */
+#ifdef TARGET_DC
+#define STAFF_STREAM	20
+#define STAFF_SIZE	0x5d0
+#define STAFF_PIC_MAX	14
+#else
+#define STAFF_STREAM	12
+#define STAFF_SIZE	0x588
+#define STAFF_PIC_MAX	16
+#endif
+
 extern const MES_WORK copyright_mes_0[];	/* sys_mode.c: lines of text, ended by an x of 100 or more */
 extern const MES_WORK copyright_mes_1[];	/* the same for cpu_level_type 1 */
 
@@ -63,10 +75,11 @@ static void logo_set( void );
 static void logo_move( PLAYER_WORK *ew );
 static void logo_flash_set( void );
 static void logo_flash_move( PLAYER_WORK *ew );
+void logo3_set( void );
 static void logo3_move( PLAYER_WORK *ew );
 
 /* the credits: lines of letters, each ended by a code */
-static const Uint8 staff_data[0x588] =
+static const Uint8 staff_data[STAFF_SIZE] =
 	"STAFF CREDIT\376\376\376"
 	"PLANNER\375"
 	" TATSUYA NAKAE\375"
@@ -93,7 +106,9 @@ static const Uint8 staff_data[0x588] =
 	" CHAM\375"
 	" HISASHI KURAMOTO\375"
 	" KOMUU\375"
+#ifndef TARGET_DC
 	" SHIN\375"
+#endif
 	" MIKKY\375\376\376"
 	"TITLE DESIGN\375"
 	" SHOEI\376\376\376"
@@ -101,7 +116,12 @@ static const Uint8 staff_data[0x588] =
 	" MF\376\376\376"
 	"INSTRUCTION\376"
 	"      CARD DESIGN\375"
+#ifdef TARGET_DC
+	" SAKOMIZU\375"
+	" Y.UCHIDA\376\376\376"
+#else
 	" SAKOMIZU\376\376\376"
+#endif
 	"OBJECT DESIGN\375"
 	" MAKOTO ISHII\375"
 	" AKEMI KURIHARA\375"
@@ -155,6 +175,14 @@ static const Uint8 staff_data[0x588] =
 	" KAZUYA TAKIMOTO\376\376\376"
 	"VOICE DIRECTOR\375"
 	" ERIK(ESX)SUZUKI\376\376\376"
+#ifdef TARGET_DC
+	"NETWORK\375"
+	" SHIN\375"
+	" NET MAN\375"
+	" ICHIRO YUNDE\375"
+	" MINEYUKI NODA\375"
+	" HIDEAKI ITSUNO\376\376\376"
+#endif
 	"SPECIAL THANKS\375"
 	" SHIRAIWA TAKUYA\375"
 	" TAKANO MIKI\375"
@@ -166,17 +194,25 @@ static const Uint8 staff_data[0x588] =
 	" OZZY\375"
 	" TOMOYA MAEKAWA\375\376\376"
 	"PRODUCER\375"
+#ifdef TARGET_DC
+	" YOSHIHIRO SUDO\375\376\376"
+	"GENERAL PRODUCER\375"
+	" NORITAKA FUNAMIZU\376\376\376"
+	"EXECUTIVE PRODUCER\375"
+	" YOSHIKI OKAMOTO\376\376\376\376\376\375"
+#else
 	" YOSHIHIRO SUDO\375\376\376\376"
 	"GENERAL PRODUCER\375"
 	" NORITAKA FUNAMIZU\376\376\376\376"
 	"EXECUTIVE PRODUCER\375"
 	" YOSHIKI OKAMOTO\376\376\376\376\376\376\375"
+#endif
 	"ALL CAPCOM STAFF\375\375"
 	"AND YOU\376\376\376\376\376\376\376\376\376\376\376\376\376\376\376\374"
 	"   FIN\376\376\376\376\376\376\376\376\376\377";
 
 /* the pictures: seconds until the next, a flag for the background, the picture and its kind */
-static Uint8 staff_pic_tbl[17 * 4] = {
+static Uint8 staff_pic_tbl[( STAFF_PIC_MAX + 1 ) * 4] = {
 	10, 0, 0, 1,
 	6, 1, 1, 2,
 	6, 2, 0, 4,
@@ -188,11 +224,17 @@ static Uint8 staff_pic_tbl[17 * 4] = {
 	6, 8, 0, 2,
 	6, 9, 1, 3,
 	6, 10, 0, 2,
+#ifdef TARGET_DC
+	6, 11, 1, 5,
+	6, 12, 0, 2,
+	30, 13, 1, 0,
+#else
 	6, 11, 1, 3,
 	6, 12, 0, 5,
 	6, 13, 1, 3,
 	6, 14, 0, 2,
 	30, 15, 1, 0,
+#endif
 	0xff, 0xff, 0xff, 0xff,
 } ;
 
@@ -262,7 +304,7 @@ static void staff_init( void )
 	else {
 		Sys->routine_1 ++ ;
 		Sys->routine_3 = 0 ;
-		stream_req( 12 ) ;
+		stream_req( STAFF_STREAM ) ;
 		s3l_fade_in_set( 1 ) ;
 		stream_start() ;
 	}
@@ -395,11 +437,18 @@ static void staff_copyright( void )
 	const MES_WORK *p ;
 
 	if( !--Sys->timer0 ){
+#ifdef TARGET_DC
+		/* the home game shows a third logo first */
+		Sys->routine_2 = 7 ;
+		Sys->timer0 = 120 ;
+		logo3_set() ;
+#else
 		Sys->routine_2 ++ ;
 		Sys->timer0 = 240 ;
 		logo_set() ;
 		logo_flash_set() ;
 		fade_set( 0xff000000, 2, FADE_IN ) ;
+#endif
 	}
 	else {
 		if( Sys->cpu_level_type == 1 ) p = copyright_mes_1 ;
@@ -497,6 +546,10 @@ static void staff_chr_set( Uint8 c, Float x, Float spd )
 		ew->tile_top = staff_head + 0x912 ;
 		ew->disp_x = x ;
 		ew->disp_y = 496.0f ;
+#ifdef TARGET_DC
+		ew->disp_x += option_w.adjust_x ;
+		ew->disp_y += option_w.adjust_y ;
+#endif
 		ew->disp_z = 1.1f ;
 		ew->disp_zm_x = 0.125f ;
 		ew->disp_zm_y = 0.25f ;
@@ -581,6 +634,10 @@ static void staff_pic_set( Sint32 tile, Uint8 type )
 		ew->tile_top = tile ;
 		ew->disp_x = 32.0f ;
 		ew->disp_y = 0.0f ;
+#ifdef TARGET_DC
+		ew->disp_x += option_w.adjust_x ;
+		ew->disp_y += option_w.adjust_y ;
+#endif
 		ew->disp_z = 1.1f ;
 		ew->disp_zm_x = 1.0f ;
 		ew->disp_zm_y = 2.0f ;
@@ -681,6 +738,9 @@ static void pic_shake_in( PLAYER_WORK *ew )
 {
 	ew->alpha += 0.03125f ;
 	ew->disp_y = ( -- ew->timer1 & 2 ) ? 0.0f : -2.0f ;
+#ifdef TARGET_DC
+	ew->disp_y += option_w.adjust_y ;
+#endif
 	if( !--ew->timer0 ){
 		ew->routine_0 ++ ;
 		ew->timer0 = 584 ;
@@ -691,6 +751,9 @@ static void pic_shake_in( PLAYER_WORK *ew )
 static void pic_shake_wait( PLAYER_WORK *ew )
 {
 	ew->disp_y = ( -- ew->timer1 & 2 ) ? 0.0f : -2.0f ;
+#ifdef TARGET_DC
+	ew->disp_y += option_w.adjust_y ;
+#endif
 	if( !--ew->timer0 ){
 		ew->routine_0 ++ ;
 		ew->timer0 = 16 ;
@@ -702,6 +765,9 @@ static void pic_shake_out( PLAYER_WORK *ew )
 {
 	ew->alpha -= 0.0625f ;
 	ew->disp_y = ( -- ew->timer1 & 2 ) ? 0.0f : -2.0f ;
+#ifdef TARGET_DC
+	ew->disp_y += option_w.adjust_y ;
+#endif
 	if( !--ew->timer0 ) work_free( ew ) ;
 }
 
@@ -960,7 +1026,9 @@ static void logo_flash_move( PLAYER_WORK *ew )
 }
 
 /****************************************************************/
-/*			Another model of the logo; nothing sets it			*/
+/*			Another model of the logo: the home game shows it	*/
+/*			after the copyright, and on the board nothing sets	*/
+/*			it													*/
 /****************************************************************/
 void logo3_set( void )
 {

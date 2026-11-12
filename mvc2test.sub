@@ -250,7 +250,7 @@ input build\sdk\1\libkamui2.lib(texture_tex_lib_)
 output build\mvc2test.abs
 elf
 form a
-start P,PSG,C,CSG,D,DSG,B,BX,BSG(0C020000),STACK(0C7FC000)
+start P,PSG,C,CSG,D,DSG,B,B$32,BSG(0C020000),STACK(0C7FC000)
 align_section
 print build\mvc2test.map
 define _strt_area_bgn(0C7FB800)

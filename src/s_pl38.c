@@ -274,10 +274,17 @@ int pl38_delay_ck( PLAYER_WORK *pl_w )
 {
 	if( com_nml_ck( pl_w, com_sword, &pl_w->com_w ) && *pl_w->gauge_level ){
 		pl_w->delay_sp_type = pl38_sp_sword ;
+		/* from the European disc on, a hyper combo sets the attack level too */
+#if BUILD_DATE >= 20000412
+		pl_w->atck_level = 1 ;
+#endif
 		return 1 ;
 	}
 	if( com_nml_ck( pl_w, com_storm, &pl_w->com_w3 ) && *pl_w->gauge_level ){
 		pl_w->delay_sp_type = pl38_sp_storm ;
+#if BUILD_DATE >= 20000412
+		pl_w->atck_level = 1 ;
+#endif
 		return 1 ;
 	}
 	return 0 ;
@@ -1755,6 +1762,9 @@ void pl38_catch_set( PLAYER_WORK *pl_w )
 		pl_char_set( pl_w, Char_Catch, 3 ) ;
 		Shl38_set( pl_w, 3, 0 ) ;
 		pl_w->timer0 = 8 ;
+#if BUILD_DATE >= 20000529	/* the hold's time limit (nml_k_catch_hold) */
+		pl_w->timer1 = 120 ;
+#endif
 		hold_renda_set( pl_w->catch_w, 7 ) ;
 		catch_renda_set( pl_w, 4 ) ;
 		break ;
@@ -1983,7 +1993,15 @@ static void nml_k_catch_hold( PLAYER_WORK *pl_w, PLAYER_WORK *em )
 {
 	Sint8 no ;
 
+	/* on the USA disc the presses count for the first 120 frames only, and the count is cleared when they end */
+#if BUILD_DATE >= 20000529
+	if( pl_w->timer1 > 0 ){
+		if( !( -- pl_w->timer1 ) ) pl_w->timer0 = pl_w->timer1 = 0 ;
+	}
+	if( catch_renda_ck( pl_w ) && pl_w->timer1 ) pl_w->timer0 ++ ;
+#else
 	if( catch_renda_ck( pl_w ) ) pl_w->timer0 ++ ;
+#endif
 	if( hold_renda_ck( pl_w->catch_w ) ) pl_w->timer0 = 0 ;
 	pl_char_move( pl_w ) ;
 	if( pl_w->cg_flag1 ){

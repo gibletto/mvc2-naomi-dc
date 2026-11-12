@@ -25,7 +25,8 @@ typedef struct SEL_WORK {
 	Uint8	unk_39[0x3c - 0x39];
 	Uint32	char_ex[2][2];	/* 03c: each side's mask of characters opened again: they get the extra colours and a piece on their cell */
 	Sint16	sel_timer;	/* 04c: the select's time in frames, 0xe10 at the start; at 0 each side takes what its cursor is on */
-	Uint8	unk_4e[0x50 - 0x4e];
+	Sint8	stage_ex_cnt;	/* 04e: on the console, how many stages have their other look opened (vms_work's) */
+	Sint8	stage_cur;	/* 04f: on the console's versus, the stage cursor (0 a random stage) */
 	Sint8	card_side;	/* 050: the sides with a memory card in, a bit each, this frame */
 	Sint8	card_side_old;	/* 051: card_side of the frame before */
 	Uint8	unk_52[0x58 - 0x52];
@@ -38,6 +39,7 @@ typedef struct EF05_CELL {
 } EF05_CELL;
 extern const EF05_CELL ef05_cell_tbl[60];	/* ef05.c: by character, a portrait's turn and its picture's size */
 extern VEC3 ef05_pos_tbl[59];	/* ef05.c: where each portrait stands */
+extern Sint8 ef05_grid_tbl[8][8];	/* ef05_card.c: the character at each cell of the board's grid, by row and column */
 extern void ef05_rot_set( PLAYER_WORK *ew, Uint8 no );
 
 #endif

@@ -298,6 +298,9 @@ armor :
 			pl_color_set( pl_w, 1 ) ;
 		} else pl_w->armor_timer_flag = 1 ;
 	}
+#ifdef TARGET_DC	/* a home rule gives everyone the armour */
+	if( Sys->armor_all && !pl_w->armor_flag ) pl_w->armor_timer_flag = 1 ;
+#endif
 	if( pl_w->armor_flag || pl_w->armor_timer_flag ) armor_move( pl_w ) ;
 	armor_back_move( pl_w ) ;
 	pl_w->atck_flag = -128 ;

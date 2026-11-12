@@ -15,6 +15,10 @@ extern void rank_bg_set( int no );
 extern void rank_frame_set( int no );
 extern void rank_page_set( int no, int a );
 extern void rank_mark_set( int no, int a );
+#ifdef TARGET_DC
+extern void fight_load_start( int no );	/* am_load.c: asks the disc for a scene's files */
+extern void adx_pause( int flag );	/* pl_sw.c: holds the music */
+#endif
 
 static void rank_disp_set( void );
 static void ranking_init( void );
@@ -51,12 +55,16 @@ static const RANK_DATA rank_def[RANK_MAX] = {
 	{ 21, { 0x13, 0x15, 0x14 }, { 0, 1, 2 }, 0,  0, 99,  0,  0, "CAP ", 0x00000000, 0 },
 } ;
 
-/* the second ranking's names; the second set isn't used */
-static const Uint8 rank_name[2][RANK_MAX][4] = {
-	{ "ONI ", "DAI ", "MOT ", "HAC ", "KRA ", "MNR ", "YOU ", "SPP ", "TLD ", "KOZ ", "KAD ",
-	  "WAN ", "YUK ", "SOG ", "NIS ", "HKD ", "YOK ", "ITT ", "D50 ", "DEF ", "CAP " },
-	{ "ONI ", "SPP ", "DAI ", "KOZ ", "REI ", "MNR ", "WAN ", "YUK ", "HKD ", "MOT ", "TLD ",
-	  "KAD ", "YOU ", "YOK ", "ITT ", "KRA ", "NIS ", "HAC ", "D50 ", "DEF ", "CAP " },
+/* the second ranking's names */
+static const Uint8 rank_name[RANK_MAX][4] = {
+	"ONI ", "DAI ", "MOT ", "HAC ", "KRA ", "MNR ", "YOU ", "SPP ", "TLD ", "KOZ ", "KAD ",
+	"WAN ", "YUK ", "SOG ", "NIS ", "HKD ", "YOK ", "ITT ", "D50 ", "DEF ", "CAP ",
+} ;
+
+/* the home game's third ranking's; the board doesn't use them */
+static const Uint8 rank_sa_name[RANK_MAX][4] = {
+	"ONI ", "SPP ", "DAI ", "KOZ ", "REI ", "MNR ", "WAN ", "YUK ", "HKD ", "MOT ", "TLD ",
+	"KAD ", "YOU ", "YOK ", "ITT ", "KRA ", "NIS ", "HAC ", "D50 ", "DEF ", "CAP ",
 } ;
 
 /* the name entry's letter for each ASCII character from the space */
@@ -116,6 +124,34 @@ static void rank_disp_set( void )
 		rank_page_set( page + 5, page + 10 ) ;
 	}
 	else {
+#ifdef TARGET_DC
+		/* the score attack's ranking has the first's pages */
+		switch( Sys->rank_disp ){
+		case 0 :
+			rank_page_set( 0, 0 ) ;
+			rank_page_set( 1, 1 ) ;
+			rank_page_set( 2, 2 ) ;
+			rank_page_set( 3, 3 ) ;
+			rank_page_set( 4, 4 ) ;
+			rank = pl_work[Sys->rank_side].score_rank ;
+			break ;
+		case 1 :
+			rank_page_set( 0, 5 ) ;
+			rank_page_set( 1, 6 ) ;
+			rank_page_set( 2, 7 ) ;
+			rank_page_set( 3, 8 ) ;
+			rank = pl_work[Sys->rank_side].win_rank ;
+			break ;
+		case 2 :
+			rank_page_set( 0, 0 ) ;
+			rank_page_set( 1, 1 ) ;
+			rank_page_set( 2, 2 ) ;
+			rank_page_set( 3, 3 ) ;
+			rank_page_set( 4, 4 ) ;
+			rank = pl_work[Sys->rank_side].score_rank ;
+			break ;
+		}
+#else
 		if( Sys->vs_flag ){
 			rank_page_set( 0, 5 ) ;
 			rank_page_set( 1, 6 ) ;
@@ -131,6 +167,7 @@ static void rank_disp_set( void )
 			rank_page_set( 4, 4 ) ;
 			rank = pl_work[Sys->rank_side].score_rank ;
 		}
+#endif
 		if( rank < RANK_NONE ){
 			no = rank % 5 ;
 			if( !rank ) rank_mark_set( 3, 0 ) ;
@@ -159,6 +196,9 @@ static void rank_disp_set( void )
 	rank_tex_set( -1, 5 ) ;
 	rank_tex_set( -1, 6 ) ;
 	rank_tex_set( -1, 7 ) ;
+#ifdef TARGET_DC
+	fight_load_start( 8 ) ;
+#endif
 }
 
 /****************************************************************/
@@ -187,12 +227,22 @@ void RankingMain( void )
 static void ranking_init( void )
 {
 	Sys->rank_disp = Sys->vs_flag ;
-	if( Sys->unk_4c == 7 ) Sys->rank_disp = 2 ;
+	if( Sys->home_mode == HOME_SCORE ) Sys->rank_disp = 2 ;
 	Sys->entry_stop = 1 ;
+#ifdef TARGET_DC
+	/* the music starts first, and is held while the disc is read */
+	se_vol_up( 0, 1 ) ;
+	se_vol_up( 1, 1 ) ;
+	scene_song_req( 8, 27 ) ;
+	adx_pause( 1 ) ;
+	rank_disp_set() ;
+	adx_pause( 0 ) ;
+#else
 	rank_disp_set() ;
 	se_vol_up( 0, 1 ) ;
 	se_vol_up( 1, 1 ) ;
-	song_req( 8 ) ;
+	scene_song_req( 8, 27 ) ;
+#endif
 	na_req( ( Uint8 )Sys->vblank_cnt % 3 + 70 ) ;
 }
 
@@ -273,8 +323,8 @@ void RankDemoMain( void )
 }
 
 /*==============================================================*/
-/*			The two rankings take turns; the top team stands	*/
-/*			on the first side									*/
+/*			The rankings take turns (two on the board, three	*/
+/*			at home); the top team stands on the first side		*/
 /*==============================================================*/
 static void rank_demo_init( void )
 {
@@ -282,16 +332,35 @@ static void rank_demo_init( void )
 
 	Sys->routine_0 = 4 ;
 	Sys->rank_side = 0 ;
+#ifdef TARGET_DC
+	Sys->rank_disp = ( Sys->demo_no + 3 ) % 3 ;
+	Sys->vs_flag = Sys->rank_disp & 1 ;
+#else
 	Sys->vs_flag = Sys->demo_no & 1 ;
 	Sys->rank_disp = Sys->vs_flag ;
+#endif
 	vs_sys_work.team_w[0][0] = &pl_work[0] ;
 	vs_sys_work.team_w[0][1] = &pl_work[2] ;
 	vs_sys_work.team_w[0][2] = &pl_work[4] ;
 	vs_sys_work.team_w[1][0] = &pl_work[1] ;
 	vs_sys_work.team_w[1][1] = &pl_work[3] ;
 	vs_sys_work.team_w[1][2] = &pl_work[5] ;
+#ifdef TARGET_DC
+	switch( Sys->rank_disp ){
+	case 0 :
+		rd = rank_score ;
+		break ;
+	case 1 :
+		rd = rank_win ;
+		break ;
+	case 2 :
+		rd = rank_sa ;
+		break ;
+	}
+#else
 	if( Sys->vs_flag ) rd = rank_win ;
 	else rd = rank_score ;
+#endif
 	pl_work[0].load_type = rd->load_type[0] ;
 	pl_work[2].load_type = rd->load_type[1] ;
 	pl_work[4].load_type = rd->load_type[2] ;
@@ -304,8 +373,11 @@ static void rank_demo_init( void )
 	rank_disp_set() ;
 	se_vol_up( 0, 1 ) ;
 	se_vol_up( 1, 1 ) ;
-	song_req( 6 ) ;
+	scene_song_req( 6, 26 ) ;
 	fade_set( 0xff000000, 20, FADE_IN ) ;
+#ifdef TARGET_DC
+	fight_load_start( 6 ) ;
+#endif
 }
 
 /*--------------------------------------------------------------*/
@@ -357,21 +429,34 @@ static Uint8 rank_chr_get( Uint8 c )
 }
 
 /****************************************************************/
-/*			Both rankings back to their defaults				*/
+/*			The rankings back to their defaults					*/
 /****************************************************************/
 void rank_data_init( void )
 {
 	const RANK_DATA *def ;
 	const Uint8 *name ;
+#ifdef TARGET_DC
+	const Uint8 *sa_name ;
+#endif
 	Uint8 *p ;
 	int i ;
 	int j ;
 
-	name = rank_name[0][0] ;
+	name = rank_name[0] ;
+#ifdef TARGET_DC
+	sa_name = rank_sa_name[0] ;
+#endif
 	def = rank_def ;
 	for( i = 0 ; i < RANK_MAX ; i++ ){
 		rank_score[i] = *def ;
 		rank_win[i] = *def ;
+#ifdef TARGET_DC
+		rank_sa[i] = *def ;
+		for( j = 0 ; j < 4 ; j++ ){
+			rank_sa[i].name[j] = *sa_name ;
+			sa_name ++ ;
+		}
+#endif
 		for( j = 0 ; j < 4 ; j++ ){
 			rank_win[i].name[j] = *name ;
 			name ++ ;
@@ -393,6 +478,16 @@ void rank_data_init( void )
 		*p = rank_chr_get( *p ) ;
 		p ++ ;
 		*p = rank_chr_get( *p ) ;
+#ifdef TARGET_DC
+		p = rank_sa[i].name ;
+		*p = rank_chr_get( *p ) ;
+		p ++ ;
+		*p = rank_chr_get( *p ) ;
+		p ++ ;
+		*p = rank_chr_get( *p ) ;
+		p ++ ;
+		*p = rank_chr_get( *p ) ;
+#endif
 	}
 }
 
@@ -417,11 +512,15 @@ void rank_name_chk( void )
 {
 	rank_name_def( rank_score ) ;
 	rank_name_def( rank_win ) ;
+#ifdef TARGET_DC
+	rank_name_def( rank_sa ) ;
+#endif
 }
 
 /****************************************************************/
-/*			A player's game goes into the first ranking at		*/
-/*			his place, and moves up past lower scores			*/
+/*			A player's game goes into the first ranking (at		*/
+/*			home, the score attack's into the third) at his		*/
+/*			place, and moves up past lower scores				*/
 /****************************************************************/
 void rank_entry( PLAYER_WORK *wk )
 {
@@ -433,12 +532,17 @@ void rank_entry( PLAYER_WORK *wk )
 	int no ;
 	int other ;
 
+#ifdef TARGET_DC
+	if( Sys->home_mode != HOME_SCORE ) top = rank_score ;
+	else top = rank_sa ;
+#endif
 	rank = wk->score_rank ;
 	no = rank - 1 ;
 	other = ( wk->pl_index ^ 1 ) & 1 ;
+#ifndef TARGET_DC
 	top = rank_score ;
-	rd = &top[rank] ;
-	rd->load_type[0] = TEAM_PL( 0, Sys->rank_side ).load_type ;
+#endif
+	( rd = &top[rank] )->load_type[0] = TEAM_PL( 0, Sys->rank_side ).load_type ;
 	rd->load_type[1] = TEAM_PL( 1, Sys->rank_side ).load_type ;
 	rd->load_type[2] = TEAM_PL( 2, Sys->rank_side ).load_type ;
 	rd->pl_personal[0] = TEAM_PL( 0, Sys->rank_side ).pl_personal ;
@@ -458,13 +562,21 @@ void rank_entry( PLAYER_WORK *wk )
 	while( rank ){
 		if( top[rank].score_hi < top[no].score_hi ) break ;
 		if( top[rank].score_hi == top[no].score_hi && top[rank].score < top[no].score ) break ;
+#ifndef TARGET_DC
 		rd = &top[rank] ;
+#endif
 		up = &top[no] ;
 		if( pl_work[other].score_rank == no ) pl_work[other].score_rank = rank ;
 		tmp = *up ;
+#ifdef TARGET_DC	/* the lower row is swapped in place */
+		*up = top[rank] ;
+		top[rank] = tmp ;
+		top[rank].rank ++ ;
+#else
 		*up = *rd ;
 		*rd = tmp ;
 		rd->rank ++ ;
+#endif
 		up->rank -- ;
 		rank -- ;
 		no -- ;

@@ -7,6 +7,15 @@ extern int obj_uv_get( Float *x, Float *y ) ;
 extern int obj_uv_put( Float *x, Float *y ) ;
 extern void obj_uv_clear( void *obj ) ;
 
+/* the frames the texture takes to go round, and how far it slides in one */
+#ifdef TARGET_DC	/* five times slower */
+#define SET04_06_TIME	1000
+#define SET04_06_SPD	0.001f
+#else
+#define SET04_06_TIME	200
+#define SET04_06_SPD	0.005f
+#endif
+
 static void set04_06_main( PLAYER_WORK *ew ) ;
 
 /****************************************************************/
@@ -31,11 +40,11 @@ static void set04_06_main( PLAYER_WORK *ew )
 	switch( ew->routine_0 ){
 	case 0:
 		ew->timer0 ++ ;
-		if( ew->timer0 >= 200 ) ew->timer0 = 0 ;
+		if( ew->timer0 >= SET04_06_TIME ) ew->timer0 = 0 ;
 		obj_uv_begin( obj_stg->obj[35], ew->obj ) ;
 		while( obj_uv_next() == 0 ){
 			obj_uv_get( &x, &y ) ;
-			y += ew->timer0 * 0.005f ;
+			y += ew->timer0 * SET04_06_SPD ;
 			obj_uv_put( &x, &y ) ;
 		}
 		break ;

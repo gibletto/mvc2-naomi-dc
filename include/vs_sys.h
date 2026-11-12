@@ -77,7 +77,9 @@ typedef struct VS_SYS_WORK {
 	Sint8	cpu_time;	/* 086: a second copy of the clock, from 99, that the computer reads */
 	Uint8	time_frame_max;		/* 087: the frames of the clock's second, as set */
 	Sint8	hyper_chain_cnt[2];	/* 088: each side's hyper combos chained in the current one, 1 to 3; picks the damage table */
-	Uint8	unk_8a[0x9a - 0x8a];
+	Uint8	unk_8a[2];	/* 08a: a home rule: each side's one character, its work_no */
+	Uint8	unk_8c;		/* 08c: on the Dreamcast: how the fight ended (round_end_set's kind) */
+	Uint8	unk_8d[0x9a - 0x8d];
 	Uint8	no_ko_cnt[2];	/* 09a: each side's wins in a row with no player knocked out; scores a bonus at the round's end */
 	Sint8	win_cnt[2];	/* 09c: each side's wins in a row against the other player */
 	Uint8	unk_9e[0xc0 - 0x9e];
@@ -103,5 +105,8 @@ extern void vs_sys_move( void );
 extern void side_flag_clr( void );
 extern int side_flag_get( int side );
 extern void naomi_level_disp( void );
+#ifdef TARGET_DC
+extern void vs_rule_set( VS_SYS_WORK *vs_w );	/* the game speed's frame rate: the training menu sets it again */
+#endif
 
 #endif

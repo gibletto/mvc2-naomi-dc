@@ -512,7 +512,6 @@ input build\obj\gauge.obj
 input build\obj\gauge_name.obj
 input build\obj\ef12.obj
 input build\obj\bg_hud.obj
-input build\obj\bg_hud_ef.obj
 input build\obj\vs_msg.obj
 input build\obj\pl_pic_ef.obj
 input build\obj\vs_result.obj
@@ -768,12 +767,12 @@ input build\sdk\4\sh4nlfzn.lib(_add)
 input build\sdk\4\sh4nlfzn.lib(_mult)
 input build\sdk\4\sh4nlfzn.lib(_pow10)
 input build\sdk\4\sh4nlfzn.lib(_rsft)
-input build\obj\_mvsto2b.obj
-input build\sdk\1\libnaomi.lib(nlmatha)
-input build\sdk\1\libnlobj.lib(nlobjcem)
-input build\sdk\1\libnaomi.lib(nl_inv_camera_vec)
+input build\sdk\4\sh4nlfzn.lib(_mvsto2b)
+input build\obj\nlmatha.obj
+input build\obj\nlobjcem.obj
+input build\obj\nl_inv_camera_vec.obj
 input build\sdk\2\shinobi.lib(lcd_)
-input build\obj\draw_work.obj
+input build\sdk\1\libindex.lib(nlIndexWork2)
 input build\obj\nlSystemWork.obj
 input build\obj\nlPaletteWork.obj
 input build\sdk\1\shinobi.lib(lcdvms_)
@@ -977,7 +976,7 @@ input build\sdk\1\libkamui2.lib(texture_tex_lib_)
 output build\mvc2.abs
 elf
 form a
-start BOOTID(0C020000),P,PSG,C,CSG,D,DSG,B,BX,BSG(0C021000),STACK(0C3FC000)
+start BOOTID(0C020000),P,P$32,PSG,C,CSG,D,DSG,B,B$32,BSG(0C021000),STACK(0C3FC000)
 align_section
 print build\mvc2.map
 define _strt_area_bgn(0C3FB000)

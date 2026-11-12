@@ -1338,6 +1338,11 @@ static void hviper_init( PLAYER_WORK *pl_w )
 	pl_w->acc.x = 0.0f ;
 	pl_w->acc.y = 0.0f ;
 	PL17_LW( pl_w )->beam_hit_cnt[0] = 0 ;
+	/* from the Japanese disc on, a move starts with its own attack set, not the one before it */
+#if BUILD_DATE >= 20000303
+	pl_w->atck_no = pl17_at_hviper ;
+	HIT_RESET( pl_w ) ;
+#endif
 	hviper_move( pl_w ) ;
 }
 
@@ -1584,6 +1589,15 @@ static void psimitar_init( PLAYER_WORK *pl_w )
 	sp_stand_set( pl_w ) ;
 	pl_char_set( pl_w, Char_Special, 10 ) ;
 	pl_voice_req( pl_w, 21 ) ;
+#if BUILD_DATE >= 20000303	/* the attack, as in hviper_init */
+	if( pl_w->atck_level ){
+		pl_w->atck_no = pl17_at_psimitar_h_2 ;
+		HIT_RESET( pl_w ) ;
+	} else {
+		pl_w->atck_no = pl17_at_psimitar_l_2 ;
+		HIT_RESET( pl_w ) ;
+	}
+#endif
 	psimitar_move( pl_w ) ;
 }
 
@@ -1717,6 +1731,15 @@ static void viper_init( PLAYER_WORK *pl_w )
 	pl_w->spd.y /= 8.0f ;
 	pl_w->acc.y /= 64.0f ;
 	pl_w->acc.x = 0.0f ;
+#if BUILD_DATE >= 20000303	/* the attack, as in hviper_init */
+	if( pl_w->atck_level ){
+		pl_w->atck_no = pl17_at_viper_h ;
+		HIT_RESET( pl_w ) ;
+	} else {
+		pl_w->atck_no = pl17_at_viper_l ;
+		HIT_RESET( pl_w ) ;
+	}
+#endif
 	viper_move( pl_w ) ;
 }
 
@@ -1846,6 +1869,15 @@ static void crackdown_init( PLAYER_WORK *pl_w )
 	pl_char_set( pl_w, Char_Special, 18 ) ;
 	sp_stand_set( pl_w ) ;
 	pl_voice_req( pl_w, 3 ) ;
+#if BUILD_DATE >= 20000303	/* the attack, as in hviper_init: it was set in crackdown_move */
+	if( pl_w->atck_level ){
+		pl_w->atck_no = pl17_at_crackdown_h ;
+		HIT_RESET( pl_w ) ;
+	} else {
+		pl_w->atck_no = pl17_at_crackdown_l ;
+		HIT_RESET( pl_w ) ;
+	}
+#endif
 	crackdown_move( pl_w ) ;
 }
 
@@ -1864,12 +1896,16 @@ static void crackdown_move( PLAYER_WORK *pl_w )
 		pl_w->timer0 = pl_w->atck_level ? 12 : 8 ;
 		if( pl_w->atck_level ){
 			pl_w->spd.x = pl_w->disp_dir ? 30.0f : -30.0f ;
+#if BUILD_DATE < 20000303	/* later, in crackdown_init */
 			pl_w->atck_no = pl17_at_crackdown_h ;
 			HIT_RESET( pl_w ) ;
+#endif
 		} else {
 			pl_w->spd.x = pl_w->disp_dir ? DOT_X( 16.0f ) : -DOT_X( 16.0f ) ;
+#if BUILD_DATE < 20000303
 			pl_w->atck_no = pl17_at_crackdown_l ;
 			HIT_RESET( pl_w ) ;
+#endif
 		}
 		pl_w->acc.x = pl_w->disp_dir ? -1.25f : 1.25f ;
 		pls17_05_set( pl_w, 1 ) ;

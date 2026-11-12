@@ -25,6 +25,8 @@
 #define	pl17_at_upper			0x35	/* The launcher, 3HP */
 #define	pl17_at_crackdown_blast	0x36	/* Crackdown: the blast at the end of the charge (shl17_04) */
 #define	pl17_at_electrap_burst	0x37	/* Electrap: Cable's throw and the grenade's shock (shl17_01_burst) */
+#define	pl17_at_viper_l			0x38	/* Viper Beam, light (shl17_00's hits; Cable too, from the Japanese disc on) */
+#define	pl17_at_hviper			0x39	/* Hyper Viper Beam (shl17_03's hits; Cable too, from the Japanese disc on) */
 #define	pl17_at_psimitar_l_2	0x3b	/* Psimitar, light: the hit cued by the animation */
 #define	pl17_at_psimitar_shot_l	0x3c	/* Psimitar, light: the shot fired up (shl17_02) */
 #define	pl17_at_psimitar_h_2	0x3d	/* Psimitar, heavy: the hit cued by the animation */
@@ -33,6 +35,7 @@
 #define	pl17_at_timeflip		0x40	/* Time Flip: Cable and the catching shot (shl17_05) */
 #define	pl17_at_timeflip_shot	0x42	/* Time Flip: gunshot on the held opponent (shl17_06 kind 4) */
 #define	pl17_at_timeflip_shot_2	0x43	/* Time Flip: the other gunshot (shl17_06 kind 5) */
+#define	pl17_at_viper_h			0x45	/* Viper Beam, heavy */
 #define	pl17_at_psimitar_l		0x49	/* Psimitar, light: the rising leap */
 #define	pl17_at_psimitar_h		0x4a	/* Psimitar, heavy: the rising leap */
 #define	pl17_at_crackdown_h		0x4b	/* Crackdown, heavy */

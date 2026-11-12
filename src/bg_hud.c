@@ -1,6 +1,6 @@
-/* The setters of the two numbers bg_init puts on the fight's screen: the round's clock, two digits
-   at the top, and under each side's vital gauge the level of its hyper combo gauge. Their mains are
-   in bg_hud_ef.c. */
+/* The two numbers bg_init puts on the fight's screen: the round's clock, two digits at the top, and
+   under each side's vital gauge the level of its hyper combo gauge. Each is a work of kind 11 whose
+   main picks its object by the value each frame. */
 #include "player.h"
 
 /* where the clock's tens and ones stand, and where each side's level does */
@@ -21,6 +21,9 @@ static void bg_lv_set( int no );
 /****************************************************************/
 void bg_hud_set( void )
 {
+#ifdef TARGET_DC
+	if( Sys->round_time_no != 3 )	/* a fight with no time limit has one mark for its clock */
+#endif
 	bg_clock_set( 0 ) ;
 	bg_clock_set( 1 ) ;
 	bg_lv_set( 0 ) ;
@@ -29,6 +32,9 @@ void bg_hud_set( void )
 
 extern void bg_clock_main( PLAYER_WORK *ew );
 extern void bg_lv_main( PLAYER_WORK *ew );
+#ifdef TARGET_DC
+extern void bg_clock_inf_main( PLAYER_WORK *ew );
+#endif
 
 /*==============================================================*/
 /*			One digit of the clock: 0 the tens, 1 the ones		*/
@@ -44,6 +50,12 @@ static void bg_clock_set( int no )
 		ew->pos = hud_clock_pos_tbl[no] ;
 		ew->obj_flag = 0x10801 ;
 		ew->type = no ;
+#ifdef TARGET_DC
+		if( Sys->round_time_no == 3 ){
+			ew->work_func = bg_clock_inf_main ;
+			ew->obj = obj_dm00->obj[95] ;
+		}
+#endif
 	}
 }
 
@@ -72,6 +84,80 @@ static void bg_lv_set( int no )
 		ew->acc.z = 43690.0f ;
 	}
 }
+
+/* the colours a level's number blinks between (the first two); the rest are read elsewhere */
+static FADE_COL hud_fade_tbl[] = {
+	{ 1.0f, 0.0f, 1.0f, 0.875f },
+	{ 1.0f, 0.25f, 1.0f, 0.0f },
+	{ 1.0f, 1.0f, 0.0f, 0.0f },
+	{ 1.0f, 0.0f, 1.0f, 1.0f },
+	{ 1.0f, 1.0f, 0.5f, 0.0f },
+	{ 1.0f, 0.0f, 0.0f, 1.0f },
+	{ 1.0f, 1.0f, 1.0f, 0.0f },
+	{ 1.0f, DOT_X( 0.375f ), 0.0f, 1.0f },
+	{ 1.0f, 0.25f, 1.0f, 0.0f },
+	{ 1.0f, 1.0f, 0.0f, 0.875f },
+	{ 1.0f, 1.0f, 0.0f, 0.0f },
+} ;
+
+/****************************************************************/
+void bg_clock_main( PLAYER_WORK *ew )
+{
+	int n = vs_sys_work.round_time ;
+
+	if( ew->type == 0 ) n /= 10 ;
+	else n %= 10 ;
+	n += 85 ;
+	ew->obj = obj_dm00->obj[n] ;
+}
+
+/****************************************************************/
+/*			The number grows and its colour runs through the	*/
+/*			three phases at the top level, and blinks			*/
+/*			between two colours below it						*/
+/****************************************************************/
+void bg_lv_main( PLAYER_WORK *ew )
+{
+	int lv = vs_sys_work.gauge_level[ew->type] ;
+	Float s ;
+	Float lo, d ;
+	FADE_COL *tbl ;
+
+	if( lv >= 5 ) lv = 5 ;
+	if( lv >= 5 ){
+		ew->scale.x = ew->scale.y = nlSin( bg_ang2 ) / 16.0f + 1.25f ;
+	} else {
+		ew->scale = hud_unit_vec ;
+	}
+	if( lv >= 5 ){
+		ew->fade.r = nlSin( bg_ang2 + ( int )ew->acc.x ) / 2.0f + 0.5f ;
+		ew->fade.g = nlSin( bg_ang2 + ( int )ew->acc.y ) / 2.0f + 0.5f ;
+		ew->fade.b = nlSin( bg_ang2 + ( int )ew->acc.z ) / 2.0f + 0.5f ;
+	} else {
+		s = nlSin( bg_ang0 ) / 2.0f + 0.5f ;
+		tbl = hud_fade_tbl ;
+		lo = tbl[1].r ;
+		d = tbl[0].r - lo ;
+		ew->fade.r = lo + d * s ;
+		lo = tbl[1].g ;
+		d = tbl[0].g - lo ;
+		ew->fade.g = lo + d * s ;
+		lo = tbl[1].b ;
+		d = tbl[0].b - lo ;
+		ew->fade.b = lo + d * s ;
+	}
+	if( lv >= 5 ) lv = 9 ;
+	ew->obj = obj_dm00->obj[96 + lv] ;
+}
+
+#ifdef TARGET_DC
+/****************************************************************/
+/*			The clock's mark when there is no time limit		*/
+/****************************************************************/
+void bg_clock_inf_main( PLAYER_WORK *ew )
+{
+}
+#endif
 
 /*==============================================================*/
 /*	End of File.												*/

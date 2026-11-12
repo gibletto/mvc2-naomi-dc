@@ -5,6 +5,9 @@
 #define SKIP_SW	0x360	/* the buttons that end the demo early */
 
 extern void disp_front_stage( void );	/* the scene's display */
+#ifdef TARGET_DC
+extern void disp_st_demo_end( void );
+#endif
 extern void fight_load_start( int a );
 extern void st_demo_ef0_set( void );
 extern void st_demo_ef1_set( int no );
@@ -41,6 +44,9 @@ void StartDemoMain( void )
 /*==============================================================*/
 static void st_demo_init( void )
 {
+#ifdef TARGET_DC	/* the scene's own files must be read first */
+	if( !load_ck() ) return ;
+#endif
 	Sys->routine_1 ++ ;
 	Sys->timer0 = 300 ;
 	Sys->timer3 = 0 ;
@@ -61,7 +67,13 @@ static void st_demo_init( void )
 	TexLoad( 6 ) ;
 	song_req( 2 ) ;
 	na_req( 68 ) ;
+#ifdef TARGET_DC	/* the fight's files are read from the disc while the scene runs */
+	fight_load_start( 10 ) ;
+	fight_load_start( 3 ) ;
+	fight_load_start( 9 ) ;
+#else
 	fight_load_start( 0 ) ;
+#endif
 	scr_work_init() ;
 	scr_work.eye[0].x = 0.0f ;
 	scr_work.eye[0].y = 160.0f ;
@@ -110,12 +122,23 @@ static void st_demo_move( void )
 	Sys->timer0 -- ;
 	sw_work[0].now &= 0xfc9f ;
 	sw_work[1].now &= 0xfc9f ;
+#ifdef TARGET_DC	/* no button ends it early, and it waits for the files */
+	if( Sys->timer0 == 60 ){
+		if( !load_ck() ) Sys->timer0 ++ ;
+		else {
+			Sys->routine_1 ++ ;
+			Sys->timer0 = 60 ;
+			Sys->timer3 = 2 ;
+		}
+	}
+#else
 	if( ( Sys->play_side & 1 && sw_work[0].now & SKIP_SW )
 	 || ( Sys->play_side & 2 && sw_work[1].now & SKIP_SW ) || Sys->timer0 == 60 ){
 		Sys->routine_1 ++ ;
 		Sys->timer0 = 60 ;
 		Sys->timer3 = 2 ;
 	}
+#endif
 	if( Sys->timer0 == 150 ) Sys->timer3 = 1 ;
 	scr_work.eye[1] = scr_work.eye[0] ;
 	scr_work.target[1] = scr_work.target[0] ;
@@ -156,10 +179,17 @@ static void st_demo_end( void )
 	Sys->routine_3 = 0 ;
 	Sys->exit_flag = 0 ;
 	Sys->entry_stop = 1 ;
+#ifdef TARGET_DC	/* a network game keeps the order both sides have */
+	if( Sys->home_mode != HOME_NETWORK ) team_order_set() ;
+#else
 	team_order_set() ;
+#endif
 	back_color_set( -1 ) ;
 	sound_all_off() ;
 	se_all_off() ;
+#ifdef TARGET_DC
+	SysTransSet( disp_st_demo_end ) ;
+#endif
 }
 
 /*==============================================================*/

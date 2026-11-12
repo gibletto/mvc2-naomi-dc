@@ -39,7 +39,7 @@ static void over_init( void )
 	bright_init() ;
 	se_vol_up( 0, 1 ) ;
 	se_vol_up( 1, 1 ) ;
-	song_req( 5 ) ;
+	scene_song_req( 5, 25 ) ;
 	na_req( 61 ) ;
 	over_ef0_set() ;
 	over_ef1_set( 0 ) ;

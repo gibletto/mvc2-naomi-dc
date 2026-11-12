@@ -1,7 +1,7 @@
-/* The model viewer, a debug mode of the arcade: it loads the stage, effect and damage models
-   by their number, lists them, and shows one with a camera that turns, moves and zooms
-  . */
+/* The model viewer, a debug mode: it loads the stage, effect and damage models by their number,
+   lists them, and shows one with a camera that turns, moves and zooms. */
 #include "player.h"
+#include "load.h"
 
 extern Uint32 file_load( Sint32 no, void *adrs, Sint32 a ) ;
 extern void SysTransReset( void ) ;
@@ -48,19 +48,45 @@ static void model_axis_disp( void ) ;
 VEC3 model_cam0 = { 0.0f, 0.0f, 0.0f } ;
 /* the viewer's light */
 VEC3 model_light = { 0.0f, 1.0f, 1.0f } ;
-/* the models' names, in the order of the list */
+/* the models' names, in the order of the list; what is loaded for each (1 the stage's, 2 the
+   effects', 4 and up the damage works'); and the set each is shown from */
+#ifdef TARGET_DC
+const char *model_name[36] = {
+	"efky",
+	"stg00", "stg01", "stg02", "stg03", "stg04", "stg05", "stg06", "stg07", "stg08",
+	"stg09", "stg0a", "stg0b", "stg0c", "stg0d", "stg0e", "stg0f", "stg10",
+	"dm00", "dm01", "dm02", "dm03", "dm04", "dm05", "dm06", "dm07", "dm08", "dm09", "dm0a", "dm0b", "dm0c",
+	"dm0d", "dm0f", "dm10", "dm11", "dm12"
+} ;
+Sint32 model_kind[36] = {
+	2,
+	1, 1, 1, 1, 1, 1, 1, 1, 1,
+	1, 1, 1, 1, 1, 1, 1, 1,
+	4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+	17, 18, 19, 20, 21
+} ;
+OBJ_FILE **model_set_tbl[36] = {
+	&obj_efky,
+	&obj_stg, &obj_stg, &obj_stg, &obj_stg, &obj_stg,
+	&obj_stg, &obj_stg, &obj_stg, &obj_stg,
+	&obj_stg, &obj_stg, &obj_stg, &obj_stg,
+	&obj_stg, &obj_stg, &obj_stg, &obj_stg,
+	&obj_dm00, &obj_dm01, &obj_dm02, &obj_dm03, &obj_dm04,
+	&obj_dm05, &obj_dm06, &obj_dm07, &obj_dm08, &obj_dm09,
+	&obj_dm0a, &obj_dm0b, &obj_dm0c,
+	&obj_dm0d, &obj_dm0f, &obj_dm10, &obj_dm11, &obj_dm12
+} ;
+#else
 const char *model_name[23] = {
 	"efky",
 	"stg00", "stg01", "stg02", "stg03", "stg04", "stg05", "stg06", "stg07", "stg08",
 	"dm00", "dm01", "dm02", "dm03", "dm04", "dm05", "dm06", "dm07", "dm08", "dm09", "dm0a", "dm0b", "dm0c"
 } ;
-/* what is loaded for each: 1 the stage's, 2 the effects', 4 and up the damage works' */
 Sint32 model_kind[23] = {
 	2,
 	1, 1, 1, 1, 1, 1, 1, 1, 1,
 	4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
 } ;
-/* the set each is shown from */
 OBJ_FILE **model_set_tbl[23] = {
 	&obj_efky,
 	&obj_stg, &obj_stg, &obj_stg, &obj_stg, &obj_stg,
@@ -69,13 +95,26 @@ OBJ_FILE **model_set_tbl[23] = {
 	&obj_dm05, &obj_dm06, &obj_dm07, &obj_dm08, &obj_dm09,
 	&obj_dm0a, &obj_dm0b, &obj_dm0c
 } ;
+#endif
 /* the background colours: below and above */
 Uint32 model_back[8][2] = {
 	{ 0xff000000, 0xff000000 }, { 0xff404040, 0xff808080 }, { 0xff004000, 0xff008000 }, { 0xff004040, 0xff008080 },
 	{ 0xff400000, 0xff800000 }, { 0xff400040, 0xff800080 }, { 0xff404000, 0xff808000 }, { 0xff000040, 0xff000080 }
 } ;
+/* by stage_no, the stage's two files: its textures, and its models */
+#ifdef TARGET_DC
+Sint32 model_file_no0[17] = {
+	0x271, 0x273, 0x275, 0x277, 0x279, 0x27b, 0x27d, 0x27f, 0x281,
+	0x283, 0x285, 0x287, 0x289, 0x28b, 0x28d, 0x28f, 0x291
+} ;
+Sint32 model_file_no1[17] = {
+	0x270, 0x272, 0x274, 0x276, 0x278, 0x27a, 0x27c, 0x27e, 0x280,
+	0x282, 0x284, 0x286, 0x288, 0x28a, 0x28c, 0x28e, 0x290
+} ;
+#else
 Sint32 model_file_no0[9] = { 0x316, 0x318, 0x31a, 0x31c, 0x31e, 0x320, 0x322, 0x324, 0x326 } ;
 Sint32 model_file_no1[9] = { 0x315, 0x317, 0x319, 0x31b, 0x31d, 0x31f, 0x321, 0x323, 0x325 } ;
+#endif
 /* the modes: the set-up, the list and the view */
 void ( *model_mode_tbl[3] )( void ) = { model_view_init, model_sel, model_view_step } ;
 /* the view's steps: the load and the camera */
@@ -108,15 +147,16 @@ VEC3 cam_ofs ;	/* where it looks */
 Sint8 help_no ;	/* the help text shown: 0 and 1 show, 2 hides */
 
 /*==============================================================*/
-/*			The stage models, loaded where the stage's files	*/
-/*			are													*/
+/*			The stage models, where the stage's files are.		*/
+/*			These are tex_load.c's routines again: the board	*/
+/*			has the files in memory, the Dreamcast reads them	*/
 /*==============================================================*/
 static void model_load_stage( void )
 {
 	int i ;
 
 	nlSetCommonTextureOffset( 0xc10 ) ;
-	obj_stg = ( OBJ_FILE * )0xd82d000 ;
+	obj_stg = ( OBJ_FILE * )STG_OBJ_ADRS ;
 	for( i = 0 ; i < obj_stg->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_stg->obj[i], obj_stg->thd ) ;
 	}
@@ -140,36 +180,79 @@ static void model_put( int off, OBJ_FILE **dst, OBJ_FILE *adrs )
 /*==============================================================*/
 static void model_file_select( void )
 {
-	file_load( 0x329, ( void * )0xd0c6000, 0 ) ;
+	file_load( FILE_DM01POL, ( void * )DM01_OBJ_ADRS, 0 ) ;
+#ifdef TARGET_DC
+	file_load( FILE_TEX( FILE_DM01POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
 }
 
 /*==============================================================*/
 static void model_file_st_demo( void )
 {
+#ifdef TARGET_DC
+	file_load( FILE_DM02POL, ( void * )DM02_OBJ_ADRS, 0 ) ;
+	file_load( FILE_TEX( FILE_DM02POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
 }
 
 /*==============================================================*/
 static void model_file_staff( void )
 {
+#ifdef TARGET_DC
+	file_load( FILE_DM05POL, ( void * )DM05_OBJ_ADRS, 0 ) ;
+	file_load( FILE_TEX( FILE_DM05POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
 }
 
 /*==============================================================*/
 static void model_file_ranking( void )
 {
-	file_load( 0x332, ( void * )0xd2e9000, 0 ) ;
+#ifdef TARGET_DC
+	Sint32 no, tex ;
+
+	switch( Sys->rank_disp ){
+	case 0:
+		no = FILE_DM06POL ;
+		tex = FILE_TEX( no ) ;
+		break ;
+	case 1:
+		no = FILE_DM13POL ;
+		tex = FILE_TEX( no ) ;
+		break ;
+	case 2:
+		no = FILE_DM14POL ;
+		tex = FILE_TEX( no ) ;
+		break ;
+	}
+	file_load( no, ( void * )DM06_OBJ_ADRS, 0 ) ;
+	file_load( tex, ( void * )TEX_ADRS, 0 ) ;
+#else
+	file_load( FILE_TEX( FILE_DM06POL ), ( void * )DM06_TEX_ADRS, 0 ) ;
+#endif
 }
 
 
 /*==============================================================*/
 static void model_file14( void )
 {
+#ifdef TARGET_DC
+	if( !Sys->cpu_level_type ){
+		file_load( FILE_DM0APOL, ( void * )DM0A_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM0APOL ), ( void * )DM0A_TEX_ADRS, 0 ) ;
+	} else {
+		file_load( FILE_DM0EPOL, ( void * )DM0A_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM0EPOL ), ( void * )DM0A_TEX_ADRS, 0 ) ;
+	}
+	lz_unpack16( ( Sint16 * )DM0A_TEX_ADRS, ( Uint16 * )TEX_ADRS ) ;
+#else
 	Uint16 *dst ;
 
-	if( 0 ) *( Uint16 ** )0xd720020 = dst ;
-	dst = ( Uint16 * )0xcc00000 ;
+	if( 0 ) *( Uint16 ** )( DM0A_OBJ_ADRS + 0x20 ) = dst ;
+	dst = ( Uint16 * )TEX_ADRS ;
 	if( Sys->cpu_level_type == 0 ){ }	/* tested, and nothing done either way */
-	*( Uint16 ** )0xd720020 = dst ;
-	lz_unpack16( ( Sint16 * )0xd721000, dst ) ;
+	*( Uint16 ** )( DM0A_OBJ_ADRS + 0x20 ) = dst ;
+	lz_unpack16( ( Sint16 * )DM0A_TEX_ADRS, dst ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -177,7 +260,7 @@ static void model_load_gauge( void )
 {
 	int i ;
 
-	obj_dm00 = ( OBJ_FILE * )0xd082000 ;
+	obj_dm00 = ( OBJ_FILE * )DM00_OBJ_ADRS ;
 	nlSetCommonTextureOffset( 0xc90 ) ;
 	for( i = 0 ; i < obj_dm00->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm00->obj[i], obj_dm00->thd ) ;
@@ -189,7 +272,7 @@ static void model_load_select( void )
 {
 	int i ;
 
-	obj_dm01 = ( OBJ_FILE * )0xd0c6000 ;
+	obj_dm01 = ( OBJ_FILE * )DM01_OBJ_ADRS ;
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm01->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm01->obj[i], obj_dm01->thd ) ;
@@ -201,8 +284,8 @@ static void model_load_staff( void )
 {
 	int i ;
 
-	obj_dm05 = ( OBJ_FILE * )0xd7cc000 ;
-	obj_dm07 = ( OBJ_FILE * )0xd7cc000 ;
+	obj_dm05 = ( OBJ_FILE * )DM05_OBJ_ADRS ;
+	obj_dm07 = ( OBJ_FILE * )DM05_OBJ_ADRS ;
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm05->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm05->obj[i], obj_dm05->thd ) ;
@@ -214,7 +297,7 @@ static void model_load_st_demo( void )
 {
 	int i ;
 
-	obj_dm02 = ( OBJ_FILE * )0xd25c000 ;
+	obj_dm02 = ( OBJ_FILE * )DM02_OBJ_ADRS ;
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm02->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm02->obj[i], obj_dm02->thd ) ;
@@ -226,7 +309,7 @@ static void model_load_ranking( void )
 {
 	int i ;
 
-	obj_dm06 = ( OBJ_FILE * )0xd2bb000 ;
+	obj_dm06 = ( OBJ_FILE * )DM06_OBJ_ADRS ;
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm06->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm06->obj[i], obj_dm06->thd ) ;
@@ -236,7 +319,7 @@ static void model_load_ranking( void )
 /*==============================================================*/
 static void model_load14( void )
 {
-	model_put( 0xd10, &obj_dm0a, ( OBJ_FILE * )0xd720000 ) ;
+	model_put( 0xd10, &obj_dm0a, ( OBJ_FILE * )DM0A_OBJ_ADRS ) ;
 }
 
 /*==============================================================*/
@@ -246,12 +329,24 @@ static void model_load( int no )
 {
 	switch( no ){
 	case 1:
+#ifdef TARGET_DC
+		file_load( model_file_no1[stage_no], ( void * )STG_OBJ_ADRS, 0 ) ;
+		file_load( model_file_no0[stage_no], ( void * )TEX_ADRS, 0 ) ;
+#endif
 		model_load_stage() ;
 		break ;
 	case 2:
-		model_put( 0xc50, &obj_efky, ( OBJ_FILE * )0xda00000 ) ;
+#ifdef TARGET_DC
+		file_load( FILE_EFKYPOL, ( void * )EFKY_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_EFKYPOL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
+		model_put( 0xc50, &obj_efky, ( OBJ_FILE * )EFKY_OBJ_ADRS ) ;
 		break ;
 	case 4:
+#ifdef TARGET_DC
+		file_load( FILE_DM00POL, ( void * )DM00_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM00POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
 		model_load_gauge() ;
 		break ;
 	case 5:
@@ -263,7 +358,7 @@ static void model_load( int no )
 		model_load_st_demo() ;
 		break ;
 	case 8:
-		model_put( 0xd10, &obj_dm04, ( OBJ_FILE * )0xd2b1000 ) ;
+		model_put( 0xd10, &obj_dm04, ( OBJ_FILE * )DM04_OBJ_ADRS ) ;
 		break ;
 	case 9:
 		model_file_staff() ;
@@ -274,21 +369,70 @@ static void model_load( int no )
 		model_load_ranking() ;
 		break ;
 	case 11:
-		model_put( 0x810, &obj_dm07, ( OBJ_FILE * )0xda28000 ) ;
+#ifdef TARGET_DC
+		file_load( FILE_DM07POL, ( void * )DM07_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM07POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
+		model_put( 0x810, &obj_dm07, ( OBJ_FILE * )DM07_OBJ_ADRS ) ;
 		break ;
 	case 12:
-		model_put( 0x810, &obj_dm08, ( OBJ_FILE * )0xd4ce000 ) ;
+#ifdef TARGET_DC
+		file_load( FILE_DM08POL, ( void * )DM08_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM08POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
+		model_put( 0x810, &obj_dm08, ( OBJ_FILE * )DM08_OBJ_ADRS ) ;
 		break ;
 	case 13:
-		model_put( 0x810, &obj_dm09, ( OBJ_FILE * )0xd6cc000 ) ;
+#ifdef TARGET_DC
+		file_load( FILE_DM09POL, ( void * )DM09_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM09POL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
+		model_put( 0x810, &obj_dm09, ( OBJ_FILE * )DM09_OBJ_ADRS ) ;
 		break ;
 	case 14:
 		model_file14() ;
 		model_load14() ;
 		break ;
 	case 15:
-		model_put( 0x850, &obj_dm0b, ( OBJ_FILE * )0xd7a9000 ) ;
+#ifdef TARGET_DC
+		file_load( FILE_DM0BPOL, ( void * )DM0B_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM0BPOL ), ( void * )TEX_ADRS, 0 ) ;
+#endif
+		model_put( 0x850, &obj_dm0b, ( OBJ_FILE * )DM0B_OBJ_ADRS ) ;
 		break ;
+#ifdef TARGET_DC
+	/***** the home game's scenes *****/
+	case 16:
+		file_load( FILE_DM0CPOL, ( void * )SCENE_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM0CPOL ), ( void * )TEX_ADRS, 0 ) ;
+		model_put( 0x850, &obj_dm0c, ( OBJ_FILE * )SCENE_OBJ_ADRS ) ;
+		break ;
+	case 17:
+		file_load( FILE_DM0DPOL, ( void * )SCENE_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM0DPOL ), ( void * )TEX_BUFF0, 0 ) ;
+		model_put( 0x860, &obj_dm0d, ( OBJ_FILE * )SCENE_OBJ_ADRS ) ;
+		break ;
+	case 18:
+		file_load( FILE_DM0FPOL, ( void * )SCENE_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM0FPOL ), ( void * )TEX_ADRS, 0 ) ;
+		model_put( 0x850, &obj_dm0f, ( OBJ_FILE * )SCENE_OBJ_ADRS ) ;
+		break ;
+	case 19:
+		file_load( FILE_DM10POL, ( void * )SCENE_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM10POL ), ( void * )TEX_ADRS, 0 ) ;
+		model_put( 0x850, &obj_dm10, ( OBJ_FILE * )SCENE_OBJ_ADRS ) ;
+		break ;
+	case 20:
+		file_load( FILE_DM11POL, ( void * )SCENE_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM11POL ), ( void * )TEX_ADRS, 0 ) ;
+		model_put( 0x850, &obj_dm11, ( OBJ_FILE * )SCENE_OBJ_ADRS ) ;
+		break ;
+	case 21:
+		file_load( FILE_DM12POL, ( void * )SCENE_OBJ_ADRS, 0 ) ;
+		file_load( FILE_TEX( FILE_DM12POL ), ( void * )TEX_ADRS, 0 ) ;
+		model_put( 0x850, &obj_dm12, ( OBJ_FILE * )SCENE_OBJ_ADRS ) ;
+		break ;
+#endif
 	}
 }
 

@@ -11,6 +11,11 @@ extern void scr_matrix_set3( void ) ;
 extern void sel_mes_disp( void ) ;
 extern void spr_mark_disp( void ) ;
 extern int sprite_disp( PLAYER_WORK *w ) ;
+#ifdef TARGET_DC
+extern void vs_record_disp( void ) ;
+extern void menu_obj_disp( PLAYER_WORK *w ) ;
+extern void pause_obj_disp( PLAYER_WORK *w ) ;
+#endif
 
 static void obj_calc_list( Uint8 list ) ;
 static void obj_calc( PLAYER_WORK *w, Uint8 list ) ;
@@ -86,6 +91,12 @@ static void obj_calc( PLAYER_WORK *w, Uint8 list )
 	if( w->base_mtx ) nlLoadMatrix( w->base_mtx ) ;
 	else nlUnitMatrix() ;
 	if( w->obj_flag & OBJ_MTX ) nlMultiMatrix( &w->obj_mtx ) ;
+#ifdef TARGET_DC
+	/* a screen that shows every line: the front's models are made to fit */
+	if( option_w.unk_18 == 1 && ( w->obj_flag & OBJ_FIT ) && list == 11 && !w->base_mtx ){
+		nlScale( 1.0f, 0.93f, 1.0f ) ;
+	}
+#endif
 	if( w->obj_flag & OBJ_POS ){
 		switch( list ){
 		case 5:
@@ -219,11 +230,14 @@ static void obj_func( PLAYER_WORK *w )
 /****************************************************************/
 /*			Draw the front, and unless only the front is		*/
 /*			wanted the stage, the far stage and list 1, then	*/
-/*			spr_num_disp's display								*/
+/*			spr_num_disp's display (at home, the versus			*/
+/*			record)												*/
 /****************************************************************/
 void disp_all( void )
 {
+#ifndef TARGET_DC
 	SYSTEM_WORK *sys ;
+#endif
 
 	scr_2d_matrix_set() ;
 	obj_calc_list( 11 ) ;
@@ -237,11 +251,15 @@ void disp_all( void )
 	obj_disp_list( 7 ) ;
 	obj_calc_list( 1 ) ;
 	obj_disp_list( 1 ) ;
+#ifdef TARGET_DC
+	vs_record_disp() ;
+#else
 	sys = Sys ;
 	if( ( Sys->cpu_level_type || sys->vms_mode ) && sys->scene_no == 1 && !sys->heart_step ){
 		sel_mes_disp() ;
 		spr_num_disp( vms_work.point_lv, vms_work.point ) ;
 	}
+#endif
 }
 
 /****************************************************************/
@@ -306,18 +324,22 @@ void disp_front_stage2( void )
 
 /****************************************************************/
 /*			Draw the front's models, then spr_num_disp's		*/
-/*			display												*/
+/*			display (the arcade's alone)						*/
 /****************************************************************/
 void disp_front_info( void )
 {
+#ifndef TARGET_DC
 	SYSTEM_WORK *sys ;
+#endif
 
 	scr_2d_matrix_set() ;
 	obj_calc_list( 11 ) ;
 	obj_disp_list( 11 ) ;
+#ifndef TARGET_DC
 	sys = Sys ;
 	if( sys->cpu_level_type == 0 && sys->vms_mode == 0 ) return ;
 	spr_num_disp( vms_work.point_lv, vms_work.point ) ;
+#endif
 }
 
 /****************************************************************/
@@ -342,6 +364,71 @@ void disp_stage_front( void )
 	obj_calc_list( 11 ) ;
 	obj_disp_list( 11 ) ;
 }
+
+#ifdef TARGET_DC
+/****************************************************************/
+/*			The home menu: the front's models, then list 12		*/
+/*			as models or as the menu's own works				*/
+/****************************************************************/
+void disp_menu( void )
+{
+	PLAYER_WORK *w ;
+
+	scr_2d_matrix_set() ;
+	obj_calc_list( 11 ) ;
+	obj_disp_list( 11 ) ;
+	if( Sys->home_mode == HOME_NETWORK ){
+		obj_calc_list( 12 ) ;
+		obj_disp_list( 12 ) ;
+		return ;
+	}
+	w = work_top[12] ;
+	if( !w ) return ;
+	do {
+		if( w->disp_flag ) menu_obj_disp( w ) ;
+		w = w->behind_w ;
+	} while( w ) ;
+}
+
+/****************************************************************/
+/*			The pause: list 13, a work with work2 set drawn		*/
+/*			by the pause's own routine							*/
+/****************************************************************/
+void disp_pause( void )
+{
+	PLAYER_WORK *w ;
+
+	scr_2d_matrix_set() ;
+	obj_calc_list( 13 ) ;
+	w = work_top[13] ;
+	if( !w ) return ;
+	do {
+		if( w->disp_flag ){
+			if( w->work2 ) pause_obj_disp( w ) ;
+			else obj_disp( w, 13 ) ;
+		}
+		w = w->behind_w ;
+	} while( w ) ;
+}
+
+/****************************************************************/
+/*			The same as disp_front_obj							*/
+/****************************************************************/
+void disp_front_obj2( void )
+{
+	scr_2d_matrix_set() ;
+	obj_calc_list( 11 ) ;
+	obj_disp_list( 11 ) ;
+}
+
+/****************************************************************/
+/*			The end of the start demo: its sprite word			*/
+/****************************************************************/
+void disp_st_demo_end( void )
+{
+	spr_mes_put( 12, 12 ) ;
+}
+#endif
 
 /****************************************************************/
 /*			The fight's drawing, in the mode flash_flag_get		*/

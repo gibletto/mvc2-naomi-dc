@@ -157,7 +157,12 @@ static void set07_00_path_main( PLAYER_WORK *ew )
 	ew->pos.x = -out.x ;
 	ew->pos.y = -out.y ;
 	ew->pos.z = -out.z ;
+#ifdef TARGET_DC	/* twice as fast in the stage's other look */
+	if( stage_no == 7 ) ew->timer0 ++ ;
+	else ew->timer0 += 2 ;
+#else
 	ew->timer0 ++ ;
+#endif
 	if( ew->timer0 >= ( set07_00_key_tbl[ew->timer1 + 1].time - set07_00_key_tbl[ew->timer1].time ) ){
 		ew->timer0 = 0 ;
 		ew->timer1 ++ ;

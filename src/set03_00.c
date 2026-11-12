@@ -8,7 +8,11 @@ extern void *memcpy( void *dst, const void *src, Uint32 n ) ;
 
 /* the shapes' file, in words: the count of points that move and a second word, the numbers of
    those points, and then every shape's points */
+#ifdef TARGET_DC	/* the stage's file loads lower, and its other look has its own */
+extern Sint32 unk_0CEC5020[], unk_0CEC4918[] ;
+#else
 extern Sint32 unk_0D852038[] ;
+#endif
 
 static const VEC3 set03_00_pos = { -149.0f, 647.0f, -898.0f } ;
 static const VEC3 set03_00_rot = { 0.0f, 5.0f, 0.0f } ;
@@ -74,9 +78,24 @@ static void set03_00_morph( PLAYER_WORK *ew, Float t, int a, int b )
 	VEC3 v ;
 	int i ;
 
+#ifdef TARGET_DC
+	switch( stage_no ){
+	case 3 :
+		file = unk_0CEC5020 ;
+		break ;
+	case 12 :
+		file = unk_0CEC4918 ;
+		break ;
+	default :
+		return ;
+	}
+	cnt = *file ;
+	no = file + 2 ;
+#else
 	file = no = unk_0D852038 ;
 	cnt = *no ;
 	no += 2 ;
+#endif
 	shape = ( VEC3 * )( file + cnt + 2 ) ;
 	for( i = 0 ; i < cnt ; i ++ ){
 		pa = &shape[cnt * a + i] ;

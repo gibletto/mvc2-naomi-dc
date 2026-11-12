@@ -57,13 +57,27 @@ extern void set08_02_set( void ) ;
 extern void set08_03_set( void ) ;
 extern void set08_04_set( void ) ;
 extern void set08_05_set( void ) ;
+#ifdef TARGET_DC	/* objects the other looks have */
+extern void set07_01_set( void ) ;
+extern void set08_06_set( void ) ;
+extern void set08_07_set( void ) ;
+extern void set08_08_set( void ) ;
+extern void set08_0a_set( void ) ;
+extern void set08_0b_set( void ) ;
+#endif
 
+/* the stages: on the Dreamcast the first eight have another look each, from 9 on */
+#ifdef TARGET_DC
+#define STAGE_MAX	17
+#else
+#define STAGE_MAX	9
+#endif
 
 /* the background colour of each stage: its one colour, or the two of a gradient */
 typedef struct STAGE_BACK {
 	Uint32	col0, col1, col2;
 } STAGE_BACK;
-static const STAGE_BACK stage_back_tbl[9] = {
+static const STAGE_BACK stage_back_tbl[STAGE_MAX] = {
 	{ 0x007f7f7f, 0x00000000, 0x00000000 },
 	{ 0x006061e3, 0x00000000, 0x00000000 },
 	{ 0x00000000, 0x00000000, 0x00000000 },
@@ -73,6 +87,16 @@ static const STAGE_BACK stage_back_tbl[9] = {
 	{ 0x007f7f7f, 0x00000000, 0x00000000 },
 	{ 0x007f7f7f, 0x00000000, 0x00000000 },
 	{ 0x00000000, 0x00000000, 0x00000000 },
+#ifdef TARGET_DC
+	{ 0x00000000, 0x00000000, 0x00000000 },
+	{ 0x006061e3, 0x00000000, 0x00000000 },
+	{ 0x00000000, 0x00000000, 0x00000000 },
+	{ 0x00000000, 0x00b0459a, 0x00000000 },
+	{ 0x007f7f7f, 0x00000000, 0x00000000 },
+	{ 0x00000000, 0x00000000, 0x00000000 },
+	{ 0x007f7f7f, 0x00000000, 0x00000000 },
+	{ 0x007f7f7f, 0x00000000, 0x00000000 },
+#endif
 } ;
 
 /* the fog of a stage: how many entries of the table fade, its density and its colour */
@@ -90,6 +114,9 @@ static void stage_move( void ) ;
 
 static void ( *stage00_obj_tbl[] )( void ) = {
 	set00_00_set, set00_01_set, set00_02_set, set00_03_set, set00_04_set,
+#ifdef TARGET_DC
+	set08_06_set, set08_07_set,
+#endif
 } ;
 static void ( *stage01_obj_tbl[] )( void ) = {
 	set01_00_set, set01_01_set, set01_02_set, set01_03_set, set01_04_set, set01_05_set,
@@ -102,24 +129,40 @@ static void ( *stage03_obj_tbl[] )( void ) = {
 } ;
 static void ( *stage04_obj_tbl[] )( void ) = {
 	set04_00_set, set04_01_set, set04_02_set, set04_03_set, set04_04_set, set04_05_set, set04_06_set, set04_07_set,
+#ifdef TARGET_DC
+	set08_08_set,
+#endif
 } ;
 static void ( *stage05_obj_tbl[] )( void ) = {
 	set05_00_set, set05_01_set, 0, set05_03_set, set05_04_set, set05_05_set, set05_06_set,
+#ifdef TARGET_DC
+	0, set08_0a_set,
+#endif
 } ;
 static void ( *stage06_obj_tbl[] )( void ) = {
 	set06_00_set, set06_01_set, set06_02_set, 0, set06_04_set,
+#ifdef TARGET_DC
+	set08_0b_set,
+#endif
 } ;
 static void ( *stage07_obj_tbl[] )( void ) = {
 	set07_00_set, 0, set07_02_set,
+#ifdef TARGET_DC
+	set07_01_set,
+#endif
 } ;
 static void ( *stage08_obj_tbl[] )( void ) = {
 	set08_00_set, set08_01_set, set08_02_set, set08_03_set, set08_04_set, set08_05_set,
 } ;
 
 /* each stage's table of its objects */
-static void ( **stage_obj_tbl[9] )( void ) = {
+static void ( **stage_obj_tbl[STAGE_MAX] )( void ) = {
 	stage00_obj_tbl, stage01_obj_tbl, stage02_obj_tbl, stage03_obj_tbl, stage04_obj_tbl,
 	stage05_obj_tbl, stage06_obj_tbl, stage07_obj_tbl, stage08_obj_tbl,
+#ifdef TARGET_DC
+	stage00_obj_tbl, stage01_obj_tbl, stage02_obj_tbl, stage03_obj_tbl, stage04_obj_tbl,
+	stage05_obj_tbl, stage06_obj_tbl, stage07_obj_tbl,
+#endif
 } ;
 
 /* the order a stage sets its objects in, ended by -1 */
@@ -132,13 +175,27 @@ static Sint32 stage05_no_tbl[] = { 0, 1, 1, 1, 3, 4, 5, 6, -1, } ;
 static Sint32 stage06_no_tbl[] = { 0, 1, 2, 4, -1, } ;
 static Sint32 stage07_no_tbl[] = { 0, 2, -1, } ;
 static Sint32 stage08_no_tbl[] = { 0, 1, 2, 3, 4, 5, -1, } ;
+#ifdef TARGET_DC
+static Sint32 stage09_no_tbl[] = { 1, 4, 5, 6, -1, } ;
+static Sint32 stage10_no_tbl[] = { 0, 1, 2, 3, 4, 5, -1, } ;
+static Sint32 stage11_no_tbl[] = { -1, } ;
+static Sint32 stage12_no_tbl[] = { 0, 1, 2, 3, 4, 5, 6, 7, 9, -1, } ;
+static Sint32 stage13_no_tbl[] = { 1, 4, 6, 7, 8, -1, } ;
+static Sint32 stage14_no_tbl[] = { 0, 3, 4, 5, 8, -1, } ;
+static Sint32 stage15_no_tbl[] = { 2, 4, 5, -1, } ;
+static Sint32 stage16_no_tbl[] = { 0, 3, -1, } ;
+#endif
 
-static Sint32 *stage_obj_no[9] = {
+static Sint32 *stage_obj_no[STAGE_MAX] = {
 	stage00_no_tbl, stage01_no_tbl, stage02_no_tbl, stage03_no_tbl, stage04_no_tbl,
 	stage05_no_tbl, stage06_no_tbl, stage07_no_tbl, stage08_no_tbl,
+#ifdef TARGET_DC
+	stage09_no_tbl, stage10_no_tbl, stage11_no_tbl, stage12_no_tbl, stage13_no_tbl,
+	stage14_no_tbl, stage15_no_tbl, stage16_no_tbl,
+#endif
 } ;
 
-static STAGE_FOG stage_fog_tbl[9] = {
+static STAGE_FOG stage_fog_tbl[STAGE_MAX] = {
 	{ 82, 12000.0f, 0, 0x80, 0x94, 0xa6 },
 	{ 7, 1300000.0f, 0, 0xb3, 0x8c, 0x99 },
 	{ -1, 0.0f, 0, 0x7f, 0x7f, 0x7f },
@@ -148,6 +205,16 @@ static STAGE_FOG stage_fog_tbl[9] = {
 	{ 45, 38420.0f, 0, 0x8f, 0x8f, 0xcf },
 	{ 110, 1260000.0f, 0, 0xcb, 0x51, 0x46 },
 	{ 115, 47000.0f, 0, 0x00, 0x00, 0x00 },
+#ifdef TARGET_DC
+	{ -1, 400000.0f, 0, 0x80, 0x94, 0xa6 },
+	{ 7, 1300000.0f, 0, 0xff, 0xe6, 0xc0 },
+	{ -1, 0.0f, 0, 0x7f, 0x7f, 0x7f },
+	{ -1, 0.0f, 0, 0x7f, 0x7f, 0x7f },
+	{ -1, 19000.0f, 0, 0xff, 0x80, 0xc0 },
+	{ 64, 40000.0f, 0, 0x20, 0x10, 0x10 },
+	{ 64, 40000.0f, 0, 0x80, 0x80, 0x80 },
+	{ 35, 130000.0f, 0, 0xe5, 0xdb, 0xca },
+#endif
 } ;
 
 /* the light's direction: the first stage's, and the others' */
@@ -163,7 +230,11 @@ void stage_set( void )
 {
 	memset( &stage_work, 0, sizeof( stage_work ) ) ;
 	stage_work.unk_08 = 1.0f ;
+#ifdef TARGET_DC
+	if( stage_no == 0 || stage_no == 9 ) light_dir_set( &stage_light_tbl[0] ) ;
+#else
 	if( stage_no == 0 ) light_dir_set( &stage_light_tbl[0] ) ;
+#endif
 	else light_dir_set( &stage_light_tbl[1] ) ;
 	light_amb_set( 1.0f ) ;
 	stage_back_set() ;

@@ -19,6 +19,18 @@ extern void game_disp( void ) ;
 extern void s_play_ef0_set( int no ) ;
 extern void hyper_bg_set( void ) ;
 extern void stage_set( void ) ;
+#ifdef TARGET_DC
+extern void pl_data_load( PLAYER_WORK *pl_w, int no ) ;	/* a player's files into buffer no */
+extern void pl_data_no_init( int side ) ;
+extern void pl_sound_load( void ) ;
+extern void rand_pic_set( void ) ;
+extern void rnd_init( void ) ;
+extern void nlRandomSeed( int seed ) ;
+extern void load_stop( void ) ;
+extern void fight_load_start( int no ) ;
+extern void vib_stop( void ) ;
+extern void disp_pause( void ) ;
+#endif
 
 static void game_pl_set( void ) ;
 static void game_cpu_select( void ) ;
@@ -28,9 +40,13 @@ static void game_ranking( void ) ;
 static void play_init( void ) ;
 static void play_start( void ) ;
 static void play_move( void ) ;
+#ifdef TARGET_DC
+static void play_net_move( void ) ;
+#endif
 static void play_end( void ) ;
 static void team_no_init( int side ) ;
 static void team_no_set( int flag ) ;
+void game_reset( void ) ;
 static void work_kill( Uint8 type, Uint8 no, int list ) ;
 void demo_pl_set( void ) ;
 static void demo_start( void ) ;
@@ -57,6 +73,9 @@ static void game_pl_set( void )
 	PLAYER_WORK *pl_w, *em ;
 	int i ;
 	Sint8 type[6], personal[6], color[6] ;
+#ifdef TARGET_DC
+	Sint8 data[6] ;
+#endif
 	int no ;
 
 	Sys->routine_0 ++ ;
@@ -74,6 +93,9 @@ static void game_pl_set( void )
 		type[i] = pl_work[( pl_w->pl_index & 1 ) + no * 2].load_type ;
 		personal[i] = pl_work[( pl_w->pl_index & 1 ) + no * 2].pl_personal ;
 		color[i] = pl_work[( pl_w->pl_index & 1 ) + no * 2].load_color ;
+#ifdef TARGET_DC
+		data[i] = pl_work[( pl_w->pl_index & 1 ) + no * 2].pic_buff_no ;
+#endif
 		pl_w->team_order = i / 2 ;
 	}
 	for( i = 0 ; i < 6 ; i ++ ){
@@ -81,6 +103,9 @@ static void game_pl_set( void )
 		pl_w->load_type = type[i] ;
 		pl_w->pl_personal = personal[i] ;
 		pl_w->load_color = color[i] ;
+#ifdef TARGET_DC
+		pl_w->pic_buff_no = data[i] ;	/* its files stay in the buffer they were read to */
+#endif
 	}
 	if( ( Sys->fight_side = Sys->play_side ) == 3 ){
 		Sys->vs_flag = 1 ;
@@ -100,6 +125,16 @@ static void game_pl_set( void )
 		Sys->stage_cnt = pl_w->stage_cnt ;
 		if( !Sys->speed_fix ) Sys->game_speed = pl_w->sel_speed ;
 	}
+#ifdef TARGET_DC
+	side_sw_adrs[0] = &pl_work[0].pad_sw ;
+	side_sw_adrs[1] = &pl_work[1].pad_sw ;
+	/* in the training, a pad plays the dummy too unless the computer was chosen for it */
+	if( Sys->home_mode == HOME_TRAINING ){
+		if( training_work.unk_04 != 1 ){
+			for( i = 0 ; i < 6 ; i ++ ) pl_work[i].cpu_flag = 0 ;
+		} else Sys->play_side = Sys->entry_side ;
+	}
+#endif
 	if( Sys->play_side & 1 ){
 		pl_work[0].cpu_flag = 0 ;
 		pl_work[2].cpu_flag = 0 ;
@@ -144,7 +179,11 @@ static void game_st_demo( void )
 static void game_fight( void )
 {
 	static void ( *play_jmp[] )( void ) = {
+#ifdef TARGET_DC
+		play_init, play_start, play_net_move, play_end,
+#else
 		play_init, play_start, play_move, play_end,
+#endif
 	} ;
 
 	play_jmp[Sys->routine_1]() ;
@@ -159,10 +198,38 @@ static void play_init( void )
 	PLAYER_WORK *pl_w ;
 	int i ;
 
+#ifdef TARGET_DC
+	if( !load_ck() ) return ;	/* the home game's says that the loads are done */
+#else
 	if( load_ck() ) return ;
+#endif
 	Sys->routine_1 ++ ;
 	Sys->entry_stop = 1 ;
 	Sys->play_timer = 0 ;
+#ifdef TARGET_DC
+	/* both consoles of a network game start from the same random numbers */
+	if( Sys->home_mode == HOME_NETWORK ){
+		rnd_init() ;
+		nlRandomSeed( 1 ) ;
+	}
+	Palette_Init() ;
+	Texture_Init() ;
+	if( Sys->play_mode != 64 ){
+		TexLoad( 2 ) ;
+		TexLoad( 4 ) ;
+		TexLoad( 1 ) ;
+	} else {
+		TexLoad( 24 ) ;
+		TexLoad( 23 ) ;
+	}
+	for( i = 0 ; i < 6 ; i ++ ){
+		pl_w = &pl_work[i] ;
+		pl_data_load( pl_w, pl_w->pic_buff_no ) ;
+		sprite_set_load( pl_w, i ) ;
+	}
+	if( Sys->play_mode == 64 ) pl_sound_load() ;
+	stream_req( stage_no ) ;
+#else
 	stream_req( stage_no ) ;
 	Palette_Init() ;
 	Texture_Init() ;
@@ -174,6 +241,7 @@ static void play_init( void )
 		pl_data_set( pl_w, i ) ;
 		sprite_set_load( pl_w, i ) ;
 	}
+#endif
 	vs_round_init() ;
 	work_init() ;
 	pl_init() ;
@@ -184,6 +252,9 @@ static void play_init( void )
 	if( Sys->play_mode != 64 ){
 		stage_set() ;
 		bg_init() ;
+#ifdef TARGET_DC
+		if( Sys->home_mode != HOME_NETWORK ) rand_pic_set() ;
+#endif
 	}
 }
 
@@ -213,6 +284,15 @@ static void play_start( void )
 	se_vol_up( 1, 1 ) ;
 	stream_start() ;
 	s3l_fade_in_set( 1 ) ;
+#ifdef TARGET_DC
+	pause_init() ;
+	/* a network game's two consoles count their frames from here */
+	if( Sys->home_mode == HOME_NETWORK ){
+		Sys->game_timer = 0 ;
+		Sys->game_timer0 = 0 ;
+		Sys->wave_ang = 0 ;
+	}
+#endif
 }
 
 /*==============================================================*/
@@ -226,6 +306,16 @@ static void play_move( void )
 		if( Sys->heart_step > 1 ) SysTransSet( disp_front_obj ) ;
 		else SysTransSet( game_disp ) ;
 	} else {
+#ifdef TARGET_DC
+		/* the home game can be paused */
+		if( vs_sys_work.vs_st == VS_FIGHT ) pause_ck() ;
+		if( pause_work.pause_flag ){
+			pause_main() ;
+			if( training_work.menu_on ) SysTransSet( disp_pause ) ;
+			else SysTransSet( game_disp ) ;
+			return ;
+		}
+#endif
 		if( vs_sys_work.vs_st == VS_FIGHT && !Sys->vs_flag ){
 			if( Sys->play_side & 1 ) pl_work[0].play_time ++ ;
 			if( Sys->play_side & 2 ) pl_work[1].play_time ++ ;
@@ -235,6 +325,10 @@ static void play_move( void )
 		if( vs_sys_w->speed_rate ) vs_sys_w->speed_cnt -- ;
 again:
 		if( Sys->play_timer != -1 ) Sys->play_timer ++ ;
+#ifdef TARGET_DC
+		/* a minute of training earns points */
+		if( Sys->home_mode == HOME_TRAINING && !( ( Uint32 )Sys->play_timer % 3600 ) ) d_point_add( 10 ) ;
+#endif
 		side_flag_clr() ;
 		vs_sys_w->slow_step = ( vs_sys_w->slow_step + 1 ) & 15 ;
 		all_work_move() ;
@@ -259,6 +353,18 @@ again:
 	}
 }
 
+#ifdef TARGET_DC
+/*==============================================================*/
+/*			A frame of the home game's fight. Japan's first		*/
+/*			game kept a network game's two consoles in step		*/
+/*			here; the later ones only run the frame				*/
+/*==============================================================*/
+static void play_net_move( void )
+{
+	play_move() ;
+}
+#endif
+
 /*==============================================================*/
 /*			The fight is over: the winner's record, the next	*/
 /*			fight's order, and the scores kept					*/
@@ -268,6 +374,9 @@ static void play_end( void )
 	PLAYER_WORK *pl_w, *em ;
 	int side, no ;
 	int ch ;
+#ifdef TARGET_DC
+	int pt ;
+#endif
 
 	Sys->routine_0 ++ ;
 	Sys->routine_1 = 0 ;
@@ -318,6 +427,29 @@ static void play_end( void )
 	}
 	pl_w = &pl_work[0] ;
 	em = &pl_work[1] ;
+#ifdef TARGET_DC
+	/* the versus modes count each side's wins, losses and draws */
+	if( Sys->home_mode == HOME_VERSUS || Sys->home_mode == HOME_NETWORK ){
+		switch( vs_sys_work.winner_id ){
+		case 0 :
+			if( ++ pl_w->vs_record[0] > 99 ) pl_w->vs_record[0] = 99 ;
+			if( ++ em->vs_record[1] > 99 ) em->vs_record[1] = 99 ;
+			pl_w->win_cnt = pl_w->vs_record[0] ;
+			break ;
+		case 1 :
+			if( 0 ) pl_w->win_cnt = pl_w->vs_record[0] ;	/* left out of the build */
+			if( ++ em->vs_record[0] > 99 ) em->vs_record[0] = 99 ;
+			if( ++ pl_w->vs_record[1] > 99 ) pl_w->vs_record[1] = 99 ;
+			em->win_cnt = em->vs_record[0] ;
+			break ;
+		case -1 :
+			if( 0 ) pl_w->win_cnt = pl_w->vs_record[0] ;	/* left out of the build */
+			if( ++ pl_w->vs_record[2] > 99 ) pl_w->vs_record[2] = 99 ;
+			if( ++ em->vs_record[2] > 99 ) em->vs_record[2] = 99 ;
+			break ;
+		}
+	} else
+#endif
 	if( Sys->vs_flag ){
 		vs_rank_entry( pl_w ) ;
 		vs_rank_entry( em ) ;
@@ -333,10 +465,42 @@ static void play_end( void )
 			rank_entry( em ) ;
 		}
 	}
+#ifdef TARGET_DC
+	/* what the mode does when its fight ends: points for the arcade game cleared and for a first
+	   place, and the versus and training modes go back to their start */
+	switch( Sys->home_mode ){
+	case 0 :
+		if( Sys->ending_flag ){
+			Sys->arcade_clear = 1 ;
+#if BUILD_DATE >= 20000412
+			pt = Sys->entry_flag ? 50 : 100 ;
+#else
+			pt = Sys->entry_flag ? 300 : 500 ;	/* Japan's first game gave more */
+#endif
+			d_point_add( pt * ( Sys->cpu_renda_level + 1 ) ) ;
+		}
+		break ;
+	case 1 :
+	case 2 :
+		game_reset() ;
+		break ;
+	case 5 :
+	case 7 :
+#if BUILD_DATE >= 20000412
+		if( !pl_work[vs_sys_work.winner_id].score_rank && Sys->ending_flag ) d_point_add( 1000 ) ;
+#else
+		if( !pl_work[vs_sys_work.winner_id].score_rank && Sys->ending_flag ) d_point_add( 2000 ) ;
+#endif
+	}
+	sound_all_off() ;
+	se_all_off() ;
+	vib_stop() ;
+#else
 	stream_stop() ;
 	while( !nlaCheckWaitROMDMA() ) ;
 	sound_all_off() ;
 	se_all_off() ;
+#endif
 	disp_prio_clr() ;
 	pl_work_disp() ;
 	work_list_disp( W_PLS ) ;
@@ -349,6 +513,9 @@ static void play_end( void )
 /*--------------------------------------------------------------*/
 static void game_ranking( void )
 {
+#if BUILD_DATE >= 20000412
+	if( Sys->home_mode != HOME_NETWORK )	/* a network game has no ranking */
+#endif
 	RankingMain() ;
 }
 
@@ -360,6 +527,9 @@ static void team_no_init( int side )
 	int i ;
 
 	for( i = 0 ; i < 3 ; i ++ ) pl_work[i * 2 + side].team_order = i ;
+#ifdef TARGET_DC
+	pl_data_no_init( side ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -388,6 +558,11 @@ void game_reset( void )
 	Sys->new_side = 3 ;
 	Sys->join_side = 3 ;
 	team_no_set( 3 ) ;
+#ifdef TARGET_DC
+	/* read the select's files again */
+	load_stop() ;
+	fight_load_start( 12 ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -417,7 +592,11 @@ void pl_change( PLAYER_WORK *pl_w )
 	work_kill( pl_w->pl_type, pl_w->work_no, 2 ) ;
 	pl_w->pl_type = pl_w->load_type ;
 	sprite_set_free( pl_w, pl_w->work_no ) ;
+#ifdef TARGET_DC
+	tex_dummy_0( pl_w, pl_w->pic_buff_no ) ;
+#else
 	tex_dummy_0( pl_w, pl_w->work_no ) ;
+#endif
 	sprite_set_load( pl_w, pl_w->work_no ) ;
 	pl_w->routine_0 = 0 ;
 	pl_w->routine_1 = 0 ;
@@ -437,7 +616,7 @@ void demo_init( void )
 	Sys->entry_side = 3 ;
 	Sys->play_side = 0 ;
 	Sys->cpu_level_max = 1 ;
-	Sys->unk_4c = 0 ;
+	Sys->home_mode = HOME_ARCADE ;
 	vs_sys_init() ;
 	cpu_level_init() ;
 	pl_restart() ;
@@ -446,7 +625,11 @@ void demo_init( void )
 	Sys->play_side = 3 ;
 	play_init() ;
 	total_vol_init() ;
+#ifndef TARGET_DC
 	if( Sys->vms_mode ) TexLoad( 14 ) ;
+#elif BUILD_DATE < 20000412
+	TexLoad( 14 ) ;	/* Japan's first home game still shows the board's card notice */
+#endif
 	vs_sys_work.gauge_level[0] = 5 ;
 	vs_sys_work.gauge_level[1] = 5 ;
 	Sys->routine_0 = 0 ;
@@ -458,10 +641,17 @@ void demo_init( void )
 
 /* the six characters of each attract demo */
 const Sint8 demo_pl_tbl[4 * 6] = {
+#ifdef TARGET_DC
+	0x02, 0x00, 0x01, 0x04, 0x22, 0x05,
+	0x15, 0x14, 0x13, 0x12, 0x10, 0x11,
+	0x06, 0x16, 0x17, 0x0b, 0x0f, 0x0a,
+	0x07, 0x08, 0x09, 0x0c, 0x0e, 0x0d,
+#else
 	0x00, 0x01, 0x02, 0x03, 0x04, 0x05,
 	0x06, 0x07, 0x09, 0x0b, 0x0c, 0x0d,
 	0x0f, 0x12, 0x13, 0x14, 0x15, 0x16,
 	0x17, 0x1e, 0x1f, 0x28, 0x29, 0x2d,
+#endif
 } ;
 
 /****************************************************************/
@@ -481,6 +671,9 @@ void demo_pl_set( void )
 		pl_w->pl_personal = 0 ;
 		pl_w->load_color = 0 ;
 		pl_w->team_order = i / 2 ;
+#ifdef TARGET_DC
+		pl_w->pic_buff_no = i ;
+#endif
 	}
 	stage_no = Sys->demo_no & 7 ;
 	Sys->stage_cnt = Sys->demo_no & 7 ;
@@ -533,7 +726,7 @@ static void demo_start( void )
 	nlUnitMatrix() ;
 	nlPerspective( 0x1d28, 1.3333334f, 0.3f, 12000.0f ) ;
 	nlMatrixMode( 1 ) ;
-	nlInitDrawModel( draw_vertex_work, draw_light_work ) ;
+	nlInitDrawModel( ScreenVertexBuffer, LightFragmentBuffer ) ;
 	nlObjPutInit() ;
 	nlLightInit() ;
 	stage_set() ;
@@ -568,7 +761,11 @@ static void demo_start( void )
 	pl_work[1].routine_2 = 0 ;
 	pl_work[1].routine_3 = 0 ;
 	pl_work_init( &pl_work[1] ) ;
+#ifndef TARGET_DC
 	if( Sys->vms_mode ) s_play_ef0_set( 0 ) ;
+#elif BUILD_DATE < 20000412
+	s_play_ef0_set( 0 ) ;
+#endif
 	fade_set( 0xff000000, 60, FADE_IN ) ;
 }
 

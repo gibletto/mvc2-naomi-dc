@@ -1,7 +1,11 @@
 /* Stage 06's object 2: two clock hands (objects 9 and 10 of the stage's file) that turn to the
-   time the machine's clock gives, the minute hand and the hour hand. */
+   time the machine's clock gives (the console's on the disc), the minute hand and the hour hand. */
 #include "player.h"
+#ifdef TARGET_DC
+#include "shinobi.h"
+#else
 #include "naomi.h"
+#endif
 
 #define DEG_ANG( n )	( ( Sint32 )( ( n ) * 65536.0f / 360.0f + 0.5f ) & 0xffff )
 
@@ -17,9 +21,15 @@ static VEC3 set06_02_rot_tbl[2] = {
 /*==============================================================*/
 static void set06_02_main( PLAYER_WORK *ew )
 {
+#ifdef TARGET_DC
+	SYS_RTC_DATE rtc ;
+
+	syRtcGetDate( &rtc ) ;
+#else
 	NLA_RTC_DATE rtc ;
 
 	nlaGetRTC( &rtc ) ;
+#endif
 	switch( ew->type ){
 	case 0 :
 		ew->rot[0] = DEG_ANG( rtc.minute * 6 ) ;

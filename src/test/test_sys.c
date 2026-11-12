@@ -210,7 +210,7 @@ Sint32 VBlankInIrq( void )
 {
 	Sys->vblank_cnt ++ ;
 	vsync_count ++ ;
-	unk_0C2D96AB = 0 ;
+	stream_start_flag = 0 ;
 	if( task_wait ) task_wait -- ;
 	nlaPutLED( Sys->vblank_cnt ) ;
 	if( !rom_dma_flag ) pdExecPeripheralServer() ;

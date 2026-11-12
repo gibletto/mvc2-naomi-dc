@@ -50,11 +50,33 @@ void SortModeSet( Sint32 mode )
 /****************************************************************/
 void get_2d_pos( VEC3 *pos, SCR_POS *scr )
 {
+#ifdef TARGET_DC
+	VEC3 v ;
+	VEC4 out ;
+#endif
 	Float z ;
 
 	scr_matrix_set() ;
+#ifdef TARGET_DC	/* a network game puts the point through the two matrices itself */
+	if( Sys->home_mode == HOME_NETWORK ){
+		v = *pos ;
+		nlPushMatrix( 0 ) ;
+		nlMatrixMode( 2 ) ;
+		nlCalcPoint( &v, &v ) ;
+		nlMatrixMode( 3 ) ;
+		nlCalcPoint4( &v, &out ) ;
+		nlMatrixMode( 1 ) ;
+		nlPopMatrix( 1 ) ;
+		scr->x = ( out.x / out.w + 1.0f ) / 2.0f * 640.0f ;
+		scr->y = -( ( out.y / out.w + 1.0f ) / 2.0f * 480.0f ) + 480.0f ;
+	} else {
+		nlMakeModelViewProjectMatrix( 640.0f, 480.0f ) ;
+		nlScreenPoint( pos->x, pos->y, pos->z, &scr->x, &scr->y, &z ) ;
+	}
+#else
 	nlMakeModelViewProjectMatrix( 640.0f, 480.0f ) ;
 	nlScreenPoint( pos->x, pos->y, pos->z, &scr->x, &scr->y, &z ) ;
+#endif
 }
 
 /****************************************************************/

@@ -1,16 +1,20 @@
 @echo off
 setlocal
 pushd "%~dp0"
-rem Marvel vs. Capcom 2 (NAOMI) - the program ROM, epr-23085a.ic11 (same steps as the Makefile)
+rem Marvel vs. Capcom 2 (NAOMI) - the program ROM, epr-23085a.ic11 (same steps as the Makefile);
+rem build.bat dc builds the Dreamcast program instead
 rem Set SHC to the bin folder of Hitachi SHC 5.1 Release 08 and SDK_LIBS to the SDK's library
 rem folders (see README.md, Building).
 if "%SHC%"=="" echo set SHC to the folder of SHC 5.1 Release 08& goto fail
 if "%SDK_LIBS%"=="" echo set SDK_LIBS to the SDK library folders, separated by ;& goto fail
 set SHC_LIB=%SHC%
 set SHC_TMP=build\tmp
-rem Capcom's options, from the response file left in the ROM padding (README.md)
-set COPTS=-cpu=sh4 -endian=little -fpu=single -round=nearest -macsave=0 -pic=0 -optimize=1 -size -string=const -extra=a=400 -define=_STRICT_UNION_,__DEV_TYPE_DC__
+rem Capcom's options, from the response file left in the ROM padding (README.md), and the program's
+rem own date, which the source asks for where a later build differs
+set COPTS=-cpu=sh4 -endian=little -fpu=single -round=nearest -macsave=0 -pic=0 -optimize=1 -size -string=const -extra=a=400 -define=_STRICT_UNION_,__DEV_TYPE_DC__,BUILD_DATE=20000225
 set AOPTS=-cpu=sh4 -endian=little
+set SUBS=mvc2.sub mvc2test.sub
+if /i "%~1"=="dc" goto dc
 for %%d in (build\obj\test build\tmp build\data) do if not exist %%d mkdir %%d
 
 rem what the source does not have, cut from your own ROM in rom\
@@ -116,7 +120,7 @@ exit /b 0
 rem copy the libraries that the links take from %1, the next folder of SDK_LIBS
 set /a N+=1
 if not exist build\sdk\%N% mkdir build\sdk\%N%
-for /f "tokens=4,5 delims=\( " %%a in ('findstr /c:"input build\sdk" mvc2.sub mvc2test.sub') do (
+for /f "tokens=4,5 delims=\( " %%a in ('findstr /c:"input build\sdk" %SUBS%') do (
 	if "%%a"=="%N%" if not exist build\sdk\%N%\%%b copy /y "%~1\%%b" build\sdk\%N% >nul || exit /b 1
 )
 exit /b 0
@@ -134,6 +138,113 @@ exit /b 0
 :libasm
 "%SHC%\shc.exe" %2 %OPTS% -code=asmcode -include=%1,include,build\orig -object=build\tmp\%~n2.src >build\obj\shc.log 2>&1 || (type build\obj\shc.log & exit /b 1)
 "%SHC%\asmsh.exe" build\tmp\%~n2.src -object=build\obj\%~n2.obj %AOPTS% >build\obj\asm.log || (type build\obj\asm.log & exit /b 1)
+exit /b 0
+
+:dc
+rem The Dreamcast program, 1ST_READ.BIN of the USA disc, and the characters' files (build.bat dc).
+rem SDK_LIBS has two more folders (README.md). Each object that mvc2dc.sub links is compiled from
+rem the first of src\dc, src, src\dc\lib and src\lib that has it, with the switches TARGET_DC and the
+rem disc's BUILD_DATE.
+set DCOPTS=%COPTS:BUILD_DATE=TARGET_DC,BUILD_DATE%
+set DCOPTS=%DCOPTS:20000225=20000529%
+set SUBS=mvc2dc.sub
+for %%d in (build\obj\dc build\tmp build\ovl) do if not exist %%d mkdir %%d
+echo compiling
+for /f "tokens=2" %%i in ('findstr /b /c:"input build\obj\dc" mvc2dc.sub') do call :dcobj %%~ni || goto fail
+del build\obj\dc\shc.log build\obj\dc\asm.log 2>nul
+echo copying the libraries
+set N=0
+for %%d in ("%SDK_LIBS:;=" "%") do call :sdk "%%~d" || goto fail
+echo linking
+"%SHC%\lnk.exe" -subcommand=mvc2dc.sub >build\lnkdc.log || (findstr /b /c:"**" build\lnkdc.log & goto fail)
+if exist build\mvc2dc.bin del build\mvc2dc.bin
+rem the Dreamcast fills the gaps with 0
+pushd build
+"%SHC%\elf2bin.exe" -b 00 -s 8C010000 mvc2dc.abs mvc2dc.bin >mvc2dc.log 2>&1
+popd
+certutil -hashfile build\mvc2dc.bin SHA1 | findstr /i /c:"b0c3604e3494b12f751793a74fc9b494ed67a30c" >nul || (echo build\mvc2dc.bin is not the disc's 1ST_READ.BIN & goto fail)
+echo build\mvc2dc.bin is the disc's 1ST_READ.BIN: SHA-1 b0c3604e3494b12f751793a74fc9b494ed67a30c
+
+rem The characters' files, S_PLxx[A-F].BIN: a character's module, src\s_plXX.c compiled for the
+rem Dreamcast, is linked six times, at 0CE30000 + 0x8000 for each slot (A to F), beside the main
+rem program's names. The linker's symbol file of the main program (build\mvc2dc.FSY) is assembler
+rem source, and asmsh assembles it as it is. dcovl.sha1 has the disc's SHA-1s.
+echo the characters' files
+"%SHC%\asmsh.exe" build\mvc2dc.FSY -object=build\ovl\dcsyms.obj %AOPTS% >build\ovl\asm.log || (type build\ovl\asm.log & goto fail)
+rem (s_pl??.c also finds s_play.c, which is not a character's)
+for %%f in (src\s_pl??.c) do if /i not "%%~nf"=="s_play" call :dcovl %%~nf || goto fail
+del build\ovl\shc.log build\ovl\asm.log build\ovl\lnk.log 2>nul
+set BAD=0
+for /f "tokens=1,2 delims=* " %%a in (dcovl.sha1) do call :dcsha %%a %%b
+if not "%BAD%"=="0" echo %BAD% of the characters' files are not the disc's& goto fail
+echo the characters' files are the disc's
+popd
+exit /b 0
+
+:dcovl
+"%SHC%\shc.exe" src\%1.c %DCOPTS% -include=include -object=build\ovl\%1.obj >build\ovl\shc.log 2>&1 || (type build\ovl\shc.log & exit /b 1)
+findstr /c:") : " build\ovl\shc.log
+set XX=%1
+set XX=%XX:~4%
+for %%s in (A:0CE30000 B:0CE38000 C:0CE40000 D:0CE48000 E:0CE50000 F:0CE58000) do call :dcslot %1 %XX% %%s || exit /b 1
+exit /b 0
+:dcslot
+rem %3 is the slot's letter and address; a module with no constants or no work has no C or B to
+rem place (lnk's 121)
+for /f "tokens=1,2 delims=:" %%a in ("%3") do (set SLOT=%%a& set AT=%%b)
+set F=build\ovl\S_PL%2%SLOT%
+if exist %F%.BIN del %F%.BIN
+"%SHC%\lnk.exe" build\ovl\%1.obj,build\ovl\dcsyms.obj -output=%F%.abs -elf -form=a -start=P,C,D,B(%AT%) -udfcheck >build\ovl\lnk.log 2>&1
+findstr /b /c:"**" build\ovl\lnk.log | findstr /v /c:" 121 " && exit /b 1
+"%SHC%\elf2bin.exe" %F%.abs %F%.BIN >nul 2>&1 || exit /b 1
+del %F%.abs
+exit /b 0
+:dcsha
+rem %1 is a SHA-1 from dcovl.sha1, %2 its file
+set P=%2
+set P=%P:/=\%
+certutil -hashfile %P% SHA1 | findstr /i /c:"%1" >nul || (echo %P% is not the disc's& set /a BAD+=1)
+exit /b 0
+
+:dcobj
+rem compile build\obj\dc\%1.obj from the first source that has it
+for %%d in (src\dc src) do for %%f in (%%d\%1.c %%d\%1.src) do if exist %%f (call :dcone %%f %%d & exit /b)
+for %%l in (src\dc\lib src\lib) do for /d %%d in (%%l\*) do for %%f in (%%d\%1.c %%d\%1.src) do if exist %%f (call :dcone %%f %%d & exit /b)
+echo no source for build\obj\dc\%1.obj
+exit /b 1
+:dcone
+if /i "%~x1"==".src" (
+	"%SHC%\asmsh.exe" %1 -object=build\obj\dc\%~n1.obj %AOPTS% >build\obj\dc\asm.log || (type build\obj\dc\asm.log & exit /b 1)
+	exit /b 0
+)
+set LIB=%2
+for %%l in ("%LIB%") do set LIBNAME=%%~nxl
+for %%l in ("%LIB%\..") do set LIBDIR=%%~nxl
+if exist %~dpn1.options goto dclib
+if /i "%LIBDIR%"=="lib" goto dclib
+set INC=include
+if /i "%LIBNAME%"=="dc" set INC=src\dc,include
+"%SHC%\shc.exe" %1 %DCOPTS% -include=%INC% -object=build\obj\dc\%~n1.obj >build\obj\dc\shc.log 2>&1 || (type build\obj\dc\shc.log & exit /b 1)
+findstr /c:") : " build\obj\dc\shc.log
+exit /b 0
+:dclib
+rem Sega's: the disc's options for it in src\dc\lib, the module's, its folder's, or else its library's
+rem in src\lib, and the headers of both folders; one with inline assembler is compiled to assembler
+rem source and assembled
+set OPTS=src\lib\%LIBNAME%\options
+if exist %LIB%\options set OPTS=%LIB%\options
+if exist %~dpn1.options set OPTS=%~dpn1.options
+if exist src\dc\lib\%LIBNAME%\%~n1.options set OPTS=src\dc\lib\%LIBNAME%\%~n1.options
+set /p OPTS=<%OPTS%
+set INC=%LIB%
+if exist src\lib\%LIBNAME% if /i not "%LIB%"=="src\lib\%LIBNAME%" set INC=%LIB%,src\lib\%LIBNAME%
+findstr /c:"#pragma inline_asm" %1 >nul && goto dclibasm
+"%SHC%\shc.exe" %1 %OPTS% -include=%INC%,include,build\orig -object=build\obj\dc\%~n1.obj >build\obj\dc\shc.log 2>&1 || (type build\obj\dc\shc.log & exit /b 1)
+findstr /c:") : " build\obj\dc\shc.log
+exit /b 0
+:dclibasm
+"%SHC%\shc.exe" %1 %OPTS% -code=asmcode -include=%INC%,include,build\orig -object=build\tmp\%~n1.src >build\obj\dc\shc.log 2>&1 || (type build\obj\dc\shc.log & exit /b 1)
+"%SHC%\asmsh.exe" build\tmp\%~n1.src -object=build\obj\dc\%~n1.obj %AOPTS% >build\obj\dc\asm.log || (type build\obj\dc\asm.log & exit /b 1)
 exit /b 0
 
 :fail

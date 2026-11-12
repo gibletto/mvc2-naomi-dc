@@ -19,6 +19,9 @@ extern Sint8 gauge_combo_tbl[];	/* the gauge rate by hits taken */
 extern Sint8 stun_rnd_tbl[];	/* the stun's random part */
 extern Uint8 damage_level_tbl[];	/* the damage rate by the test menu's level */
 extern Uint8 cpu_atck_rate_tbl[];	/* the computer's attack rate by its level */
+#ifdef TARGET_DC
+extern Uint8 handicap_tbl[];	/* the damage rate by the attacker's handicap */
+#endif
 extern Uint8 cpu_def_rate_tbl[];	/* the computer's defence rate by its level */
 extern Uint8 dm_hit_rate_tbl[][20];	/* the damage rate by the hits in a combo */
 extern Sint16 vital_rate_tbl[][2];	/* the damage rate by the vital left */
@@ -42,6 +45,9 @@ extern void pl_tlocal_init( PLAYER_WORK *pl_w );
 static void dm_data_set( PLAYER_WORK *dm_w, PLAYER_WORK *at_w );
 static Sint16 dm_calc( PLAYER_WORK *dm_w, PLAYER_WORK *at_w, HIT_DATA *hd, Sint16 dmg );
 static Uint8 guard_ck( PLAYER_WORK *dm_w, PLAYER_WORK *at_w );
+#ifdef TARGET_DC
+static int dummy_guard_ck( PLAYER_WORK *dm_w, PLAYER_WORK *at_w );
+#endif
 static int auto_guard_ck( PLAYER_WORK *dm_w, PLAYER_WORK *at_w );
 static int guard_ng_ck( PLAYER_WORK *dm_w );
 static void armor_guard( PLAYER_WORK *dm_w, PLAYER_WORK *at_w );
@@ -196,6 +202,12 @@ void pl_damage( PLAYER_WORK *dm_w, PLAYER_WORK *at_w )
 		}
 	}
 	if( !dm_w->fly_flag && !( dm_w->armor_flag & ARMOR_HEAVY ) ){
+#ifdef TARGET_DC	/* the training's dummy, set to guard every hit */
+		if( Sys->dummy_guard == 2 && dummy_guard_ck( dm_w, at_w ) ){
+			guard_set( dm_w, at_w ) ;
+			if( dm_w->vital_new ) return ;
+		}
+#endif
 		if( ( pl_guard_ok( dm_w ) && guard_ck( dm_w, at_w ) ) || auto_guard_ck( dm_w, at_w ) ){
 			guard_set( dm_w, at_w ) ;
 			if( dm_w->vital_new ) return ;
@@ -262,6 +274,9 @@ armor:
 	}
 	if( dm_w->pl_stance != STANCE_DOWN ) pl_dir_set( dm_w ) ;
 	if( !( Rnd() & 1 ) ) dm_voice_req( dm_w ) ;
+#ifdef TARGET_DC	/* the training's dummy, set to guard after the first hit */
+	if( Sys->dummy_guard == 1 ) dm_w->auto_guard_timer = 63 ;
+#endif
 	if( dm_w->down_lift_flag ){
 		dm_w->down_lift_flag = 0 ;
 		dm_w->pl_stance = STANCE_STAND ;
@@ -305,13 +320,20 @@ static void dm_data_set( register PLAYER_WORK *dm_w, PLAYER_WORK *at_w )
 	if( vs_sys_work.vs_st == VS_FIGHT && dm_w->vital_new ){
 		dm_red_set( dm_w, &dmg ) ;
 		if( ( dm_w->vital_new -= dmg ) <= 0 ){
+#ifdef TARGET_DC	/* nobody is knocked out in the training */
+			if( !( hd->hit_flag & NO_KO ) && !Sys->no_ko_flag ) dm_ko_req( dm_w ) ;
+#else
 			if( !( hd->hit_flag & NO_KO ) ) dm_ko_req( dm_w ) ;
+#endif
 			else {
 				dm_w->vital_new = 1 ;
 				if( dm_w->vital_red <= 0 ) dm_w->vital_red = 1 ;
 			}
 		}
 		dm_vital_disp( dm_w, dmg ) ;
+#ifdef TARGET_DC
+		team_ko_set( dm_w ) ;
+#endif
 	}
 	dm_w->dm_guard_type = hd->atck_kind ;
 	dm_w->dm_recover_time = hd->sandbag_time ;
@@ -384,15 +406,15 @@ static Sint16 dm_calc( PLAYER_WORK *dm_w, PLAYER_WORK *at_w, HIT_DATA *hd, Sint1
 		if( dm_w->vital_new <= vital_rate_tbl[i][0] ) break ;
 	}
 	rate = vital_rate_tbl[i][1] / 32.0f ;
-	f = d * def * rate * ( damage_level_tbl[Sys->damage_level] / 32.0f ) ;
-dmg_min :
-	if( f < 1.0f ) f = 1.0f ;
+#ifdef TARGET_DC
+	if( ( f = d * def * rate * ( damage_level_tbl[Sys->damage_level] / 32.0f ) * ( handicap_tbl[at_w->handicap] / 32.0f ) ) < 1.0f ) f = 1.0f ;
+#else
+	if( ( f = d * def * rate * ( damage_level_tbl[Sys->damage_level] / 32.0f ) ) < 1.0f ) f = 1.0f ;
+#endif
 	if( dm_w->target_w->v_combi_cnt >= 2 ){
-		f *= 0.875f ;
-		if( f < 1.0f ) f = 1.0f ;
+		if( ( f *= 0.875f ) < 1.0f ) f = 1.0f ;
 	}
-	f *= 1.0f ;
-	if( f < 1.0f ) f = 1.0f ;
+	if( ( f *= 1.0f ) < 1.0f ) f = 1.0f ;
 	if( at_w->atck_pow ) f *= at_w->atck_pow / 32.0f ;
 	else if( at_w->atck_plus ) f *= at_w->atck_plus / 32.0f ;
 	if( dm_w->def_pow ) f *= dm_w->def_pow / 32.0f ;
@@ -428,6 +450,18 @@ static Uint8 guard_ck( PLAYER_WORK *dm_w, PLAYER_WORK *at_w )
 	guard_mark_set( dm_w, at_w ) ;
 	return 1 ;
 }
+
+#ifdef TARGET_DC
+/*==============================================================*/
+/*			Whether the training's dummy guards the hit			*/
+/*==============================================================*/
+static int dummy_guard_ck( PLAYER_WORK *dm_w, PLAYER_WORK *at_w )
+{
+	if( guard_ng_ck( dm_w ) ) return 0 ;
+	guard_mark_set( dm_w, at_w ) ;
+	return 1 ;
+}
+#endif
 
 /*==============================================================*/
 /*			Whether the player guards by itself					*/
@@ -571,6 +605,9 @@ static void gauge_add( PLAYER_WORK *pl_w, Sint16 no )
 	Sint16 g ;
 
 	if( !pl_w->routine_1 && pl_w->team_type == 3 && !pl_w->hit_box_no ) return ;
+#ifdef TARGET_DC	/* a home rule: the gauge fills at twice the rate */
+	if( Sys->gauge_double ) no *= 2 ;
+#endif
 	if( !no ) return ;
 	if( no > 0 ){
 		if( vs_sys_w->vs_st != VS_FIGHT ) return ;
@@ -991,24 +1028,37 @@ static void guard_ef_set( PLAYER_WORK *dm_w, PLAYER_WORK *at_w )
 	if( dm_w->pl_type == PL_ICEMAN && ( at_w->atck_flag & HIT_SHOT ) ) return ;
 	if( !( dmg = hd->damage ) ) return ;
 	if( !( ( Uint16 )at_w->atck_attr & ATR_CHIP ) && !( hd->atck_kind & 0xb0 ) ) return ;
-	em = dm_w->dm_at_w ;
-	if( !em ) em = dm_w->target_w ;
+	if( !( em = dm_w->dm_at_w ) ) em = dm_w->target_w ;
 	dmg = dm_calc( dm_w, em, hd, dmg ) ;
 	dmg = dmg / 8.0f ;
 	if( dmg < 1 ) dmg = 1 ;
+#ifdef TARGET_DC	/* a home rule: a guard takes no damage, or twice as much */
+	if( Sys->guard_dm_rule == 1 ) dmg = 0 ;
+	else if( Sys->guard_dm_rule == 2 ) dmg *= 2 ;
+#endif
 	if( !( hd->atck_kind & ( A_SPECIAL | A_HYPER ) ) && ( ( Uint16 )at_w->atck_attr & ATR_CHIP ) && dm_w->vital_new == 1 ) return ;
 	if( hd->hit_flag & NO_CHIP ) return ;
 	if( vs_sys_work.vs_st != VS_FIGHT || !dm_w->vital_new ) return ;
+#ifdef TARGET_DC	/* a home rule: no red vital */
+	if( Sys->red_vital_rule != 1 )
+#endif
 	if( ( dm_w->vital_red -= dmg ) <= 0 ) dm_w->vital_red = 0 ;
 	dm_w->combo_vital = dm_w->combo_damage = dm_w->vital_new ;
 	if( ( dm_w->vital_new -= dmg ) <= 0 ){
+#ifdef TARGET_DC
+		if( !( hd->hit_flag & NO_KO ) && !Sys->no_ko_flag ) dm_ko_req( dm_w ) ;
+#else
 		if( !( hd->hit_flag & NO_KO ) ) dm_ko_req( dm_w ) ;
+#endif
 		else {
 			dm_w->vital_new = 1 ;
 			if( dm_w->vital_red <= 0 ) dm_w->vital_red = 1 ;
 		}
 	}
 	dm_vital_disp( dm_w, dmg ) ;
+#ifdef TARGET_DC
+	team_ko_set( dm_w ) ;
+#endif
 }
 
 /*==============================================================*/
@@ -1988,9 +2038,29 @@ static void dm_red_set( PLAYER_WORK *dm_w, Sint16 *dmg )
 	Float red ;
 	Sint16 no ;
 
+#ifdef TARGET_DC	/* the home rules: a shared vital, or the red part none or all */
+	if( !*dmg ) return ;
+	if( Sys->share_vital ) red = *dmg ;
+	else {
+		switch( Sys->red_vital_rule ){
+		case 0 :
+			if( dm_w->team_no ) return ;
+			red = *dmg * 3 / 4.0f ;
+			if( red < 1.0f ) red = 1.0f ;
+			break ;
+		case 1 :
+			return ;
+			break ;
+		case 2 :
+			red = *dmg ;
+			break ;
+		}
+	}
+#else
 	if( !*dmg || dm_w->team_no ) return ;
 	red = *dmg * 3 / 4.0f ;
 	if( red < 1.0f ) red = 1.0f ;
+#endif
 	no = red ;
 	if( ( dm_w->vital_red -= no ) < 0 ) dm_w->vital_red = 0 ;
 	dm_w->vital_red_dm = no ;
@@ -2009,6 +2079,9 @@ void vital_add( PLAYER_WORK *pl_w, Sint16 no )
 				if( ( pl_w->vital_new += no ) > 144 ) pl_w->vital_new = 144 ;
 				if( pl_w->vital_new > pl_w->vital_red ) pl_w->vital_new = pl_w->vital_red ;
 			}
+#ifdef TARGET_DC
+			team_ko_set( pl_w ) ;
+#endif
 		}
 	}
 }
@@ -2028,6 +2101,9 @@ void vital_add_dmg( PLAYER_WORK *pl_w, Sint16 no )
 				if( ( pl_w->vital_new += no ) > 144 ) pl_w->vital_new = 144 ;
 				if( pl_w->vital_new > pl_w->vital_red ) pl_w->vital_new = pl_w->vital_red ;
 			}
+#ifdef TARGET_DC
+			team_ko_set( pl_w ) ;
+#endif
 		}
 	}
 }
@@ -2058,6 +2134,9 @@ void vital_add_dmg2( PLAYER_WORK *pl_w, Sint16 no )
 	vital_add( pl_w, no ) ;
 	if( pl_w->vital_new <= 0 ) pl_w->vital_new = pl_w->vital_red = 1 ;
 	dm_vital_disp( pl_w, no ) ;
+#ifdef TARGET_DC
+	team_ko_set( pl_w ) ;
+#endif
 }
 
 /****************************************************************/
@@ -2067,6 +2146,14 @@ void hold_damage( PLAYER_WORK *pl_w, Sint16 no )
 {
 	if( vs_sys_w->vs_st != VS_FIGHT || !pl_w->vital_new ) return ;
 	vital_add( pl_w, no ) ;
+#ifdef TARGET_DC	/* nobody is knocked out in the training */
+	if( pl_w->vital_new <= 0 ){
+		if( Sys->no_ko_flag ){
+			pl_w->vital_new = 1 ;
+			if( pl_w->vital_red <= 0 ) pl_w->vital_red = 1 ;
+		}
+	}
+#endif
 	if( pl_w->vital_new <= 0 && !pl_w->ko_flag ){
 		pl_w->ko_flag = 0xff ;
 		dm_ko_req( pl_w ) ;
@@ -2075,6 +2162,9 @@ void hold_damage( PLAYER_WORK *pl_w, Sint16 no )
 		pl_voice_req( pl_w, 0 ) ;
 	}
 	dm_vital_disp( pl_w, no ) ;
+#ifdef TARGET_DC
+	team_ko_set( pl_w ) ;
+#endif
 }
 
 /****************************************************************/
@@ -2124,6 +2214,12 @@ static void dm_ko_req( PLAYER_WORK *pl_w )
 		pl_w->armor_flag = 0 ;
 		pl_color_set( pl_w, 1 ) ;
 	}
+#ifdef TARGET_DC	/* a home rule: one character a side */
+	if( Sys->one_char ){
+		++ vs_sys_w->ko_cnt[pl_w->pl_no] ;
+		if( !pl_w->one_char_flag ) hyper_ef_set( pl_w, 3 ) ;
+	} else
+#endif
 	if( ++ vs_sys_w->ko_cnt[pl_w->pl_no] < 3 ) hyper_ef_set( pl_w, 3 ) ;
 	vib_req( pl_w->pl_no, 6 ) ;
 }
@@ -2152,7 +2248,11 @@ void vital_red_recover( void )
 	int i ;
 
 	if( vs_sys_w->game_stop || vs_sys_w->vs_st != VS_FIGHT ) return ;
+#ifdef TARGET_DC	/* the home rules: the red vital does not come back, or is shared */
+	else if( !Sys->red_vital_keep && !Sys->share_vital ){
+#else
 	else {
+#endif
 		for( i = 0 ; i < 6 ; i ++ ){
 			pl_w = &pl_work[i] ;
 			if( !pl_w->be_flag && pl_w->vital_new < pl_w->vital_red && !pl_w->vital_red_wait && -- pl_w->vital_red_cnt < 0 ){
@@ -2162,6 +2262,42 @@ void vital_red_recover( void )
 		}
 	}
 }
+
+#ifdef TARGET_DC
+/****************************************************************/
+/*			The training's vital fills again after a hit; a		*/
+/*			home rule drains it with time						*/
+/****************************************************************/
+void vital_drain_move( void )
+{
+	PLAYER_WORK *pl_w ;
+	int i ;
+
+	if( vs_sys_w->game_stop || vs_sys_w->vs_st != VS_FIGHT ) return ;
+	if( Sys->no_ko_flag ){
+		for( i = 0 ; i < 2 ; i ++ ){
+			pl_w = vs_sys_w->team_w[i][0] ;
+			if( pl_w->vital_fill_cnt && pl_w->be_flag && pl_w->routine_1 == PL_NORM && -- pl_w->vital_fill_cnt <= 0 ){
+				pl_w->vital_fill_cnt = 1 ;
+				if( ( pl_w->vital_new += 2 ) > 144 ) pl_w->vital_new = 144 ;
+				if( ( pl_w->vital_red += 2 ) > 144 ) pl_w->vital_red = 144 ;
+				team_ko_set( pl_w ) ;
+			}
+		}
+	}
+	if( Sys->vital_drain ){
+		for( i = 0 ; i < 2 ; i ++ ){
+			pl_w = vs_sys_w->team_w[i][0] ;
+			if( -- pl_w->drain_timer < 0 && pl_w->vital_new > 0 ){
+				pl_w->drain_timer = 100 ;
+				if( -- pl_w->vital_new < 1 ) pl_w->vital_new = 1 ;
+				if( -- pl_w->vital_red < 1 ) pl_w->vital_red = 1 ;
+				team_ko_set( pl_w ) ;
+			}
+		}
+	}
+}
+#endif
 
 /****************************************************************/
 /*			The point player's partners share its vital, and	*/
@@ -2220,9 +2356,17 @@ void team_ko_set( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void dm_vital_disp( PLAYER_WORK *pl_w, Sint16 dmg )
 {
+#ifdef TARGET_DC
+	if( dmg ){
+		pl_w->vital_dm = pl_w->combo_damage - pl_w->vital_new ;
+		pl_w->combo_damage = pl_w->vital_new ;
+	}
+	if( Sys->no_ko_flag ) pl_w->vital_fill_cnt = 50 ;	/* the training's vital fills again */
+#else
 	if( !dmg ) return ;
 	pl_w->vital_dm = pl_w->combo_damage - pl_w->vital_new ;
 	pl_w->combo_damage = pl_w->vital_new ;
+#endif
 }
 
 /****************************************************************/

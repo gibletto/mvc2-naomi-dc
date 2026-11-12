@@ -43,6 +43,16 @@ static void set03_03_ring_set( PLAYER_WORK *pl_w, int no )
 		ew->fade.r = set03_03_col_tbl[no].x ;
 		ew->fade.g = set03_03_col_tbl[no].y ;
 		ew->fade.b = set03_03_col_tbl[no].z ;
+#ifdef TARGET_DC	/* paler in the stage's other look */
+		if( stage_no == 12 ){
+			ew->fade.r *= 0.2f ;
+			ew->fade.g *= 0.2f ;
+			ew->fade.b *= 0.2f ;
+			ew->fade.r += 0.45f ;
+			ew->fade.g += 0.55f ;
+			ew->fade.b += 0.6f ;
+		}
+#endif
 		ew->obj_flag = OBJ_POS | OBJ_ROT_X | OBJ_FADE | OBJ_BRIGHT ;
 		ew->base_mtx = &pl_w->obj_mtx ;
 	}

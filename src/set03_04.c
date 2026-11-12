@@ -24,9 +24,21 @@ static void set03_04_main( PLAYER_WORK *ew )
 	if( ew->timer1 >= 1080 ) ew->timer1 = 0 ;
 	ew->rot[0] = ( Sint32 )( nlSin( DEG_ANG( ew->timer0 / 2.0f + ew->type * 90 ) ) * 1310720.0f / 360.0f + 0.5f ) & 0xffff ;
 	ew->rot[2] = ( Sint32 )( nlCos( DEG_ANG( ew->timer0 / 2.0f + ew->type * 90 ) ) * 3932160.0f / 360.0f + 0.5f ) & 0xffff ;
+#ifdef TARGET_DC	/* the colour changes less in the stage's other look */
+	if( stage_no == 3 ){
+		ew->fade.r = 0.5f + 0.5f * nlSin( DEG_ANG( ew->timer1 / 3.0f ) ) ;
+		ew->fade.g = 0.5f + 0.5f * nlSin( DEG_ANG( ew->timer1 / 2.0f ) ) ;
+		ew->fade.b = 0.5f + 0.5f * nlSin( DEG_ANG( ew->timer1 / 1.0f ) ) ;
+	} else {
+		ew->fade.r = 0.5f + 0.1f * nlSin( DEG_ANG( ew->timer1 / 3.0f ) ) ;
+		ew->fade.g = 0.5f + 0.1f * nlSin( DEG_ANG( ew->timer1 / 2.0f ) ) ;
+		ew->fade.b = 0.5f + 0.1f * nlSin( DEG_ANG( ew->timer1 / 1.0f ) ) ;
+	}
+#else
 	ew->fade.r = 0.5f + 0.5f * nlSin( DEG_ANG( ew->timer1 / 3.0f ) ) ;
 	ew->fade.g = 0.5f + 0.5f * nlSin( DEG_ANG( ew->timer1 / 2.0f ) ) ;
 	ew->fade.b = 0.5f + 0.5f * nlSin( DEG_ANG( ew->timer1 / 1.0f ) ) ;
+#endif
 	ew->timer0 ++ ;
 	ew->timer1 ++ ;
 }

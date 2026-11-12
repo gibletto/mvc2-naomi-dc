@@ -158,6 +158,21 @@ static void ef06_c_hyper( PLAYER_WORK *ew ) ;
 /*==============================================================*/
 static void ef06_c_main( PLAYER_WORK *ew )
 {
+#ifdef TARGET_DC	/* under the home rule delay_hyper_free, a team hyper combo's flag chooses */
+	if( Sys->delay_hyper_free ){
+		if( vs_sys_work.team_hyper_flag ) ef06_c_hyper( ew ) ;
+		else ef06_c_back( ew ) ;
+	} else {
+		switch( Sys->hyper_bg & 15 ){
+		case 4:
+			ef06_c_hyper( ew ) ;
+			break ;
+		default:
+			ef06_c_back( ew ) ;
+			break ;
+		}
+	}
+#else
 	switch( Sys->hyper_bg & 15 ){
 	case 4:
 		ef06_c_hyper( ew ) ;
@@ -166,6 +181,7 @@ static void ef06_c_main( PLAYER_WORK *ew )
 		ef06_c_back( ew ) ;
 		break ;
 	}
+#endif
 }
 
 /*==============================================================*/

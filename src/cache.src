@@ -44,7 +44,8 @@ purge_line:
           nop
 
 ; the whole instruction cache dropped: CCR.ICI is set from the uncached mirror (P2) with
-; interrupts blocked
+; interrupts blocked. The Dreamcast program is linked at 8C000000, where the sum below wraps
+; to 2C000000, a cached mirror
 _icache_inv:
           stc       sr,r1
           mov.l     r1,@-r15

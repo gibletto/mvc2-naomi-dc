@@ -153,9 +153,12 @@ extern void nlaJumpTestMode( void ) ;
 extern void nlaPutLED( unsigned char led ) ;
 extern void nlaGetRTC( NLA_RTC_DATE *date ) ;
 
-/* the game's copies, which system.c takes at start-up and each frame */
+/* the game's copies, which system.c takes at start-up and each frame (on the disc work.h
+   declares them, after the home system's work) */
+#ifndef TARGET_DC
 extern NLA_SYSTEM_FLAG *sys_flag ;
 extern NLA_CREDIT_CONF *credit_conf ;
 extern NLA_CREDIT_INFO credit_info ;
+#endif
 
 #endif

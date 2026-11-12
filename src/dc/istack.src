@@ -1,0 +1,7 @@
+; istack: the stack that interrupts run on, 0x2000 bytes. The start-up's table gives its end
+; (_ISTACK_END), which main hands to nlSetIntrStack.
+
+          .SECTION  ISTACK,DATA,ALIGN=256
+          .RES.B    H'2000
+
+          .END

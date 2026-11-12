@@ -1,6 +1,6 @@
 ; nlPaletteWork: the palette buffer nlSetPaletteData fills, a word for each of 1024 entries.
 
-          .SECTION  BX,DATA,ALIGN=32
+          .SECTION  B$32,DATA,ALIGN=32
           .EXPORT   _PaletteBuffer_
 
 _PaletteBuffer_:
