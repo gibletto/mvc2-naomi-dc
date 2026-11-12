@@ -1,4 +1,4 @@
-# mvsc2-naomi-port
+# Ports
 
 A port of Marvel vs. Capcom 2, the NAOMI arcade game and the Dreamcast version, to PC and Nintendo 3DS,
 built on their decompilation, which is the rest of this repository. It is not an emulator: the decompiled

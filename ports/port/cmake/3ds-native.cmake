@@ -53,7 +53,7 @@ function(ctr_create_3dsx target title description icon)
         set(romfs "--romfs=${ARGV4}")
     endif()
     add_custom_command(TARGET ${target} POST_BUILD
-        COMMAND ${CTR_SMDHTOOL} --create ${title} ${description} "mvsc2-naomi-port" ${icon} ${smdh}
+        COMMAND ${CTR_SMDHTOOL} --create ${title} ${description} "mvc2-naomi-dc" ${icon} ${smdh}
         COMMAND ${CTR_3DSXTOOL} $<TARGET_FILE:${target}> ${CMAKE_CURRENT_BINARY_DIR}/${target}.3dsx --smdh=${smdh} ${romfs}
         COMMENT "Making ${target}.3dsx")
 endfunction()
@@ -68,7 +68,7 @@ function(ctr_create_cia target title description dir icon)
     set(bin ${CMAKE_CURRENT_BINARY_DIR})
     add_custom_command(OUTPUT ${bin}/${target}.cia
         COMMAND ${CTR_BANNERTOOL} makebanner -i ${dir}/banner.png -a ${dir}/banner.wav -o ${bin}/${target}.bnr
-        COMMAND ${CTR_BANNERTOOL} makesmdh -s ${title} -l ${description} -p "mvsc2-naomi-port"
+        COMMAND ${CTR_BANNERTOOL} makesmdh -s ${title} -l ${description} -p "mvc2-naomi-dc"
                 -i ${icon} -o ${bin}/${target}.cia.smdh
         COMMAND ${CTR_MAKEROM} -f cia -o ${bin}/${target}.cia -target t -exefslogo -elf $<TARGET_FILE:${target}>
                 -rsf ${dir}/${target}.rsf -icon ${bin}/${target}.cia.smdh -banner ${bin}/${target}.bnr ${ARGN}

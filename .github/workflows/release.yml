@@ -107,7 +107,7 @@ jobs:
           while IFS='|' read -r out title description mode; do
             title=${title//\"/} description=${description//\"/}
             ../tools-bin/bannertool makebanner -i port/ctr/cia/banner.png -a port/ctr/cia/banner.wav -o $out/mvc2.bnr
-            ../tools-bin/bannertool makesmdh -s "$title" -l "$description" -p "mvsc2-naomi-port" -i port/ctr/icon.png \
+            ../tools-bin/bannertool makesmdh -s "$title" -l "$description" -p "mvc2-naomi-dc" -i port/ctr/icon.png \
               -o $out/mvc2.cia.smdh
             # shellcheck disable=SC2086
             ../tools-bin/makerom -f cia -o $out/mvc2.cia -target t -exefslogo -elf $out/mvc2 -rsf port/ctr/cia/mvc2.rsf \
