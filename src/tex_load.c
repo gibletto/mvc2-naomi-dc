@@ -270,6 +270,7 @@ void obj_tex_unpack( int no, Sint16 *src, OBJ_FILE *of )
 	lz_unpack16( src, dst ) ;
 }
 
+#if ROM_BOARD != 2	/* the M2 board reads its model files to where they were built to sit */
 /****************************************************************/
 /*			Move a model file's pointers from where it was		*/
 /*			built to where it was loaded, with its textures'	*/
@@ -297,6 +298,7 @@ void obj_file_reloc( void *data, Uint8 *adrs )
 		thd ++ ;
 	}
 }
+#endif
 
 /****************************************************************/
 /*			Load the textures of a model file					*/
@@ -840,15 +842,17 @@ void sys_data_load( void )
 	for( i = 0 ; i < 100 ; i ++ ){
 #ifdef TARGET_DC
 		time = nlSysMetricsCpuPowerGet() ;
+#ifndef HOST_PORT	/* the texture memory, which a host build does not map */
 		memcpy( ( void * )TEX_ADRS, ( void * )0xc4200000, 0x1000 ) ;
+#endif
 		total += nlSysMetricsCpuPowerGet() - time ;
 #else
 		while( !nlaCheckWaitROMDMA() ) ;
 		rom_dma_flag = 1 ;
 		time = nlSysMetricsCpuPowerGet() ;
-		cache_purge( ( void * )0x0da00000, 0x800 ) ;
-		nlaReadROMDMA( 0x600000, ( char * )0x0da00000, 0x800, 0 ) ;
-		cache_inv( ( void * )0x0da00000, 0x800 ) ;
+		cache_purge( ( void * )EFKY_OBJ_ADRS, 0x800 ) ;
+		nlaReadROMDMA( 0x600000, ( char * )EFKY_OBJ_ADRS, 0x800, 0 ) ;
+		cache_inv( ( void * )EFKY_OBJ_ADRS, 0x800 ) ;
 		total += nlSysMetricsCpuPowerGet() - time ;
 		rom_dma_flag = 0 ;
 #endif
@@ -861,7 +865,9 @@ void sys_data_load( void )
 	pl_data_no_init( 1 ) ;
 #else
 	file_load( FILE_EFKYPOL, ( void * )EFKY_OBJ_ADRS, 0 ) ;
+#if ROM_BOARD != 2
 	obj_file_reloc( ( OBJ_FILE * )EFKY_OBJ_ADRS, ( Uint8 * )EFKY_TEX_ADRS ) ;
+#endif
 	file_load( FILE_TEX( FILE_EFKYPOL ), ( void * )EFKY_TEX_ADRS, 0 ) ;
 	file_load( FILE_DM00POL, ( void * )DM00_OBJ_ADRS, 0 ) ;
 	file_load( FILE_TEX( FILE_DM00POL ), ( void * )DM00_TEX_ADRS, 0 ) ;
@@ -874,7 +880,9 @@ void sys_data_load( void )
 	file_load( FILE_DM06POL, ( void * )DM06_OBJ_ADRS, 0 ) ;
 	file_load( FILE_TEX( FILE_DM06POL ), ( void * )DM06_TEX_ADRS, 0 ) ;
 	file_load( FILE_DM07POL, ( void * )DM07_OBJ_ADRS, 0 ) ;
+#if ROM_BOARD != 2
 	obj_file_reloc( ( OBJ_FILE * )DM07_OBJ_ADRS, ( Uint8 * )DM07_TEX_ADRS ) ;
+#endif
 	file_load( FILE_TEX( FILE_DM07POL ), ( void * )DM07_TEX_ADRS, 0 ) ;
 	file_load( FILE_DM08POL, ( void * )DM08_OBJ_ADRS, 0 ) ;
 	file_load( FILE_TEX( FILE_DM08POL ), ( void * )DM08_TEX_ADRS, 0 ) ;

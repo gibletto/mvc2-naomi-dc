@@ -1,4 +1,5 @@
-# Marvel vs. Capcom 2 (NAOMI) - the program ROM, epr-23085a.ic11 (same steps as build.bat)
+# Marvel vs. Capcom 2 (NAOMI) - the program ROM, epr-23085a.ic11 (same steps as build.bat);
+# make us builds the US set's, epr-23062a.ic22, and make dc the Dreamcast's.
 # Set SHC to the bin folder of Hitachi SHC 5.1 Release 08 and SDK_LIBS to the SDK's library
 # folders (see README.md, Building).
 PYTHON ?= python
@@ -10,12 +11,12 @@ $(error set SDK_LIBS to the SDK library folders, separated by ;)
 endif
 export SHC_LIB = $(SHC)
 
-# Capcom's options, from the response file left in the ROM padding (README.md), and the program's
-# own date, which the source asks for where a later build differs
+# Capcom's options, from the response file left in the ROM padding (README.md), the program's own
+# date, which the source asks for where a later build differs, and its ROM board (the M1)
 COPTS = -cpu=sh4 -endian=little -fpu=single -round=nearest -macsave=0 -pic=0 -optimize=1 -size \
-	-string=const -extra=a=400 -define=_STRICT_UNION_,__DEV_TYPE_DC__,BUILD_DATE=20000225
+	-string=const -extra=a=400 -define=_STRICT_UNION_,__DEV_TYPE_DC__,BUILD_DATE=20000225,ROM_BOARD=1
 CFLAGS = $(COPTS) -include=include
-AFLAGS = -cpu=sh4 -endian=little
+AFLAGS = -cpu=sh4 -endian=little -define=ROM_BOARD=1
 
 # the link order is mvc2.sub's
 SRCS = $(wildcard src/*.c src/*.src)
@@ -45,18 +46,20 @@ build/obj/%.obj: src/%.c | build/obj
 		-object=$(call win,$@) >$(@:.obj=.log) 2>&1; r=$$?; rm -rf build/tmp/$*; \
 		grep ') : ' $(@:.obj=.log); rm -f $(@:.obj=.log); [ $$r = 0 ]
 
+# a library module: its source, its folder for SHC's temporary files, whether it has inline
+# assembler, the folder of its object and the one that has nla6149.h
 define LIBRARY
-build/obj/$(basename $(notdir $1)).obj: $1 $(or $(wildcard $(1:.c=.options)),$(dir $1)options) $(wildcard $(dir $1)*.h) | build/obj
+$4/$(basename $(notdir $1)).obj: $1 $(or $(wildcard $(1:.c=.options)),$(dir $1)options) $(wildcard $(dir $1)*.h) | $4
 	@echo $$<
 	@mkdir -p build/tmp/$2; SHC_TMP='build\tmp\$2' "$$(SHC)/shc.exe" $$(call win,$$<) $$(shell cat $(or $(wildcard $(1:.c=.options)),$(dir $1)options)) \
-		-include=$$(call win,$(dir $1)),include,'build\orig' $(if $3,-code=asmcode -object='build\tmp\$2\$2.src',-object=$$(call win,$$@)) \
+		-include=$$(call win,$(dir $1)),include,$$(call win,$5) $(if $3,-code=asmcode -object='build\tmp\$2\$2.src',-object=$$(call win,$$@)) \
 		>$$(@:.obj=.log) 2>&1; r=$$$$?; \
 		$(if $3,[ $$$$r = 0 ] && { "$$(SHC)/asmsh.exe" 'build\tmp\$2\$2.src' -object=$$(call win,$$@) $$(AFLAGS) >>$$(@:.obj=.log); r=$$$$?; };) \
 		rm -rf build/tmp/$2; grep ') : \|(E)' $$(@:.obj=.log); rm -f $$(@:.obj=.log); [ $$$$r = 0 ]
 endef
-# a module with inline assembler (the third argument) is compiled to assembler source and assembled,
-# as Sega's makefiles did
-$(foreach s,$(LIBSRCS),$(eval $(call LIBRARY,$s,$(basename $(notdir $s)),$(shell grep -l 'pragma inline_asm' $s))))
+# a module with inline assembler is compiled to assembler source and assembled, as Sega's makefiles did
+INLINEASM := $(shell grep -l 'pragma inline_asm' $(LIBSRCS))
+$(foreach s,$(LIBSRCS),$(eval $(call LIBRARY,$s,$(basename $(notdir $s)),$(filter $s,$(INLINEASM)),build/obj,build/orig)))
 
 # Sega's assembler modules
 vpath %.src $(sort $(dir $(LIBASMS)))
@@ -167,12 +170,103 @@ rom: $(ROM)
 	@echo "$(ROM_SHA1) *$(ROM)" | sha1sum -c - >/dev/null 2>&1 && echo "$(ROM) is the arcade's: SHA-1 $(ROM_SHA1)" \
 		|| { echo "$(ROM) is not the arcade's"; exit 1; }
 
+# The US set's program ROM, build/epr-23062a.ic22 (make us), for the M2 board. Every object is
+# compiled again into build/obj/us (the test program's own into build/obj/ustest), with the set's
+# BUILD_DATE and ROM_BOARD=2, and mvc2u.sub and mvc2utest.sub link them. The ROM is laid out as the
+# export's, but at 0x340000 it has six of the scenes' model files, which the game reads, and the
+# test program's holes are at other places; both are cut from your US ROM in rom/.
+USOPTS = $(subst BUILD_DATE=20000225$(comma)ROM_BOARD=1,BUILD_DATE=20000217$(comma)ROM_BOARD=2,$(COPTS))
+USAFLAGS = $(subst ROM_BOARD=1,ROM_BOARD=2,$(AFLAGS))
+US_ROM = build/epr-23062a.ic22
+US_SHA1 = 877ba02c92082567280afcb1ae40b3bbfc8a63e8
+US_HOLES = build/orig/us/hole_3E6C00.bin build/orig/us/hole_3E9000.bin build/orig/us/hole_3F5400.bin
+US_FROM_ROM = build/orig/us/data_340000.bin $(US_HOLES) build/orig/us/nla6149.h
+USOBJS = $(patsubst src/%,build/obj/us/%.obj,$(basename $(SRCS))) \
+	$(patsubst %,build/obj/us/%.obj,$(basename $(notdir $(LIBSRCS) $(LIBASMS))))
+USTESTOBJS = $(patsubst src/test/%,build/obj/ustest/%.obj,$(basename $(TESTSRCS)))
+
+build/orig/us/data_340000.bin:
+	$(PYTHON) tools/mvc2rom.py --us rom build/orig/us
+$(filter-out build/orig/us/data_340000.bin,$(US_FROM_ROM)): build/orig/us/data_340000.bin
+build/obj/us/nlam.obj: build/orig/us/nla6149.h
+
+build/obj/us/%.obj: src/%.c | build/obj/us
+	@echo $<
+	@mkdir -p build/tmp/us_$*; SHC_TMP='build\tmp\us_$*' "$(SHC)/shc.exe" $(call win,$<) $(USOPTS) -include=include \
+		-object=$(call win,$@) >$(@:.obj=.log) 2>&1; r=$$?; rm -rf build/tmp/us_$*; \
+		grep ') : ' $(@:.obj=.log); rm -f $(@:.obj=.log); [ $$r = 0 ]
+
+$(foreach s,$(LIBSRCS),$(eval $(call LIBRARY,$s,us_$(basename $(notdir $s)),$(filter $s,$(INLINEASM)),build/obj/us,build/orig/us)))
+
+build/obj/us/%.obj: %.src | build/obj/us
+	@echo $<
+	@"$(SHC)/asmsh.exe" $(call win,$<) -object=$(call win,$@) $(USAFLAGS) >$(@:.obj=.log); r=$$?; \
+		grep '(E)\|(W)' $(@:.obj=.log); rm -f $(@:.obj=.log); [ $$r = 0 ]
+
+build/obj/us/%.obj: src/%.src | build/obj/us
+	@echo $<
+	@"$(SHC)/asmsh.exe" $(call win,$<) -object=$(call win,$@) $(USAFLAGS) >$(@:.obj=.log); r=$$?; \
+		grep '(E)\|(W)' $(@:.obj=.log); rm -f $(@:.obj=.log); [ $$r = 0 ]
+
+build/obj/ustest/%.obj: src/test/%.c | build/obj/ustest
+	@echo $<
+	@mkdir -p build/tmp/ustest_$*; SHC_TMP='build\tmp\ustest_$*' "$(SHC)/shc.exe" $(call win,$<) $(USOPTS) \
+		-include='src\test',include -object=$(call win,$@) >$(@:.obj=.log) 2>&1; r=$$?; rm -rf build/tmp/ustest_$*; \
+		grep ') : ' $(@:.obj=.log); rm -f $(@:.obj=.log); [ $$r = 0 ]
+
+build/obj/ustest/%.obj: src/test/%.src | build/obj/ustest
+	@echo $<
+	@"$(SHC)/asmsh.exe" $(call win,$<) -object=$(call win,$@) $(AFLAGS) >$(@:.obj=.log); r=$$?; \
+		grep '(E)\|(W)' $(@:.obj=.log); rm -f $(@:.obj=.log); [ $$r = 0 ]
+
+$(USOBJS) $(USTESTOBJS): $(wildcard include/*.h)
+$(USTESTOBJS): $(wildcard src/test/*.h)
+
+build/obj/us build/obj/ustest:
+	mkdir -p $@
+
+build/sdk/uslibs: mvc2u.sub mvc2utest.sub
+	@n=0; printf '%s\n' '$(SDK_LIBS)' | tr ';' '\n' | while read -r d; do n=$$((n + 1)); mkdir -p build/sdk/$$n; \
+		for f in $$(grep -oh "sdk.$$n.[a-z0-9_]*[.][a-z]*" mvc2u.sub mvc2utest.sub | sort -u | sed 's/sdk.[0-9]*.//'); do \
+			cp "$$d/$$f" build/sdk/$$n/ || exit 1; done; done
+	@touch $@
+
+build/mvc2u.abs: $(USOBJS) build/sdk/uslibs mvc2u.sub
+	"$(SHC)/lnk.exe" -subcommand=mvc2u.sub >build/lnkus.log 2>&1; r=$$?; grep '^[*][*]' build/lnkus.log; [ $$r = 0 ]
+
+build/mvc2u.bin: build/mvc2u.abs
+	rm -f $@; cd build && "$(SHC)/elf2bin.exe" -b ff -s 0C020000 mvc2u.abs mvc2u.bin >mvc2u.log 2>&1
+
+build/mvc2utest.abs: $(USOBJS) $(USTESTOBJS) build/sdk/uslibs mvc2utest.sub
+	"$(SHC)/lnk.exe" -subcommand=mvc2utest.sub >build/lnkustest.log 2>&1; r=$$?; grep '^[*][*]' build/lnkustest.log; [ $$r = 0 ]
+
+build/mvc2utest.bin: build/mvc2utest.abs $(US_HOLES)
+	cd build && rm -f utest1.bin utest2.bin utest3.bin utest4.bin && \
+		$(ELF2BIN) -b ff -s 0C020000 -e 0C046C00 mvc2utest.abs utest1.bin >ufill.log 2>&1 && \
+		$(ELF2BIN) -b ff -s 0C048800 -e 0C049000 mvc2utest.abs utest2.bin >>ufill.log 2>&1 && \
+		$(ELF2BIN) -b ff -s 0C04AC00 -e 0C055400 mvc2utest.abs utest3.bin >>ufill.log 2>&1 && \
+		$(ELF2BIN) -b ff -s 0C055C00 mvc2utest.abs utest4.bin >>ufill.log 2>&1
+	cat build/utest1.bin build/orig/us/hole_3E6C00.bin build/utest2.bin build/orig/us/hole_3E9000.bin \
+		build/utest3.bin build/orig/us/hole_3F5400.bin build/utest4.bin >$@
+
+$(US_ROM): build/mvc2u.bin build/mvc2utest.bin build/fill.abs build/chardata.bin build/orig/us/data_340000.bin
+	cd build && rm -f ufill.bin utail.bin && \
+		$(ELF2BIN) -s 0 -e $$(printf %X $$((0x250000 - $$(wc -c <mvc2u.bin)))) fill.abs ufill.bin >>ufill.log 2>&1 && \
+		$(ELF2BIN) -s 0 -e $$(printf %X $$((0x40000 - $$(wc -c <mvc2utest.bin)))) fill.abs utail.bin >>ufill.log 2>&1
+	cat build/mvc2u.bin build/ufill.bin build/chardata.bin build/orig/us/data_340000.bin build/mvc2utest.bin \
+		build/utail.bin >$@
+
+us: $(US_ROM)
+	@echo "$(US_SHA1) *$(US_ROM)" | sha1sum -c - >/dev/null 2>&1 \
+		&& echo "$(US_ROM) is the US arcade's (mvsc2u): SHA-1 $(US_SHA1)" \
+		|| { echo "$(US_ROM) is not the US arcade's"; exit 1; }
+
 # The Dreamcast program, 1ST_READ.BIN of the USA disc (make dc). SDK_LIBS has two more folders
 # (README.md). Each object that mvc2dc.sub links is compiled from the first of src/dc, src,
-# src/dc/lib and src/lib that has it, with the switches TARGET_DC and the disc's BUILD_DATE.
+# src/dc/lib and src/lib that has it, with the switches TARGET_DC, the disc's BUILD_DATE and ROM_BOARD=0.
 # It also builds the characters' files (dcovl, below).
 comma := ,
-DCOPTS = $(subst BUILD_DATE=20000225,TARGET_DC$(comma)BUILD_DATE=20000529,$(COPTS))
+DCOPTS = $(subst BUILD_DATE=20000225$(comma)ROM_BOARD=1,TARGET_DC$(comma)BUILD_DATE=20000529$(comma)ROM_BOARD=0,$(COPTS))
 DC_SHA1 = b0c3604e3494b12f751793a74fc9b494ed67a30c
 DCNAMES = $(shell tr -d '\r' <mvc2dc.sub | sed -n 's/^input build.obj.dc.\(.*\)\.obj$$/\1/p')
 DCOBJS = $(patsubst %,build/obj/dc/%.obj,$(DCNAMES))
@@ -270,6 +364,8 @@ clean:
 	rm -rf build/obj build/data build/chardata.bin build/sdk/libs build/sdk/[1-9] build/tmp build/mvc2.abs build/mvc2.map \
 		build/mvc2.bin build/lnk.log build/mvc2test.abs build/mvc2test.map build/mvc2test.bin \
 		build/lnktest.log build/mvc2.log build/test?.bin build/tail.bin build/fill.* $(FROM_ROM) $(ROM) \
-		build/sdk/dclibs build/linkdc build/mvc2dc.abs build/mvc2dc.map build/mvc2dc.bin build/mvc2dc.FSY build/mvc2dc.log build/lnkdc.log build/ovl
+		build/sdk/dclibs build/linkdc build/mvc2dc.abs build/mvc2dc.map build/mvc2dc.bin build/mvc2dc.FSY build/mvc2dc.log build/lnkdc.log build/ovl \
+		build/sdk/uslibs build/mvc2u.abs build/mvc2u.map build/mvc2u.bin build/mvc2u.log build/lnkus.log build/mvc2utest.abs \
+		build/mvc2utest.map build/mvc2utest.bin build/lnkustest.log build/utest?.bin build/ufill.* build/utail.bin $(US_FROM_ROM) $(US_ROM)
 
-.PHONY: all clean rom dc dcovl
+.PHONY: all clean rom us dc dcovl

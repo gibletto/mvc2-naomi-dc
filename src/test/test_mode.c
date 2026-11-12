@@ -42,14 +42,23 @@ extern TEST_MES config_mes[] ;
 extern TEST_MES help_mes[] ;
 extern TEST_MES rom_mes[] ;
 
+/* the menu's last line, EXIT: the M1 board's menu has its ROM board test before it */
+#if ROM_BOARD == 2
+#define MENU_EXIT	3
+#else
+#define MENU_EXIT	4
+#endif
+
 static int set_change ;		/* the settings are not the country's own */
 static SYS_SET set_work ;	/* the settings while the menu changes them */
 static SW_WORK test_sw ;	/* the board's switches, with the I/O board's test and service */
 static int cmd_end ;		/* a key command is done: 1 entered, -1 missed */
 static int cmd_cnt ;		/* the keys of it entered */
+#if ROM_BOARD != 2	/* the M1 board's ROM test */
 static Uint16 rom_sum_byte[16] ;	/* each ROM's sums */
 static Uint16 rom_sum_word[16] ;
 static Uint8 rom_ck_flag[16] ;		/* and whether it has been summed */
+#endif
 static int unk_0C0E3B64[2] ;		/* nothing uses it */
 
 static void test_init( void ) ;
@@ -85,8 +94,10 @@ static void level_disp( int lv, int now, int max ) ;
 static void test_exit( void ) ;
 static void sys_set_read( SYS_SET *set ) ;
 static void sys_set_write( SYS_SET *set ) ;
+#if ROM_BOARD != 2
 static void rom_sum_disp( void ) ;
 static void rom_test( void ) ;
+#endif
 
 /* the settings, copied a member at a time */
 #define SYS_SET_COPY( dst, src )	\
@@ -117,6 +128,7 @@ static const Uint16 key_cmd_4[2][6] = {
 	{ KEY_HP, KEY_LK, KEY_A1, KEY_LP, KEY_A2, KEY_LP },
 } ;
 
+#if ROM_BOARD != 2
 /* the sums of the ROM board's ROMs, IC17 to IC32 */
 static const ROM_SUM rom_sum_tbl[16] = {
 	{ 0x363a, 0xa972 }, { 0x77d4, 0x7bdf }, { 0xa662, 0x1791 }, { 0x862a, 0xdafd },
@@ -124,6 +136,7 @@ static const ROM_SUM rom_sum_tbl[16] = {
 	{ 0x448f, 0x94a9 }, { 0x1c8e, 0xdf93 }, { 0x7404, 0x5519 }, { 0x0a49, 0xe1f3 },
 	{ 0xbc98, 0x5bc3 }, { 0x60e5, 0xc4cd }, { 0xe629, 0xefb2 }, { 0x7c8d, 0x0d62 },
 } ;
+#endif
 
 /*==============================================================*/
 /*			Print a list of lines								*/
@@ -250,10 +263,12 @@ static void test_menu( void )
 		case 2 :
 			game_config() ;
 			break ;
+#if ROM_BOARD != 2
 		case 3 :
 			rom_test() ;
 			break ;
-		case 4 :
+#endif
+		case MENU_EXIT :
 			test_exit() ;
 			break ;
 		}
@@ -268,15 +283,15 @@ static void menu_main( void )
 {
 	if( sw_work[0].on & KEY_UP ){
 		Sys->timer1 -- ;
-		if( Sys->timer1 < 0 ) Sys->timer1 = 4 ;
+		if( Sys->timer1 < 0 ) Sys->timer1 = MENU_EXIT ;
 	}
 	if( sw_work[0].on & KEY_DOWN ){
 		Sys->timer1 ++ ;
-		if( Sys->timer1 > 4 ) Sys->timer1 = 0 ;
+		if( Sys->timer1 > MENU_EXIT ) Sys->timer1 = 0 ;
 	}
 	if( test_sw.on & TEST_SW_SERVICE ){
 		Sys->timer1 ++ ;
-		if( Sys->timer1 > 4 ) Sys->timer1 = 0 ;
+		if( Sys->timer1 > MENU_EXIT ) Sys->timer1 = 0 ;
 	}
 	if( ( sw_work[0].on & KEY_LP ) || ( test_sw.on & TEST_SW_TEST ) ){
 		Sys->task_step = 1 ;
@@ -294,10 +309,12 @@ static void menu_main( void )
 	case 2 :
 		mes_disp( &help_mes[11] ) ;
 		break ;
+#if ROM_BOARD != 2
 	case 3 :
 		mes_disp( &help_mes[11] ) ;
 		break ;
-	case 4 :
+#endif
+	case MENU_EXIT :
 		mes_disp( &help_mes[14] ) ;
 		break ;
 	}
@@ -1176,6 +1193,7 @@ static void sys_set_write( SYS_SET *set )
 	SYS_SET_COPY( &sys_set, set )
 }
 
+#if ROM_BOARD != 2
 /*==============================================================*/
 /*			The ROM board test's list: each ROM's sums, once	*/
 /*			it has been read, and whether they are right		*/
@@ -1274,14 +1292,19 @@ static void rom_test( void )
 		break ;
 	}
 }
+#endif
 
 TEST_MES menu_mes[] = {
 	{ 13, 2, COL_WHITE, "GAME TEST MODE" },
 	{ 15, 6, COL_WHITE, "INPUT TEST" },
 	{ 15, 8, COL_WHITE, "GAME DATA" },
 	{ 15, 10, COL_WHITE, "GAME CONFIGURATION" },
+#if ROM_BOARD == 2
+	{ 15, 12, COL_WHITE, "EXIT" },
+#else
 	{ 15, 12, COL_WHITE, "ROM BOARD TEST" },
 	{ 15, 14, COL_WHITE, "EXIT" },
+#endif
 	{ -1 },
 } ;
 
@@ -1350,6 +1373,7 @@ TEST_MES help_mes[] = {
 	{ -1 },
 } ;
 
+#if ROM_BOARD != 2
 TEST_MES rom_mes[] = {
 	{ 7, 2, COL_WHITE, "R O M  B O R A D  T E S T" },
 	{ 7, 5, COL_WHITE, "NO.  TYPE RESULT BYTE WORD" },
@@ -1371,3 +1395,4 @@ TEST_MES rom_mes[] = {
 	{ 7, 21, COL_WHITE, "IC32 64M" },
 	{ -1 },
 } ;
+#endif

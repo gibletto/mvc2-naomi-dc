@@ -22,7 +22,8 @@ The ROM holds two programs, the game and the operator's test menu, and the fight
 (moves, hit boxes, the computer's play). All of that is built from this source. The pictures, models and sound
 are in the cartridge's other ROMs and are not part of this.
 
-The same source also builds the Dreamcast version, from the USA disc (see The Dreamcast version below).
+The same source also builds the US cartridge's program ROM and the Dreamcast version from the USA disc (see
+The US arcade version and The Dreamcast version below).
 
 For a tour of how the game itself works (the frame loop, inputs, special moves, hit boxes, damage), read
 `docs/HOW_THE_GAME_WORKS.md`.
@@ -61,6 +62,21 @@ A few things are not in this source, so the build cuts them from your ROM first 
 No other version of the compiler or the libraries will do. Sega's libraries are part of the program, and most of
 their modules are linked straight from `libwin.zip`. The modules that the zip only has in a later version than the
 one Capcom linked are built from `src/lib`.
+
+## The US arcade version
+
+The same source also builds the US cartridge's program ROM (MAME set `mvsc2u`):
+
+    epr-23062a.ic22   4,194,304 bytes   sha1 877ba02c92082567280afcb1ae40b3bbfc8a63e8
+
+The game is the same. What differs is the cartridge: the US one is Sega's M2 ROM board, and the export one
+above is the M1 board, which reads its data differently. So the routines that read files from the ROM
+(`src/am_load.c`, `src/tex_load.c`), the test menu's ROM board test, and the ROM's head differ, and say so with
+`#if ROM_BOARD == 2`.
+
+Put your `epr-23062a.ic22` (or the whole `mvsc2u.zip`) in `rom/` and run `build.bat us` (or `make us`), with
+the same `SHC` and `SDK_LIBS` as the arcade build. The build writes `build/epr-23062a.ic22` and checks its SHA-1.
+As for the export ROM, it first cuts the same kinds of pieces from your ROM.
 
 ## The Dreamcast version
 
@@ -119,7 +135,8 @@ Things that were learned on the way:
     data/          the characters' fighting data
     include/       headers; player.h includes the shared ones (pl_work.h has PLAYER_WORK)
     docs/          HOW_THE_GAME_WORKS.md: a tour of the game's code
-    mvc2.sub       link order and section addresses (mvc2test.sub for the test menu, mvc2dc.sub for the Dreamcast)
+    mvc2.sub       link order and section addresses (mvc2test.sub for the test menu, mvc2u.sub and
+                   mvc2utest.sub for the US cartridge, mvc2dc.sub for the Dreamcast)
     dcovl.sha1     the SHA-1s of the Dreamcast's characters' files
     functions.tsv  every routine of the game program: arcade address, size, name, file
     tools/         mvc2rom.py: reads your ROM; chrpack.py: packs the characters' data

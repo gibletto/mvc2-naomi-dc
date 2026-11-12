@@ -108,7 +108,13 @@
 
 /* where a file is read to */
 #define TEX_ADRS		0x0cc00000	/* any file about to be unpacked */
+#if ROM_BOARD == 2
+#define LZ_FILE_ADRS	0x0de00000	/* the M2 board's packed files, as read */
+#define PFSB_FILE_ADRS	0x0df80000	/* and its coded ones */
+#define EFKY_OBJ_ADRS	0x0d000000
+#else
 #define EFKY_OBJ_ADRS	0x0da00000
+#endif
 #define EFKY_TEX_ADRS	0x0d026000
 #define STG_OBJ_ADRS	0x0d82d000
 #define DM00_OBJ_ADRS	0x0d082000
@@ -123,7 +129,11 @@
 #define DM05_TEX_ADRS	0x0d7d7000
 #define DM06_OBJ_ADRS	0x0d2bb000
 #define DM06_TEX_ADRS	0x0d2e9000
+#if ROM_BOARD == 2
+#define DM07_OBJ_ADRS	0x0d3a2000
+#else
 #define DM07_OBJ_ADRS	0x0da28000
+#endif
 #define DM07_TEX_ADRS	0x0d3ce000
 #define DM08_OBJ_ADRS	0x0d4ce000
 #define DM08_TEX_ADRS	0x0d4f5000

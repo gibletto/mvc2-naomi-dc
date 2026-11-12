@@ -2,49 +2,85 @@
 setlocal
 pushd "%~dp0"
 rem Marvel vs. Capcom 2 (NAOMI) - the program ROM, epr-23085a.ic11 (same steps as the Makefile);
-rem build.bat dc builds the Dreamcast program instead
+rem build.bat us builds the US set's, epr-23062a.ic22, and build.bat dc the Dreamcast program
 rem Set SHC to the bin folder of Hitachi SHC 5.1 Release 08 and SDK_LIBS to the SDK's library
 rem folders (see README.md, Building).
 if "%SHC%"=="" echo set SHC to the folder of SHC 5.1 Release 08& goto fail
 if "%SDK_LIBS%"=="" echo set SDK_LIBS to the SDK library folders, separated by ;& goto fail
 set SHC_LIB=%SHC%
 set SHC_TMP=build\tmp
-rem Capcom's options, from the response file left in the ROM padding (README.md), and the program's
-rem own date, which the source asks for where a later build differs
-set COPTS=-cpu=sh4 -endian=little -fpu=single -round=nearest -macsave=0 -pic=0 -optimize=1 -size -string=const -extra=a=400 -define=_STRICT_UNION_,__DEV_TYPE_DC__,BUILD_DATE=20000225
-set AOPTS=-cpu=sh4 -endian=little
-set SUBS=mvc2.sub mvc2test.sub
+rem Capcom's options, from the response file left in the ROM padding (README.md), the program's own
+rem date, which the source asks for where a later build differs, and its ROM board (1, the M1)
+set OPTS0=-cpu=sh4 -endian=little -fpu=single -round=nearest -macsave=0 -pic=0 -optimize=1 -size -string=const -extra=a=400 -define=_STRICT_UNION_,__DEV_TYPE_DC__
+set COPTS=%OPTS0%,BUILD_DATE=20000225,ROM_BOARD=1
+set AOPTS=-cpu=sh4 -endian=little -define=ROM_BOARD=1
 if /i "%~1"=="dc" goto dc
-for %%d in (build\obj\test build\tmp build\data) do if not exist %%d mkdir %%d
+rem what each build is: the main program's link, the test program's, the objects' folders, the
+rem pieces cut from your ROM, the ROM and its SHA-1, and where the test program's image is cut
+rem (each start and end), with a hole of the ROM after each of the first three pieces
+set MAIN=mvc2
+set TEST=mvc2test
+set OBJ=build\obj
+set TOBJ=build\obj\test
+set ORIG=build\orig
+set ROMARG=
+set ROMFILE=epr-23085a.ic11
+set WHOSE=the arcade's
+set SETNAME=
+set SHA1=f58c31b245fc33fa541f9f074548402a63f7c3d3
+set CUTS=0C020000:0C046C00 0C048C00:0C049400 0C04B000:0C055C00 0C056000:
+set HOLES=hole_3E6C00 hole_3E9400 hole_3F5C00
+if /i not "%~1"=="us" goto build
+rem The US set's (build.bat us), for the M2 board: every object again, with the set's own date and
+rem ROM_BOARD=2. At 0x340000 it has six of the scenes' model files, which the game reads, and the
+rem test program's holes are at other places; both are cut from your US ROM.
+set COPTS=%OPTS0%,BUILD_DATE=20000217,ROM_BOARD=2
+set AOPTS=-cpu=sh4 -endian=little -define=ROM_BOARD=2
+set MAIN=mvc2u
+set TEST=mvc2utest
+set OBJ=build\obj\us
+set TOBJ=build\obj\ustest
+set ORIG=build\orig\us
+set ROMARG=--us
+set ROMFILE=epr-23062a.ic22
+set WHOSE=the US arcade's
+set SETNAME= (mvsc2u)
+set SHA1=877ba02c92082567280afcb1ae40b3bbfc8a63e8
+set CUTS=0C020000:0C046C00 0C048800:0C049000 0C04AC00:0C055400 0C055C00:
+set HOLES=hole_3E6C00 hole_3E9000 hole_3F5400
+
+:build
+set SUBS=%MAIN%.sub %TEST%.sub
+for %%d in (%OBJ% %TOBJ% build\tmp build\data) do if not exist %%d mkdir %%d
 
 rem what the source does not have, cut from your own ROM in rom\
-python tools\mvc2rom.py rom build\orig || goto fail
+python tools\mvc2rom.py %ROMARG% rom %ORIG% || goto fail
 
 echo compiling
 for %%f in (src\*.c) do (
-	"%SHC%\shc.exe" %%f %COPTS% -include=include -object=build\obj\%%~nf.obj >build\obj\shc.log 2>&1 || (type build\obj\shc.log & goto fail)
-	findstr /c:") : " build\obj\shc.log
+	"%SHC%\shc.exe" %%f %COPTS% -include=include -object=%OBJ%\%%~nf.obj >%OBJ%\shc.log 2>&1 || (type %OBJ%\shc.log & goto fail)
+	findstr /c:") : " %OBJ%\shc.log
 )
 for %%f in (src\*.src) do (
-	"%SHC%\asmsh.exe" %%f -object=build\obj\%%~nf.obj %AOPTS% >build\obj\asm.log || (type build\obj\asm.log & goto fail)
+	"%SHC%\asmsh.exe" %%f -object=%OBJ%\%%~nf.obj %AOPTS% >%OBJ%\asm.log || (type %OBJ%\asm.log & goto fail)
 )
 rem Sega's modules: each library's options are in src\lib\LIBRARY\options (a module's own in
 rem MODULE.options)
 for /d %%d in (src\lib\*) do (
 	for %%f in (%%d\*.c) do call :libc %%d %%f || goto fail
 	for %%f in (%%d\*.src) do (
-		"%SHC%\asmsh.exe" %%f -object=build\obj\%%~nf.obj %AOPTS% >build\obj\asm.log || (type build\obj\asm.log & goto fail)
+		"%SHC%\asmsh.exe" %%f -object=%OBJ%\%%~nf.obj %AOPTS% >%OBJ%\asm.log || (type %OBJ%\asm.log & goto fail)
 	)
 )
 rem the test program's own modules; the rest of it is main's start-up and work, and Sega's
 for %%f in (src\test\*.c) do (
-	"%SHC%\shc.exe" %%f %COPTS% -include=src\test,include -object=build\obj\test\%%~nf.obj >build\obj\shc.log 2>&1 || (type build\obj\shc.log & goto fail)
-	findstr /c:") : " build\obj\shc.log
+	"%SHC%\shc.exe" %%f %COPTS% -include=src\test,include -object=%TOBJ%\%%~nf.obj >%OBJ%\shc.log 2>&1 || (type %OBJ%\shc.log & goto fail)
+	findstr /c:") : " %OBJ%\shc.log
 )
 for %%f in (src\test\*.src) do (
-	"%SHC%\asmsh.exe" %%f -object=build\obj\test\%%~nf.obj %AOPTS% >build\obj\asm.log || (type build\obj\asm.log & goto fail)
+	"%SHC%\asmsh.exe" %%f -object=%TOBJ%\%%~nf.obj %AOPTS% >%OBJ%\asm.log || (type %OBJ%\asm.log & goto fail)
 )
-del build\obj\shc.log build\obj\asm.log
+del %OBJ%\shc.log %OBJ%\asm.log
 
 echo copying the libraries
 rem build\sdk\N has those the links take from the Nth folder of SDK_LIBS
@@ -52,19 +88,20 @@ set N=0
 for %%d in ("%SDK_LIBS:;=" "%") do call :sdk "%%~d" || goto fail
 
 echo linking
-"%SHC%\lnk.exe" -subcommand=mvc2.sub >build\lnk.log || (findstr /b /c:"**" build\lnk.log & goto fail)
-"%SHC%\lnk.exe" -subcommand=mvc2test.sub >build\lnktest.log || (findstr /b /c:"**" build\lnktest.log & goto fail)
-for %%f in (mvc2 test1 test2 test3 test4 mvc2test fill tail) do if exist build\%%f.bin del build\%%f.bin
+"%SHC%\lnk.exe" -subcommand=%MAIN%.sub >build\lnk%MAIN%.log || (findstr /b /c:"**" build\lnk%MAIN%.log & goto fail)
+"%SHC%\lnk.exe" -subcommand=%TEST%.sub >build\lnk%TEST%.log || (findstr /b /c:"**" build\lnk%TEST%.log & goto fail)
+for %%f in (%MAIN% test1 test2 test3 test4 %TEST% fill tail) do if exist build\%%f.bin del build\%%f.bin
 pushd build
-"%SHC%\elf2bin.exe" -b ff -s 0C020000 mvc2.abs mvc2.bin >fill.log 2>&1
+"%SHC%\elf2bin.exe" -b ff -s 0C020000 %MAIN%.abs %MAIN%.bin >fill.log 2>&1
 rem the test program's image is cut in four, with a hole after each of the first three:
 rem left-overs of older builds that no build gives, from your ROM
-"%SHC%\elf2bin.exe" -b ff -s 0C020000 -e 0C046C00 mvc2test.abs test1.bin >>fill.log 2>&1
-"%SHC%\elf2bin.exe" -b ff -s 0C048C00 -e 0C049400 mvc2test.abs test2.bin >>fill.log 2>&1
-"%SHC%\elf2bin.exe" -b ff -s 0C04B000 -e 0C055C00 mvc2test.abs test3.bin >>fill.log 2>&1
-"%SHC%\elf2bin.exe" -b ff -s 0C056000 mvc2test.abs test4.bin >>fill.log 2>&1
+set I=0
+for %%c in (%CUTS%) do call :cut %%c
 popd
-copy /b build\test1.bin+build\orig\hole_3E6C00.bin+build\test2.bin+build\orig\hole_3E9400.bin+build\test3.bin+build\orig\hole_3F5C00.bin+build\test4.bin build\mvc2test.bin >nul
+set CAT=build\test1.bin
+set I=1
+for %%h in (%HOLES%) do call :hole %%h
+copy /b %CAT% build\%TEST%.bin >nul
 
 rem the 0xFF after the main program (up to ROM 0x250000) and after the test program (to the end)
 rem are cut to length from a link of nothing else
@@ -79,11 +116,11 @@ echo start FILL(0)>>build\fill.sub
 echo exit>>build\fill.sub
 "%SHC%\asmsh.exe" build\fill.src -object=build\fill.obj %AOPTS% >>build\fill.log || goto fail
 "%SHC%\lnk.exe" -subcommand=build\fill.sub >>build\fill.log || goto fail
-for %%f in (build\mvc2.bin) do set /a PAD=0x250000-%%~zf
+for %%f in (build\%MAIN%.bin) do set /a PAD=0x250000-%%~zf
 rem the length in hexadecimal
 %ComSpec% /c exit %PAD%
 "%SHC%\elf2bin.exe" -s 0 -e %=ExitCode% build\fill.abs build\fill.bin >>build\fill.log 2>&1
-for %%f in (build\mvc2test.bin) do set /a PAD=0x40000-%%~zf
+for %%f in (build\%TEST%.bin) do set /a PAD=0x40000-%%~zf
 %ComSpec% /c exit %PAD%
 "%SHC%\elf2bin.exe" -s 0 -e %=ExitCode% build\fill.abs build\tail.bin >>build\fill.log 2>&1
 
@@ -93,12 +130,26 @@ echo compiling the characters' data
 for %%f in (data\*.c) do call :data %%~nf || goto fail
 python tools\chrpack.py build\data build\chardata.bin || goto fail
 
-rem the main program, the characters' data, seven model files that the game never reads (from
-rem your ROM), and the test program at 0x3C0000
-copy /b build\mvc2.bin+build\fill.bin+build\chardata.bin+build\orig\data_340000.bin+build\mvc2test.bin+build\tail.bin build\epr-23085a.ic11 >nul
-certutil -hashfile build\epr-23085a.ic11 SHA1 | findstr /i /c:"f58c31b245fc33fa541f9f074548402a63f7c3d3" >nul || (echo build\epr-23085a.ic11 is not the arcade's & goto fail)
-echo build\epr-23085a.ic11 is the arcade's: SHA-1 f58c31b245fc33fa541f9f074548402a63f7c3d3
+rem the main program, the characters' data, the model files at 0x340000 (seven that the game never
+rem reads, or the US set's six; from your ROM), and the test program at 0x3C0000
+copy /b build\%MAIN%.bin+build\fill.bin+build\chardata.bin+%ORIG%\data_340000.bin+build\%TEST%.bin+build\tail.bin build\%ROMFILE% >nul
+certutil -hashfile build\%ROMFILE% SHA1 | findstr /i /c:"%SHA1%" >nul || (echo build\%ROMFILE% is not %WHOSE% & goto fail)
+echo build\%ROMFILE% is %WHOSE%%SETNAME%: SHA-1 %SHA1%
 popd
+exit /b 0
+
+:cut
+rem %1 is START:END (END empty for the rest) of the next piece of the test program's image
+set /a I+=1
+for /f "tokens=1,2 delims=:" %%a in ("%1") do (set FROM=%%a& set TO=%%b)
+if "%TO%"=="" ("%SHC%\elf2bin.exe" -b ff -s %FROM% %TEST%.abs test%I%.bin >>fill.log 2>&1) else ("%SHC%\elf2bin.exe" -b ff -s %FROM% -e %TO% %TEST%.abs test%I%.bin >>fill.log 2>&1)
+set TO=
+exit /b 0
+
+:hole
+rem the next hole of your ROM, then the piece after it
+set /a I+=1
+set CAT=%CAT%+%ORIG%\%1.bin+build\test%I%.bin
 exit /b 0
 
 :data
@@ -132,21 +183,20 @@ set OPTS=%1\options
 if exist %~dpn2.options set OPTS=%~dpn2.options
 set /p OPTS=<%OPTS%
 findstr /c:"#pragma inline_asm" %2 >nul && goto libasm
-"%SHC%\shc.exe" %2 %OPTS% -include=%1,include,build\orig -object=build\obj\%~n2.obj >build\obj\shc.log 2>&1 || (type build\obj\shc.log & exit /b 1)
-findstr /c:") : " build\obj\shc.log
+"%SHC%\shc.exe" %2 %OPTS% -include=%1,include,%ORIG% -object=%OBJ%\%~n2.obj >%OBJ%\shc.log 2>&1 || (type %OBJ%\shc.log & exit /b 1)
+findstr /c:") : " %OBJ%\shc.log
 exit /b 0
 :libasm
-"%SHC%\shc.exe" %2 %OPTS% -code=asmcode -include=%1,include,build\orig -object=build\tmp\%~n2.src >build\obj\shc.log 2>&1 || (type build\obj\shc.log & exit /b 1)
-"%SHC%\asmsh.exe" build\tmp\%~n2.src -object=build\obj\%~n2.obj %AOPTS% >build\obj\asm.log || (type build\obj\asm.log & exit /b 1)
+"%SHC%\shc.exe" %2 %OPTS% -code=asmcode -include=%1,include,%ORIG% -object=build\tmp\%~n2.src >%OBJ%\shc.log 2>&1 || (type %OBJ%\shc.log & exit /b 1)
+"%SHC%\asmsh.exe" build\tmp\%~n2.src -object=%OBJ%\%~n2.obj %AOPTS% >%OBJ%\asm.log || (type %OBJ%\asm.log & exit /b 1)
 exit /b 0
 
 :dc
 rem The Dreamcast program, 1ST_READ.BIN of the USA disc, and the characters' files (build.bat dc).
 rem SDK_LIBS has two more folders (README.md). Each object that mvc2dc.sub links is compiled from
-rem the first of src\dc, src, src\dc\lib and src\lib that has it, with the switches TARGET_DC and the
-rem disc's BUILD_DATE.
-set DCOPTS=%COPTS:BUILD_DATE=TARGET_DC,BUILD_DATE%
-set DCOPTS=%DCOPTS:20000225=20000529%
+rem the first of src\dc, src, src\dc\lib and src\lib that has it, with the switches TARGET_DC, the
+rem disc's BUILD_DATE and ROM_BOARD=0.
+set DCOPTS=%OPTS0%,TARGET_DC,BUILD_DATE=20000529,ROM_BOARD=0
 set SUBS=mvc2dc.sub
 for %%d in (build\obj\dc build\tmp build\ovl) do if not exist %%d mkdir %%d
 echo compiling

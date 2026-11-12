@@ -1,1 +1,3 @@
-Put epr-23085a.ic11 (or the MAME set that has it, mvsc2.zip) here.
+Put your ROM here:
+- epr-23085a.ic11 (or the MAME set that has it, mvsc2.zip) for the export cartridge;
+- epr-23062a.ic22 (or mvsc2u.zip) for the US cartridge (build.bat us).

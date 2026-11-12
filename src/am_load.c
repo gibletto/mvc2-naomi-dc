@@ -2,6 +2,7 @@
    sounds' and the stage's) read a little each frame through a queue, while the game runs. */
 #include "player.h"
 #include "naomi.h"
+#include "load.h"
 
 /* Shinobi / Kamui */
 extern Sint32 nlsndPackLoadStatus( void ) ;
@@ -268,30 +269,51 @@ const FILE_DATA stream_tbl[834] = {
 	{ 0x05c10c80, 1920 }, { 0x05c11400, 2336 }, { 0x05c11d20, 1440 }, { 0x05c122c0, 2560 },
 	{ 0x05c12cc0, 2368 }, { 0x05c13600, 2560 }, { 0x05c14000, 2560 }, { 0x05c14a00, 1440 },
 	{ 0x05c14fa0, 2560 }, { 0x05c159a0, 2336 }, { 0x05c162c0, 1248 }, { 0x05c167a0, 1248 },
+#if ROM_BOARD == 2	/* the M2 board has six of the scenes' model files in the program ROM */
+	{ 0x05c16c80, 2688 }, { 0x05c17700, 1920 }, { 0x05c17e80, 2560 }, { 0x80397000, 155360 },
+#else
 	{ 0x05c16c80, 2688 }, { 0x05c17700, 1920 }, { 0x05c17e80, 2560 }, { 0x88000000, 155360 },
+#endif
 	{ 0x05c3e760, 374784 }, { 0x05c99f60, 174016 }, { 0x05cc4720, 1703936 }, { 0x05e64720, 116416 },
 	{ 0x05e80de0, 1703936 }, { 0x06020de0, 168608 }, { 0x0604a080, 1654784 }, { 0x061de080, 194048 },
 	{ 0x0620d680, 1703936 }, { 0x063ad680, 190144 }, { 0x063dbd40, 1703936 }, { 0x0657bd40, 126720 },
 	{ 0x0659ac40, 1558528 }, { 0x06717440, 186944 }, { 0x06744e80, 1703936 }, { 0x068e4e80, 168320 },
+#if ROM_BOARD == 2
+	{ 0x0690e000, 1638400 }, { 0x06a9e000, 183488 }, { 0x06acacc0, 1703936 }, { 0x80340000, 91392 },
+	{ 0x06c811c0, 122880 }, { 0x8036d000, 124352 }, { 0x06cbd780, 1499136 }, { 0x06e2b780, 48128 },
+	{ 0x06e37380, 262144 }, { 0x80357000, 6016 }, { 0x06e78b00, 32768 }, { 0x06e80b00, 42496 },
+	{ 0x06e8b100, 349568 }, { 0x06ee0680, 185536 }, { 0x06f0db40, 242912 }, { 0x80378000, 177536 },
+	{ 0x06f745a0, 1047936 }, { 0x07074320, 158432 }, { 0x0709ae00, 748224 }, { 0x80359000, 81600 },
+#else
 	{ 0x0690e000, 1638400 }, { 0x06a9e000, 183488 }, { 0x06acacc0, 1703936 }, { 0x88026440, 91392 },
 	{ 0x06c811c0, 122880 }, { 0x8803bda0, 124352 }, { 0x06cbd780, 1499136 }, { 0x06e2b780, 48128 },
 	{ 0x06e37380, 262144 }, { 0x8805a560, 6016 }, { 0x06e78b00, 32768 }, { 0x06e80b00, 42496 },
 	{ 0x06e8b100, 349568 }, { 0x06ee0680, 185536 }, { 0x06f0db40, 242912 }, { 0x8805b720, 177536 },
 	{ 0x06f745a0, 1047936 }, { 0x07074320, 158432 }, { 0x0709ae00, 748224 }, { 0x8808b7e0, 81568 },
+#endif
 	{ 0x07165780, 262144 }, { 0x071a5780, 2368 }, { 0x071a60c0, 290944 }, { 0x071ed140, 50784 },
 	{ 0x071f97a0, 90112 }, { 0x0720f7a0, 3232 }, { 0x07210440, 317664 }, { 0x0725dd20, 925888 },
 	{ 0x0733fde0, 2211680 }, { 0x0755bd40, 1048576 }
 } ;
 
-static const Sint32 unk_list0[] = { 15678, 33376, 33372, 26039, 41152, 41148, 22678, 55264, 55260, 5842, 25568, 25564, -1 } ;
-static const Sint32 unk_list1[] = { 1170, 50720, 50716, 16714, 40608, 40604, 44953, 52, 48, -1 } ;
-static const Sint32 unk_list2[] = { 44428, 60576, 60572, 37437, 38176, 38172, 19045, 25588, 25584, -1 } ;
-static const Sint32 unk_list3[] = { 3757, 58496, 58492, 1170, 50720, 50716, 16714, 40608, 40604, 44953, 27712, 27708, -1 } ;
-static const Sint32 unk_list4[] = { 15937, 51488, 51484, 47023, 30088, 30084, -1 } ;
-static const Sint32 unk_list5[] = { 15678, 5996, 5992, -1 } ;
+/* the coded files' blocks for the M2 board's security chip: each block's passcode, and its size
+   coded and decoded; -1 ends a list */
+typedef Sint32 PFSB_BLOCK[3] ;
 
-const Sint32 *unk_0C239320[6] = {
-	unk_list0, unk_list1, unk_list2, unk_list3, unk_list4, unk_list5
+static const Sint32 pfsb_list0[] = {
+	15678, 33376, 33372,  26039, 41152, 41148,  22678, 55264, 55260,  5842, 25568, 25564,  -1
+} ;
+static const Sint32 pfsb_list1[] = { 1170, 50720, 50716,  16714, 40608, 40604,  44953, 52, 48,  -1 } ;
+static const Sint32 pfsb_list2[] = { 44428, 60576, 60572,  37437, 38176, 38172,  19045, 25588, 25584,  -1 } ;
+static const Sint32 pfsb_list3[] = {
+	3757, 58496, 58492,  1170, 50720, 50716,  16714, 40608, 40604,  44953, 27712, 27708,  -1
+} ;
+static const Sint32 pfsb_list4[] = { 15937, 51488, 51484,  47023, 30088, 30084,  -1 } ;
+static const Sint32 pfsb_list5[] = { 15678, 5996, 5992,  -1 } ;
+
+const PFSB_BLOCK *pfsb_list_tbl[6] = {
+	( const PFSB_BLOCK * )pfsb_list0, ( const PFSB_BLOCK * )pfsb_list1, ( const PFSB_BLOCK * )pfsb_list2,
+	( const PFSB_BLOCK * )pfsb_list3, ( const PFSB_BLOCK * )pfsb_list4, ( const PFSB_BLOCK * )pfsb_list5
 } ;
 
 /* where each player work's sounds are read to, before they go to the sound memory */
@@ -299,6 +321,143 @@ static Uint32 pl_snd_adrs[6] = {
 	0x0db00000, 0x0db30000, 0x0db60000, 0x0db90000, 0x0dbc0000, 0x0dbf0000
 } ;
 
+#if ROM_BOARD == 2
+/*==============================================================*/
+/*			How file no is kept on the M2 board: -1 packed,		*/
+/*			0 coded (with its list of blocks), 1 as it is		*/
+/*==============================================================*/
+static Sint32 file_type_ck( Sint32 no, const PFSB_BLOCK **list )
+{
+	Sint32 type ;
+
+	type = 0 ;
+	switch( no ){
+	case FILE_EFKYPOL:
+	case FILE_DM01POL:
+	case FILE_DM07POL:
+		type = -1 ;
+		break ;
+	case FILE_DM00POL:
+		*list = pfsb_list_tbl[1] ;
+		break ;
+	case FILE_DM09POL:
+		*list = pfsb_list_tbl[4] ;
+		break ;
+	case FILE_DM04POL:
+		*list = pfsb_list_tbl[5] ;
+		break ;
+	default:
+		type = 1 ;
+		break ;
+	}
+	return type ;
+}
+
+/****************************************************************/
+/*			Read a file to adrs, and with a, make the cache		*/
+/*			see it; returns its size							*/
+/****************************************************************/
+Uint32 file_load( Sint32 no, void *adrs, Sint32 a )
+{
+	const FILE_DATA *file ;
+	const PFSB_BLOCK *list ;
+	Uint8 *src, *dst ;
+	Sint32 size ;
+	Sint32 type ;
+
+	rom_dma_flag = 1 ;
+	file = &stream_tbl[no] ;
+	type = 0 ;
+	if( file->adrs & 0x80000000 ){
+		dst = adrs ;
+		if( type = file_type_ck( no, &list ) ){
+		} else {
+			/* each block through the security chip's RAM */
+			src = ( Uint8 * )PFSB_FILE_ADRS ;
+			cache_inv( adrs, file->size ) ;
+			nlaReadROMDMA( file->adrs & 0x7fffffff, ( char * )src, file->size, 0 ) ;
+			nlaPFSBAccessBank( 0 ) ;
+			size = 0 ;
+			while( **list != -1 ){
+				nlaPFSBDecodeRequest( NLA_PFSB_RAM, ( short * )src, ( ( const Uint32 * )list )[1] ) ;
+				nlaPFSBDecodeRead( NLA_PFSB_RAM, ( char * )dst, ( *list )[2], ( *list )[0] ) ;
+				dst = dst + ( *list )[2] ;
+				src = src + ( *list )[1] ;
+				size += ( *list )[2] ;
+				list ++ ;
+			}
+			cache_purge( dst, ( size & ~0x1f ) + 32 ) ;
+			rom_dma_flag = 0 ;
+			return size ;
+		}
+	} else {
+	}
+	if( type < 0 ){
+		cache_inv( ( void * )LZ_FILE_ADRS, file->size ) ;
+		nlaReadROMDMA( file->adrs & 0x7fffffff, ( char * )LZ_FILE_ADRS, file->size, 0 ) ;
+		if( a ) cache_purge( ( void * )LZ_FILE_ADRS, file->size ) ;
+		lz_unpack16( ( Sint16 * )LZ_FILE_ADRS, adrs ) ;
+		rom_dma_flag = 0 ;
+	} else {
+		cache_inv( adrs, file->size ) ;
+		nlaReadROMDMA( file->adrs & 0x7fffffff, adrs, file->size, 0 ) ;
+		if( a ) cache_purge( adrs, file->size ) ;
+		rom_dma_flag = 0 ;
+	}
+	return file->size ;
+}
+
+/****************************************************************/
+Uint32 file_load2( Sint32 no, void *adrs, Sint32 a )
+{
+	const FILE_DATA *file ;
+	const PFSB_BLOCK *list ;
+	Uint8 *src, *dst ;
+	Sint32 size ;
+	Sint32 type ;
+
+	rom_dma_flag = 1 ;
+	file = &stream_tbl[no] ;
+	type = 0 ;
+	if( file->adrs & 0x80000000 ){
+		dst = adrs ;
+		if( type = file_type_ck( no, &list ) ){
+		} else {
+			/* each block through the security chip's RAM */
+			src = ( Uint8 * )PFSB_FILE_ADRS ;
+			cache_inv( adrs, file->size ) ;
+			nlaReadROMDMA( file->adrs & 0x7fffffff, ( char * )src, file->size, 0 ) ;
+			nlaPFSBAccessBank( 0 ) ;
+			size = 0 ;
+			while( **list != -1 ){
+				nlaPFSBDecodeRequest( NLA_PFSB_RAM, ( short * )src, ( ( const Uint32 * )list )[1] ) ;
+				nlaPFSBDecodeRead( NLA_PFSB_RAM, ( char * )dst, ( *list )[2], ( *list )[0] ) ;
+				dst = dst + ( *list )[2] ;
+				src = src + ( *list )[1] ;
+				size += ( *list )[2] ;
+				list ++ ;
+			}
+			cache_purge( dst, ( size & ~0x1f ) + 32 ) ;
+			rom_dma_flag = 0 ;
+			return size ;
+		}
+	} else {
+	}
+	if( type < 0 ){
+		cache_inv( ( void * )LZ_FILE_ADRS, file->size ) ;
+		nlaReadROMDMA( file->adrs & 0x7fffffff, ( char * )LZ_FILE_ADRS, file->size, 0 ) ;
+		if( a ) cache_purge( ( void * )LZ_FILE_ADRS, file->size ) ;
+		lz_unpack16( ( Sint16 * )LZ_FILE_ADRS, adrs ) ;
+		rom_dma_flag = 0 ;
+	} else {
+		cache_inv( adrs, file->size ) ;
+		nlaReadROMDMA( file->adrs & 0x7fffffff, adrs, file->size, 0 ) ;
+		if( a ) cache_purge( adrs, file->size ) ;
+		rom_dma_flag = 0 ;
+	}
+	return file->size ;
+}
+#else
 /****************************************************************/
 /*			Read a file to adrs, and with a, make the cache		*/
 /*			see it; returns its size							*/
@@ -331,6 +490,8 @@ Uint32 file_load2( Sint32 no, void *adrs, Sint32 a )
 	rom_dma_flag = 0 ;
 	return file->size ;
 }
+
+#endif
 
 /****************************************************************/
 /*			Empty the queue: ld_ctrl's first eight bytes are	*/

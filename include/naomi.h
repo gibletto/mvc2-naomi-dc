@@ -148,6 +148,11 @@ extern void nlaUpdateUserEEPROM( void ) ;
 extern void nlaUpdateSystemBackup( void ) ;
 extern void nlaReadROMDMA( unsigned long src, char *dst, unsigned long size, int flag ) ;
 extern void nlaNRSDecodeRead( unsigned long src, char *dst, unsigned long size, int flag ) ;
+/* the M2 board's security chip: a coded block is sent to its RAM, and read back decoded */
+#define NLA_PFSB_RAM	0x02000000
+extern void nlaPFSBAccessBank( int bank ) ;
+extern int nlaPFSBDecodeRequest( unsigned long offset, short *src, unsigned long bytes ) ;
+extern void nlaPFSBDecodeRead( unsigned long src, char *dst, unsigned long bytes, unsigned short passcode ) ;
 extern int nlaCheckWaitROMDMA( void ) ;
 extern void nlaJumpTestMode( void ) ;
 extern void nlaPutLED( unsigned char led ) ;

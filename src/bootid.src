@@ -1,6 +1,6 @@
 ; bootid: the head of the program ROM, which the BIOS reads: what the game is, its ROMs' sums,
 ; the coin settings, and where the two programs lie and start. It is linked at 0C020000, before
-; the program.
+; the program. ROM_BOARD (2 for the US set's M2 board) is given to the assembler.
 
           .SECTION  P,CODE,ALIGN=4
           .SECTION  BOOTID,DATA,ALIGN=4
@@ -20,7 +20,11 @@ ROM_NONE: .EQU      -1
           .SDATA    "MARVEL VS CAPCOM2               "
           .SDATA    "MARVEL VS CAPCOM2               "
           .DATA.W   2000                ; the date
+          .AIF      ROM_BOARD EQ 2
+          .DATA.B   2,17
+          .AELSE
           .DATA.B   2,25
+          .AENDI
           .SDATA    "BBG0"              ; the game's ID (the backup data is kept under it)
           .DATA.W   1                   ; the ROM board's mode
           .DATA.W   0                   ; no ROM wait values of our own:
@@ -42,8 +46,13 @@ ROM_NONE: .EQU      -1
           .DATA.W   ROM_64M,H'0A49,H'E1F3
           .DATA.W   ROM_64M,H'BC98,H'5BC3
           .DATA.W   ROM_64M,H'60E5,H'C4CD
+          .AIF      ROM_BOARD EQ 2      ; the M2 board's set has no IC31 and IC32
+          .DATA.W   ROM_NONE,0,0
+          .DATA.W   ROM_NONE,0,0
+          .AELSE
           .DATA.W   ROM_32M,H'E629,H'EFB2
           .DATA.W   ROM_32M,H'62B6,H'FD14
+          .AENDI
           .DATA.W   ROM_NONE,0,0
           .DATA.W   ROM_NONE,0,0
           .DATA.W   ROM_NONE,0,0
@@ -82,6 +91,10 @@ ROM_NONE: .EQU      -1
           .DATA.B   0                   ; the monitor's frequency
           .DATA.B   1                   ; the monitor's direction: horizontal
           .DATA.B   0                   ; no check of the ROM board's serial ID
+          .AIF      ROM_BOARD EQ 2
+          .DATA.B   0                   ; the service button's setting
+          .DATAB.W  23*3,H'FFFF         ; the M2 board's set leaves the sums below unwritten
+          .AELSE
           .DATA.B   H'FF                ; the service button's setting
 
 ; the sums again, as the newer ROM board's test counts them
@@ -108,6 +121,7 @@ ROM_NONE: .EQU      -1
           .DATA.W   ROM_NONE,0,0
           .DATA.W   ROM_NONE,0,0
           .DATA.W   ROM_NONE,0,0
+          .AENDI
 
           .DATAB.B  72,H'FF             ; not used
 

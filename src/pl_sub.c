@@ -307,7 +307,7 @@ static void pl_work_set( PLAYER_WORK *pl_w )
 /****************************************************************/
 void pl_work_init( PLAYER_WORK *pl_w )
 {
-#ifdef TARGET_DC	/* the characters' modules load at six places, one for each player */
+#if defined( TARGET_DC ) && !defined( HOST_PORT )	/* the characters' modules load at six places, one for each player; a host build links them all in */
 	static void ( *tbl_set_jmp[6] )( PLAYER_WORK *pl_w ) = {
 		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce30000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce38000,
 		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce40000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce48000,
@@ -343,7 +343,7 @@ void pl_work_init( PLAYER_WORK *pl_w )
 	pl_w->target_w = vs_sys_w->team_w[pl_w->pl_no ^ 1][0] ;
 	pl_w->pl_type = pl_w->load_type ;
 	pl_w->pl_color = pl_w->load_color ;
-#ifdef TARGET_DC
+#if defined( TARGET_DC ) && !defined( HOST_PORT )
 	tbl_set = tbl_set_jmp[pl_w->work_no] ;
 	tbl_set( pl_w ) ;
 #else
