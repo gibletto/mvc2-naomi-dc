@@ -218,7 +218,7 @@ static const char* check(int mode, const char* dir) {
 
 static char told[4000];
 
-static void tell(const char* title, const char* text) {
+static void front_tell(const char* title, const char* text) {
     fprintf(stderr, "%s\n%s\n", title, text);
     snprintf(told, sizeof told, "%s", text);
 #ifdef __3DS__
@@ -295,7 +295,7 @@ int pick_game(int argc, char** argv) {
         found[i] = missing[i] == NULL;
     }
     if (flag >= 0 && !built[flag]) {
-        tell("Marvel vs. Capcom 2", "This build has no such mode.");
+        front_tell("Marvel vs. Capcom 2", "This build has no such mode.");
         return 0;
     }
     if (flag >= 0) {
@@ -330,7 +330,7 @@ int pick_game(int argc, char** argv) {
                               modes[i].env, missing[i]);
             }
         }
-        tell("Marvel vs. Capcom 2", text);
+        front_tell("Marvel vs. Capcom 2", text);
         return 0;
     }
     host_log("%s mode, from %s", modes[mode].name, path[mode]);
