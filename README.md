@@ -1,7 +1,7 @@
 # Marvel vs. Capcom 2 - NAOMI and Dreamcast program source
 
 **AI Disclosure**:
-Yes, this used Claude, the same way the 3rd Strike decomp did.
+Yes, this used Claude.
 The names in here are Capcom's wherever they could be found, so blame them for `shl1a_06.c` etc.
 
 ## What this is
