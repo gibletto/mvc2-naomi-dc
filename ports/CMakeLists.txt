@@ -32,7 +32,7 @@ set(GAME_OPTIONS
     -std=gnu89 -fwrapv -fno-strict-aliasing -fsigned-char -w -O1 -fno-delete-null-pointer-checks
     -include ${PORT}/include/port_prefix.h
     -fno-toplevel-reorder -fno-zero-initialized-in-bss)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86|i686|AMD64|i386")
+if(WIN32 OR CMAKE_SYSTEM_PROCESSOR MATCHES "x86|i686|AMD64|i386")
     list(APPEND GAME_OPTIONS -malign-data=abi -mfpmath=sse -msse2)
 endif()
 # SHC's enums are int-sized, devkitARM's as small as fit: the game and the layers that share its structs
