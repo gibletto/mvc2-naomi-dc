@@ -74,21 +74,51 @@ the GPU through SDL_GPU (Direct3D 12 or Vulkan); when it can't, it says why and 
   `eeprom.bin` and `backup.bin` in the current folder; only `MVC2_UNLOCK`, not `unlock =`;
 - `MVC2_CLOCK=seconds` (UTC) fixes the clocks.
 
-Keys: player 1 moves with the arrows, A S D Z X C are buttons 1 to 6, 1 is start; player 2 has I J K L,
-R T Y F G H and 2. 5 is a coin, 9 service, F2 test, F9 the other version, Escape quits. F3 shows the game's
-and the drawing's time a frame and the frame rate.
+### Controls
 
-Controllers: the first plugged in is player 1's, the second player 2's. X and Y punch, A and B kick, the
-shoulders are the first assist and the triggers the second (an arcade stick's rows then match the cabinet),
-Back is a coin. On the Dreamcast, buttons 1 to 6 are its X Y L A B R. `gamecontrollerdb.txt` beside the
-executable adds controllers SDL doesn't know.
+The keyboard:
 
-F1 (or Back with the right shoulder held) opens the controls screen over the paused game: Enter sets a control
-from the next key or button, Delete resets it, Escape closes. It also switches the renderer and the picture
-quality. `mvc2.cfg` keeps the controls (`p1 b1 = key:A, pad:x`) and both settings.
+|                | Player 1 | Player 2 |
+|----------------|----------|----------|
+| move           | arrows   | I J K L  |
+| punch (L, H)   | A S      | R T      |
+| assist 1       | D        | Y        |
+| kick (L, H)    | Z X      | F G      |
+| assist 2       | C        | H        |
+| start          | 1        | 2        |
+| coin           | 5        |          |
 
-F11 or Alt+Enter toggles full screen; F10 cycles the scaling: `aspect` (4:3, as large as fits), `integer`
-(whole multiples of 640 by 480) or `stretch`. `mvc2.cfg` keeps them and the window's size.
+Controllers: the first plugged in is player 1's, the second player 2's. Each button is named by its place, with
+the Xbox letter after it:
+
+| Button                 |                    |
+|------------------------|--------------------|
+| d-pad, left stick      | move               |
+| West (X), North (Y)    | light, heavy punch |
+| South (A), East (B)    | light, heavy kick  |
+| left or right shoulder | assist 1           |
+| left or right trigger  | assist 2           |
+| Start                  | start              |
+| Back                   | coin               |
+
+So an arcade stick's top row punches and its bottom row kicks, as on the cabinet. On the Dreamcast, the six
+buttons (light punch to assist 2) are its X Y L A B R. `gamecontrollerdb.txt` beside the executable adds
+controllers SDL doesn't know.
+
+| Key                          |                                                                   |
+|------------------------------|-------------------------------------------------------------------|
+| F1, or Back + right shoulder | the controls screen, over the paused game                         |
+| F2                           | the arcade's test button (its test menu)                          |
+| 9                            | the arcade's service button                                       |
+| F3                           | the game's and the drawing's time a frame, and the frame rate     |
+| F9                           | switch to the other version                                       |
+| F10                          | scaling: `aspect` (4:3), `integer` (whole multiples) or `stretch` |
+| F11, Alt+Enter               | full screen                                                       |
+| Escape                       | quit                                                              |
+
+On the controls screen, Enter sets a control from the next key or button, Delete puts its default back, and
+Escape closes; it also switches the renderer and the picture quality. `mvc2.cfg` keeps the controls, a line
+each (`p1 b1 = key:A, pad:x`), and the settings, the scaling and the window's size.
 
 `unlock = all` in `mvc2.cfg` (or `MVC2_UNLOCK=1`) offers every character, colour and stage. Only the select
 scene sees it (a `HOST_PORT` arm in the decomp's `select.c`), so the saved unlocks stay the game's own.

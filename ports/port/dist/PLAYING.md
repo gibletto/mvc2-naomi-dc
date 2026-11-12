@@ -32,8 +32,17 @@ it says what and where; put it there and press Enter.
 - F10: scaling (aspect, integer, stretch). F11 or Alt+Enter: full screen.
 - Escape: quit.
 
-Controllers: the first plugged in is player 1's. X Y punch, A B kick, the shoulders assist 1, the triggers
-assist 2, Back a coin.
+Controllers: the first plugged in is player 1's, the second player 2's.
+
+| Button                 |                    |
+|------------------------|--------------------|
+| d-pad, left stick      | move               |
+| West (X), North (Y)    | light, heavy punch |
+| South (A), East (B)    | light, heavy kick  |
+| left or right shoulder | assist 1           |
+| left or right trigger  | assist 2           |
+| Start                  | start              |
+| Back                   | coin               |
 
 ## Settings
 
