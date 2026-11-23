@@ -21,6 +21,8 @@ void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog);
 void rd_gl1_size(int width, int height);
 /* what it drew, as ARGB rows from the top (at RD_WIDTH by RD_HEIGHT only) */
 void rd_gl1_read(uint32_t* argb);
+/* a picture made on the CPU, RD_WIDTH by RD_HEIGHT ARGB rows from the top, drawn over the whole frame */
+void rd_gl1_show(const uint32_t* argb);
 void rd_gl1_quit(void);
 
 /* MVC2_GL1 words, also set by a front end: tex16 (16-bit textures as the GPU takes them, not RGBA8), up (drawn

@@ -2667,6 +2667,59 @@ void rd_gl1_read(uint32_t* argb) {
     }
 }
 
+/* a picture made on the CPU (a front end's own screen), RD_WIDTH by RD_HEIGHT ARGB rows from the top, over the frame */
+void rd_gl1_show(const uint32_t* argb) {
+    static const COMBINE c = { GL_REPLACE, { GL_TEXTURE, GL_TEXTURE, GL_TEXTURE },
+                               { GL_SRC_COLOR, GL_SRC_COLOR, GL_SRC_COLOR }, GL_REPLACE,
+                               { GL_TEXTURE, GL_TEXTURE, GL_TEXTURE }, { GL_SRC_ALPHA, GL_SRC_ALPHA, GL_SRC_ALPHA } };
+    static const int corner[6] = { 0, 1, 2, 0, 2, 3 };
+    static GLuint name;
+    static uint32_t* rgba;
+    int i, u;
+    if (rgba == NULL && (rgba = malloc(RD_WIDTH * RD_HEIGHT * sizeof *rgba)) == NULL) {
+        return;
+    }
+    if (!grow((void**)&verts, &maxverts, 6, sizeof *verts)) {
+        return;
+    }
+    for (i = 0; i < RD_WIDTH * RD_HEIGHT; i++) {
+        rgba[i] = argb_to_rgba(argb[i]);
+    }
+    if (name == 0) {
+        glGenTextures(1, &name);
+        bind(0, name);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1024, 512, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    }
+    bind(0, name);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, RD_WIDTH, RD_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glViewport(0, 0, out_w, out_h);
+    projection();
+    for (u = 1; u < units && u < 3; u++) {
+        unit_on(u, 0);
+    }
+    unit_on(0, 1);
+    set_combine(0, 300, &c);
+    set_blend(0, 0, 0);
+    set_alpha_test(0);
+    set_depth(RD_ALWAYS, 0);
+    vstride = (int)sizeof(GV);
+    for (i = 0; i < 6; i++) {
+        GV g;
+        int k = corner[i];
+        memset(&g, 0, sizeof g);
+        g.x = (float)bg_cx[k], g.y = (float)bg_cy[k], g.w = 1.0f;
+        g.u = g.x / 1024.0f, g.v = g.y / 512.0f;
+        g.rgba = 0xFFFFFFFFu;
+        put_vertex(VERT(i), &g);
+    }
+    pointers();
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+}
+
 static GLuint small_texture(int w, const uint8_t* rgba) {
     GLuint name;
     glGenTextures(1, &name);

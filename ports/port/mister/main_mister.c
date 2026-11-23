@@ -25,6 +25,8 @@
 #include "rd_gl1.h"
 #include "frame_log.h"
 #include "snd_drv.h"
+#include "test_mode.h"
+#include "menu_font.h"
 
 int fl_timing;
 
@@ -112,6 +114,10 @@ static uint32_t pressed(int side) {
     return bits;
 }
 
+static int test_open, test_held;
+static void pace(void);
+
+/* the Test button opens the port's test menu (the arcade's has no boot ROM here to go to) */
 static void read_input(void) {
     input.player[0] = pressed(0);
     input.player[1] = pressed(1);
@@ -121,6 +127,53 @@ static void read_input(void) {
     if (!test_run) {
         mister_input_read(&input);
     }
+    if (input.test && !test_held && !mister_gl_piped() && strstr(game_title(), "Dreamcast") == NULL) {
+        test_mode_open("A", "B");
+        test_open = 1;
+    }
+    test_held = input.test;
+    input.test = 0;
+}
+
+/* the test menu's frame: its 40 by 30 characters on black, the pads' new presses its keys (the Test button
+   again as B); 1 when it closed with new settings */
+static int test_frame(void) {
+    static uint32_t shown[RD_WIDTH * RD_HEIGHT], last;
+    HOST_INPUT in;
+    const TEST_SCREEN* s;
+    uint32_t now, down;
+    int keys, r, x, y, i;
+    memset(&in, 0, sizeof in);
+    mister_input_read(&in);
+    now = in.player[0] | in.player[1];
+    down = test_held ? 0 : now & ~last;
+    keys = (down & JVS_UP ? TM_UP : 0) | (down & JVS_DOWN ? TM_DOWN : 0) | (down & JVS_LEFT ? TM_LEFT : 0) |
+           (down & JVS_RIGHT ? TM_RIGHT : 0) | (down & (JVS_B5 | JVS_START) ? TM_OK : 0) | (down & JVS_B4 ? TM_BACK : 0) |
+           (in.test && !test_held ? TM_BACK : 0);
+    last = now;
+    test_held = in.test;
+    r = test_mode_keys(keys);
+    if (r != TM_OPEN) {
+        test_open = 0;
+        last = 0;
+        return r == TM_RESTART;
+    }
+    s = test_mode_screen();
+    for (i = 0; i < RD_WIDTH * RD_HEIGHT; i++) {
+        shown[i] = 0xFF000000u;
+    }
+    for (y = 0; y < TM_ROWS; y++) {
+        for (x = 0; x < TM_COLS; x++) {
+            char c[2] = { s->ch[y][x], 0 };
+            if (c[0] != ' ') {
+                menu_text(shown, RD_WIDTH, RD_HEIGHT, x * 16 + 3, y * 16 + 1, c, 0xFF000000u | s->color[y][x], 2);
+            }
+        }
+    }
+    rd_gl1_show(shown);
+    mister_gl_swap();
+    pace();
+    return 0;
 }
 
 static uint32_t frame[RD_WIDTH * RD_HEIGHT];
@@ -656,8 +709,25 @@ int main(int argc, char** argv) {
     }
     for (;;) {
         uint64_t start, presenting, sounded, cpu, cpu_presenting;
-        uint32_t waited = mister_audio_wait_us;
+        uint32_t waited;
         long major, minor, major_end, minor_end;
+        if (test_open) {
+            if (test_frame()) {
+                mister_audio_idle();
+                mister_save_flush();
+                host_restart();
+                if (!start_game()) {
+                    return pick_why() != PICK_QUIT ? 10 + pick_why() : 1;
+                }
+                rd_begin_frame();
+            }
+            if (mister_input_quit() || stop_req) {
+                break;
+            }
+            frame_start = 0;
+            continue;
+        }
+        waited = mister_audio_wait_us;
         faults(&major, &minor);
         draw_major = 0;
         read_input();

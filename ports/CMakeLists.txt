@@ -294,7 +294,8 @@ else()
     if(MVC2_MISTER)
         set(FRONT_SOURCES ${PORT}/mister/main_mister.c ${PORT}/mister/mister_pinedra.c ${PORT}/mister/mister_audio.c
             ${PORT}/mister/mister_save.c ${PORT}/mister/mister_prof.c ${PORT}/mister/mister_input.c ${PORT}/sdl/start.c
-            ${PORT}/render/rd_gl1.c ${PORT}/render/rd_gl1_tex.c ${PORT}/mister/mister_reader.c ${PORT}/mister/mister_log.c)
+            ${PORT}/render/rd_gl1.c ${PORT}/render/rd_gl1_tex.c ${PORT}/mister/mister_reader.c ${PORT}/mister/mister_log.c
+            ${PORT}/sdl/test_mode.c ${PORT}/sdl/menu_font.c)
         # -O3 vectorizes the translucent sort's box tests
         set_source_files_properties(${PORT}/render/rd_gl1.c PROPERTIES COMPILE_OPTIONS -O3)
         set_source_files_properties(${PORT}/nl/nl_obj.c ${PORT}/render/rd.c ${PORT}/nl/nl_matha.c PROPERTIES COMPILE_OPTIONS -O3)
@@ -319,7 +320,7 @@ else()
         endif()
     else()
     set(FRONT_SOURCES ${PORT}/sdl/main_sdl.c ${PORT}/sdl/hunt.c ${PORT}/sdl/start.c ${PORT}/sdl/input_sdl.c ${PORT}/sdl/menu_sdl.c
-        ${PORT}/sdl/sdl_audio.c ${PORT}/sdl/sdl_save.c ${PORT}/sdl/test_mode.c)
+        ${PORT}/sdl/sdl_audio.c ${PORT}/sdl/sdl_save.c ${PORT}/sdl/test_mode.c ${PORT}/sdl/menu_font.c)
     if(WIN32)
         list(APPEND FRONT_SOURCES ${PORT}/sdl/console_win32.c)
     endif()
@@ -655,7 +656,7 @@ function(mvc2_executable TARGET)
     else()
         target_link_libraries(${TARGET} PRIVATE ${SDL_LIBS} m)
         if(MVC2_MISTER)
-            target_include_directories(${TARGET} PRIVATE ${PORT}/mister)
+            target_include_directories(${TARGET} PRIVATE ${PORT}/mister ${PORT}/sdl)
             target_link_libraries(${TARGET} PRIVATE pthread dl)
         endif()
         if(MVC2_SDL3)
