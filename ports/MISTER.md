@@ -1,7 +1,8 @@
 # Marvel vs. Capcom 2 on the MiSTer
 
 The arcade game and the Dreamcast version, run on the DE10-Nano's ARM and drawn by the Pinedra GPU core. Pinedra
-GPU must be installed first (release 20261115 or later); it is not part of this package, and no other core is needed.
+GPU must be installed first (release 20261123 or later for full speed; it runs from 20261115); it is not part of this
+package, and no other core is needed.
 
 - Pinedra GPU: [download and install it](https://www.patreon.com/pinedragpu/posts/pinedra-gpu-for-175129847) as its
   author describes on [Patreon](https://www.patreon.com/pinedragpu).
@@ -56,10 +57,11 @@ plays as the cabinet: Y X L over B A R.
 | R, R2       | assist 2            |
 | Start       | start               |
 | Select      | coin                |
-| L3          | the arcade's test menu (difficulty, timer, free play) |
+| L3          | Test: the arcade's test menu (difficulty, timer, free play) |
 | R3          | service             |
 
-The first pad is player 1's, the second player 2's.
+The first pad is player 1's, the second player 2's. Test is the step after Coin when the OSD asks for the buttons. In
+the test menu the D-pad moves, A or Start chooses, and B or Test goes back. The Dreamcast version has its own options.
 
 ## The OSD
 
@@ -102,12 +104,11 @@ the GNU AGPL 3.0; its source is in `licenses/MiSTer_MVC2`. Pinedra GPU is © its
 - The picture: each frame's lists drawn by rd_gl1 and swapped at the core's vblank. `MVC2_GL1` sets its options
   (default `less pool order clut`). `order`: the translucent list goes to the Pinedra driver in the game's own order
   as window-space vertices, and the driver orders and cuts it as the PVR did, on its thread on the second core;
-  the pictures differ from rd_gl1's own order by at most 3 of 255 on a few pixels. `clut`: a paletted texture goes
+  a frame with a corner far past the screen (the attract's sky) is ordered by rd_gl1. `clut`: a paletted texture goes
   as its indices and colours and the driver makes its texels, so the sprite pool isn't needed; the same pictures.
-  Both need Pinedra release 20261123 (driver 0.5.44) or later, and `MVC2_GL1="less pool"` turns them off. At
-  800 MHz (`PND_CPU_MHZ=800`) the launcher leaves `order` out: the driver's thread would fill the second core in
-  the character select.
-- The sound: made on a thread of its own, resampled to 48 kHz and written to `/dev/MrAudio`, the ring the core
+  Both need Pinedra release 20261123 (driver 0.5.44) or later, and `MVC2_GL1="less pool"` turns them off.
+- The sound: made on the game's thread while the driver orders the list (the second core is its thread's), else on
+  a thread of its own; resampled to 48 kHz and written to `/dev/MrAudio`, the ring the core
   plays; a read of the device gives the bytes it has left, and the sound is stretched by up to 0.5% to keep three
   frames there.
 - The controls: the wrapper's pads from its shared page (`MVC2_JOY_SHM`), else `/dev/input/event*`: a keyboard as

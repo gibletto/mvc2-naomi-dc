@@ -18,7 +18,7 @@ INI=$FAT/MiSTer.ini
 SECTION='MVC2 Pinedra'
 STAGE=$FAT/.mvc2_stage
 LOG=$GAME/logs/install.log
-TESTED=20261115
+TESTED=20261123
 
 say() {
 	echo "$*"
