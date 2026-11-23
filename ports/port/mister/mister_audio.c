@@ -269,7 +269,9 @@ void mister_audio_open(void) {
             put(quiet, 512);    /* a period of silence first: what a core just loaded starts from */
         }
     }
-    if (snd_enabled() && (t == NULL || atoi(t) != 0) && pthread_create(&maker, NULL, make_thread, NULL) == 0) {
+    /* with the driver ordering the translucent list, CPU 1 is its thread's and the game's has room for the sound */
+    if (snd_enabled() && (t != NULL ? atoi(t) != 0 : !mister_gl_ordered()) &&
+        pthread_create(&maker, NULL, make_thread, NULL) == 0) {
         threaded = 1;
     }
     host_log("audio: %s, made %s", dev >= 0 ? "to /dev/MrAudio" : "not played",

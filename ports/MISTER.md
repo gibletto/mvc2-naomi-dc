@@ -12,6 +12,8 @@ Copy `mvc2-mister-VERSION.tar.gz` and `mvc2_setup.sh` into `/media/fat/Scripts`,
 MiSTer's Scripts menu. It says which Pinedra it found, puts the game's files in place, adds a `[MVC2 Pinedra]`
 section to MiSTer.ini (after keeping a dated copy of it, `MiSTer.ini.mvc2-DATE`) and says which game data it
 found. Run it again to update; `mvc2_setup.sh --uninstall` removes it all except the game's data and saves.
+The menu entries load Pinedra's core, `pinedra/config/Pinedra Collection.rbf`; with a Pinedra from before release
+20261122, which called it Pinedra Config, they load that one, and after updating Pinedra, run `mvc2_setup` again.
 
 Besides that section and the copy, it writes only these:
 
@@ -58,13 +60,20 @@ The first pad is player 1's, the second player 2's.
 
 F12 (or the pad's OSD button) opens it. Its options are Pinedra's own, as for its games: the analog output
 (31 kHz 480p or 15 kHz), interlaced or progressive at 15 kHz, 60 or 50 Hz (the game is made for 60), and which
-output the frame rate follows. For a 15 kHz CRT, Pinedra Config's "Enable 240p mode" (its Settings page) draws the
+output the frame rate follows. For a 15 kHz CRT, Pinedra Collection's "Enable 240p mode" (its Settings page) draws the
 game in 240 lines, shown without interlace. A line in `games/mvc2/env.txt` sets it for this game alone:
 `PND_240P=1` on, `PND_240P=0` off. The game's own settings (difficulty, timer and the rest) are in its options or the
 arcade's test menu, and kept in `games/mvc2`.
 
 A TV with only S-Video or composite: `vga_mode=svideo` or `vga_mode=cvbs` in MiSTer.ini (with `vga_scaler=0`), and
 15 kHz in the OSD. Pinedra's core makes the colour (release 20261115 or later; not yet tried on a real set).
+
+## The ARM's clock
+
+While the game runs, the Pinedra driver holds the DE10-Nano's ARM at 1000 MHz (release 20261121 or later) and
+puts back the clock it found when the game ends. At 1000 MHz the arcade game's select and fights keep 60 frames a
+second; at the MiSTer's own 800 MHz a few frames are lost, most of them while a pick loads. A board that doesn't
+take 1000 MHz (the game hangs or the MiSTer stops answering): `PND_CPU_MHZ=800` in `games/mvc2/env.txt`.
 
 ## Quitting
 
@@ -86,7 +95,13 @@ the GNU AGPL 3.0; its source is in `licenses/MiSTer_MVC2`. Pinedra GPU is © its
   unpacks the data it shows the progress the game puts on the shared page. It reads the core's video mode every
   500 ms as MiSTer's own main does, which sets the S-Video and composite colour up.
 - The picture: each frame's lists drawn by rd_gl1 and swapped at the core's vblank. `MVC2_GL1` sets its options
-  (default `less pool`).
+  (default `less pool order clut`). `order`: the translucent list goes to the Pinedra driver in the game's own order
+  as window-space vertices, and the driver orders and cuts it as the PVR did, on its thread on the second core;
+  the pictures differ from rd_gl1's own order by at most 3 of 255 on a few pixels. `clut`: a paletted texture goes
+  as its indices and colours and the driver makes its texels, so the sprite pool isn't needed; the same pictures.
+  Both need Pinedra release 20261123 (driver 0.5.44) or later, and `MVC2_GL1="less pool"` turns them off. At
+  800 MHz (`PND_CPU_MHZ=800`) the launcher leaves `order` out: the driver's thread would fill the second core in
+  the character select.
 - The sound: made on a thread of its own, resampled to 48 kHz and written to `/dev/MrAudio`, the ring the core
   plays; a read of the device gives the bytes it has left, and the sound is stretched by up to 0.5% to keep three
   frames there.

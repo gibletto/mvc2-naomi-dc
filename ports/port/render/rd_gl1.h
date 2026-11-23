@@ -27,6 +27,7 @@ void rd_gl1_quit(void);
    bottom row first), less (depth tests the other way, the opaque list nearest first), snap=N (the GPU's grid,
    N a pixel), deep=K, shallow=K (the translucent list's cuts) */
 void rd_gl1_options(const char* words);
+int rd_gl1_ordered(void);           /* the driver orders the translucent list */
 
 typedef struct {
     int batches, tris, verts, uploads, textures, skipped, offset_lost;

@@ -298,6 +298,25 @@ else()
         # -O3 vectorizes the translucent sort's box tests
         set_source_files_properties(${PORT}/render/rd_gl1.c PROPERTIES COMPILE_OPTIONS -O3)
         set_source_files_properties(${PORT}/nl/nl_obj.c ${PORT}/render/rd.c ${PORT}/nl/nl_matha.c PROPERTIES COMPILE_OPTIONS -O3)
+        # the front end and the drawing built from a profile of a run (port/mister/pgo, tools/mister/README.md): use
+        # (the default while it is there: about 6 % less of the drawing's time in the character select), generate
+        # (a build that writes one to MVC2_PGO_DIR on the MiSTer), or none. A profile from older code is used where it
+        # still fits and left out where it doesn't; the game's own modules are built as before
+        if(EXISTS ${PORT}/mister/pgo)
+            set(PGO_DEFAULT use)
+        else()
+            set(PGO_DEFAULT "")
+        endif()
+        set(MVC2_PGO ${PGO_DEFAULT} CACHE STRING "MiSTer: the front end and the drawing from a profile: use, generate or none")
+        set(MVC2_PGO_DIR /tmp/mvc2pgo CACHE STRING "MiSTer: where a generate build writes its profile")
+        if(MVC2_PGO STREQUAL "generate")
+            set_property(SOURCE ${FRONT_SOURCES} APPEND PROPERTY COMPILE_OPTIONS
+                         -fprofile-generate=${MVC2_PGO_DIR} -fprofile-update=atomic)
+            set(MVC2_PGO_LINK -fprofile-generate)
+        elseif(MVC2_PGO STREQUAL "use")
+            set_property(SOURCE ${FRONT_SOURCES} APPEND PROPERTY COMPILE_OPTIONS
+                         -fprofile-use=${PORT}/mister/pgo -fprofile-correction -Wno-missing-profile -Wno-coverage-mismatch)
+        endif()
     else()
     set(FRONT_SOURCES ${PORT}/sdl/main_sdl.c ${PORT}/sdl/hunt.c ${PORT}/sdl/start.c ${PORT}/sdl/input_sdl.c ${PORT}/sdl/menu_sdl.c
         ${PORT}/sdl/sdl_audio.c ${PORT}/sdl/sdl_save.c ${PORT}/sdl/test_mode.c)
@@ -534,6 +553,9 @@ function(mvc2_executable TARGET)
         COMMENT "Making the host's layers one relocatable for ${TARGET}")
     set_source_files_properties(${CMAKE_BINARY_DIR}/${TARGET}_host.o PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
     add_executable(${TARGET} ${OBJECTS} ${FRONT_SOURCES} ${PORT}/sys/restart.c)
+    if(MVC2_PGO_LINK)
+        target_link_options(${TARGET} PRIVATE ${MVC2_PGO_LINK})
+    endif()
     target_include_directories(${TARGET} PRIVATE ${PORT}/include ${PORT}/render ${PORT}/snd)
     target_compile_definitions(${TARGET} PRIVATE ${DEFS})
     if("dc" IN_LIST ARGN)

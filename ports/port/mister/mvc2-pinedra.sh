@@ -2,7 +2,7 @@
 # /media/fat/games/mvc2/mvc2-pinedra [--arcade | --dc]: the game on the Pinedra GPU, as the MVC2 wrapper starts it
 # on the core loaded as "MVC2 Pinedra"; MVC2_* settings from env.txt beside it, NAME=value a line
 cd "$(dirname "$0")" || exit 1
-# Pinedra Config's "no start animation", as its own games take it
+# Pinedra Collection's "no start animation", as its own games take it
 grep -qx 'splash=0' /media/fat/pinedra/settings/all.cfg 2>/dev/null && export PND_SPLASH=0
 # no multisampling, as the board drew (env.txt can set PND_MSAA=1)
 export PND_MSAA=0
@@ -10,7 +10,10 @@ export PND_MSAA=0
 export PND_FRAMES_AHEAD=1
 # the sound thread (SDLAudio) on CPU1, off the game thread's CPU0: select about 1 ms a frame faster
 export PND_AUDIO_CORE=1
-# Pinedra Config's "Enable 240p mode": drawn in 240 lines, which a 15 kHz CRT shows without interlace
+# the ARM at 1000 MHz while the game runs, which the Pinedra driver sets and puts back when it ends (800, the MiSTer's
+# own: the character select loses about four frames a second): a board that doesn't take it, PND_CPU_MHZ=800 in env.txt
+export PND_CPU_MHZ=1000
+# Pinedra Collection's "Enable 240p mode": drawn in 240 lines, which a 15 kHz CRT shows without interlace
 grep -qx 'crt_240p=1' /media/fat/pinedra/settings/all.cfg 2>/dev/null && export PND_240P=1
 if [ -f env.txt ]; then
     set -a

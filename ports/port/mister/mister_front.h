@@ -22,6 +22,7 @@ void mister_gl_exit(void);
 /* piped (MVC2_PIPE): the frame handed to the drawing thread, rd_frame then the next's; the game's next frame from the
    next vblank; the last frame drawn's stats and time, and the GL's memory, as of the hand-off */
 int mister_gl_piped(void);
+int mister_gl_ordered(void);                /* the driver's thread orders the translucent list, on CPU 1 */
 void mister_gl_hand(unsigned frame);
 void mister_gl_next(void);
 const RD_GL1_STATS* mister_gl_stats(void);

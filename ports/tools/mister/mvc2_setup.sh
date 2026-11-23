@@ -59,7 +59,9 @@ paths() {
 }
 
 pinedra() {
-	[ -f "$FAT/pinedra/lib/libGL.so.1" ] && [ -f "$FAT/pinedra/config/Pinedra Config.rbf" ] ||
+	# its core: config/Pinedra Collection.rbf, before release 20261122 config/Pinedra Config.rbf
+	[ -f "$FAT/pinedra/lib/libGL.so.1" ] &&
+		{ [ -f "$FAT/pinedra/config/Pinedra Collection.rbf" ] || [ -f "$FAT/pinedra/config/Pinedra Config.rbf" ]; } ||
 		refuse "Pinedra GPU is not installed (no $FAT/pinedra/lib/libGL.so.1). Install it first, then run this again."
 	# VERSIONS: "release 20261115", "core 0.12.0", "driver 0.4.1" and the rest, a line each; VERSION: the release
 	release=$(sed -n 's/^release //p' "$FAT/pinedra/VERSIONS" 2> /dev/null)
@@ -133,6 +135,13 @@ install() {
 	grep -qs '>MVC2 Pinedra<' "$old_mgl" && ! grep -q '<file' "$old_mgl" && rm -f "$old_mgl" &&
 		say "Removed _Other/MVC2 (Pinedra).mgl (now one entry for each version)."
 	chmod +x "$FAT/MiSTer_MVC2" "$GAME/mvc2-pinedra" "$GAME/bin/mvc2-pinedra" "$FAT/Scripts/mvc2_setup.sh" 2> /dev/null
+	# a Pinedra from before release 20261122 has its core by its old name: the entries load that one until it is updated
+	if [ ! -f "$FAT/pinedra/config/Pinedra Collection.rbf" ] && [ -f "$FAT/pinedra/config/Pinedra Config.rbf" ]; then
+		for m in "$FAT/_Other/MVC2 Arcade (Pinedra).mgl" "$FAT/_Other/MVC2 Dreamcast (Pinedra).mgl"; do
+			[ -f "$m" ] && sed -i 's|pinedra/config/Pinedra Collection<|pinedra/config/Pinedra Config<|' "$m"
+		done
+		say "The menu entries load Pinedra's core by its old name (Pinedra Config): after updating Pinedra, run this again."
+	fi
 
 	if has_section; then
 		say "MiSTer.ini has [$SECTION] already."

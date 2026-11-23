@@ -58,7 +58,11 @@ enum {
     GL_VERTEX_ARRAY = 0x8074, GL_COLOR_ARRAY = 0x8076, GL_TEXTURE_COORD_ARRAY = 0x8078,
     GL_MODELVIEW = 0x1700, GL_PROJECTION = 0x1701, GL_SMOOTH = 0x1D01,
     GL_MAX_TEXTURE_SIZE = 0x0D33, GL_ALPHA_BITS = 0x0D55, GL_DEPTH_BITS = 0x0D56, GL_MAX_TEXTURE_UNITS = 0x84E2,
-    GL_VENDOR = 0x1F00, GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02
+    GL_VENDOR = 0x1F00, GL_RENDERER = 0x1F01, GL_VERSION = 0x1F02, GL_EXTENSIONS = 0x1F03,
+    /* the Pinedra driver's GL_PND_ordered_translucency and GL_PND_window_vertices (driver 0.5.44) */
+    GL_ORDERED_TRANSLUCENCY_PND = 0x1D100, GL_WINDOW_VERTICES_PND = 0x1D105, GL_LOWER_LEFT = 0x8CA1, GL_UPPER_LEFT = 0x8CA2,
+    /* GL_EXT_paletted_texture */
+    GL_COLOR_INDEX = 0x1900, GL_COLOR_INDEX4_EXT = 0x80E4, GL_COLOR_INDEX8_EXT = 0x80E5, GL_RGBA8 = 0x8058
 };
 
 #define GL_FUNCS(X) \
@@ -106,6 +110,13 @@ GL_FUNCS(GL_PTR)
 
 RD_GL1_STATS rd_gl1_stats;
 
+/* order: the translucent list given in its own order as window-space vertices, the driver ordering it as the PVR did
+   (GL_PND_ordered_translucency, GL_PND_window_vertices); clut: a paletted texture sent as its indices and its colours,
+   the driver making the texels on its own thread (GL_EXT_paletted_texture). Each where the driver has it */
+static int order_want, clut_want, ord_on, ord_frame, ord_live, clut_on;
+static void(GLCALL* glWindowOriginPND)(GLenum);
+static void(GLCALL* glColorTableEXT)(GLenum, GLenum, GLsizei, GLenum, GLenum, const void*);
+
 static int units;                   /* texture units: 3, offset on 1 and fog on 2; 2, both on 1, the offset lost */
 static int fog_unit, offset_unit;
 static int depth_bits;
@@ -139,6 +150,8 @@ void rd_gl1_options(const char* words) {
     pool_on = words != NULL && strstr(words, "pool") != NULL;
     upward = words != NULL && strstr(words, "up") != NULL;
     less = words != NULL && strstr(words, "less") != NULL;
+    order_want = words != NULL && strstr(words, "order") != NULL;
+    clut_want = words != NULL && strstr(words, "clut") != NULL;
     option(words, "snap=", &snap);
     option(words, "deep=", &deep_k);
     option(words, "shallow=", &shallow_k);
@@ -572,6 +585,51 @@ static int sampler(const RD_STATE* s) {
     return s->bilinear | (s->uv_mode & 15) << 1;
 }
 
+static int entries_of(const RD_TEXTURE* t) {
+    return t->format == RD_PAL4 ? 16 : 256;
+}
+
+/* clut: e as its own paletted texture, its colours sent at every use and its indices when they change */
+static GTEX* clut_texture(GTEX* e, const RD_TEXTURE* t, int palette, uint32_t ph) {
+    int n = entries_of(t), k, remake = e->name == 0 || e->form != -2 || e->w != t->width || e->h != t->height ||
+                                    e->levels != t->levels;
+    int same = !remake && e->own && e->serial == t->serial;
+    uint32_t pt[256];
+    for (k = 0; k < n; k++) {
+        uint32_t c = rd_gl1_pal[(palette + k) & 1023];
+        pt[k] = (c & 0xFF00FF00u) | (c >> 16 & 255) | (c & 255) << 16;
+    }
+    e->pool = -1;
+    if (e->name == 0) {
+        e->name = new_name();
+    }
+    bind(0, e->name);
+    active(0);
+    if (remake) {
+        e->min = e->mag = e->wrap_s = e->wrap_t = 0;
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, t->levels);
+    }
+    glColorTableEXT(GL_TEXTURE_2D, GL_RGBA8, n, GL_RGBA, GL_UNSIGNED_BYTE, pt);
+    for (k = 0; !same && k <= t->levels; k++) {
+        int w = t->width >> k, h = t->height >> k;
+        w = w < 1 ? 1 : w;
+        h = h < 1 ? 1 : h;
+        if (remake) {
+            glTexImage2D(GL_TEXTURE_2D, k, n == 16 ? GL_COLOR_INDEX4_EXT : GL_COLOR_INDEX8_EXT, w, h, 0, GL_COLOR_INDEX,
+                         GL_UNSIGNED_BYTE, level_texels(t, k));
+        } else {
+            glTexSubImage2D(GL_TEXTURE_2D, k, 0, 0, w, h, GL_COLOR_INDEX, GL_UNSIGNED_BYTE, level_texels(t, k));
+        }
+        rd_gl1_stats.upload_bytes += (uint32_t)(w * h);
+    }
+    rd_gl1_stats.uploads += !same;
+    e->serial = t->serial;
+    e->pal_hash = ph;
+    e->w = t->width, e->h = t->height, e->levels = t->levels, e->format = t->format, e->form = -2;
+    e->own = 1;
+    return e;
+}
+
 static GTEX* texture(const RD_TEXTURE* t, int palette, int sampling) {
     int pal = is_pal(t), k, remake, form;
     uint32_t ph;
@@ -594,6 +652,9 @@ static GTEX* texture(const RD_TEXTURE* t, int palette, int sampling) {
         return e;
     }
     form = pal && tex16 ? rd_gl1_pal_form(t, palette) : -1;
+    if (clut_on && pal) {
+        return clut_texture(e, t, palette, ph);
+    }
     e->pool = -1;
     e->own = 0;
     if (pool_on && rd_gl1_pool_texture(t)) {
@@ -1264,6 +1325,46 @@ static void corner(GV* g, const RD_VTX* v, float w, uint32_t argb) {
 
 static void draw_batches(int upto);
 
+/* order: a translucent triangle's corners in window space, x and y as they are, the window depth and 1/w for the
+   driver's rhw (its order key); the depth and fog as put_tri makes them */
+static void win_tri(const RD_STATE* s, const RD_TRI* t, int flat, GV* g) {
+    int k;
+    if (flat) {
+        static uint32_t last_z = 0xFFFFFFFFu, last_frame;
+        static float last_d, last_f;
+        uint32_t zb = zbits(t->v[0].z);
+        if (zb != last_z || last_frame != frame_no) {
+            last_z = zb, last_frame = frame_no;
+            last_d = (float)depth_of(t->v[0].z);
+            last_f = (1.0f / t->v[0].z - ramp_w0) * ramp_k;
+        }
+        if (snap > 0.0f) {
+            snapped(t, g);
+        }
+        for (k = 0; k < 3; k++, g++) {
+            const RD_VTX* v = &t->v[k];
+            uint32_t c = s->flat ? t->v[2].base : v->base;
+            if (snap <= 0.0f) {
+                g->x = v->x, g->y = v->y, g->u = v->u, g->v = v->v;
+            }
+            g->z = last_d, g->w = v->z;
+            g->s = last_f, g->t = 0.5f;
+            g->rgba = argb_to_rgba(s->use_alpha ? c : c | 0xFF000000u);
+        }
+        return;
+    }
+    for (k = 0; k < 3; k++, g++) {
+        const RD_VTX* v = &t->v[k];
+        uint32_t c = s->flat ? t->v[2].base : v->base;
+        g->x = v->x, g->y = v->y, g->u = v->u, g->v = v->v, g->w = v->z;
+        g->z = scaled3 && in_3d(zbits(v->z)) ? (float)((z3_a + v->z * z3_b) * 0.5 + 0.5) : (float)depth_of(v->z);
+        if (any_fogged) {
+            g->s = (1.0f / v->z - ramp_w0) * ramp_k, g->t = 0.5f;
+        }
+        g->rgba = argb_to_rgba(s->use_alpha ? c : c | 0xFF000000u);
+    }
+}
+
 #define BATCH_TRIS 64             /* a batch's most: its vertices stay in the cache for the GL's copy */
 
 /* check: dropped as rd_soft drops it (not a part of one cut, which was) */
@@ -1284,7 +1385,9 @@ static void put_tri(int list, const RD_TRI* t, int check) {
         !grow((void**)&ix, &maxix, nix + 3, sizeof *ix)) {
         return;
     }
-    if (flat) {
+    if (ord_frame && list == RD_TRANS) {
+        win_tri(s, t, flat, tri);
+    } else if (flat) {
         /* one 1/w: one depth and one fog coordinate */
         static uint32_t last_z = 0xFFFFFFFFu, last_frame;
         static float last_d, last_f;
@@ -2045,11 +2148,38 @@ static void deep_box(DEEP* e, int nshal) {
     }
 }
 
+/* the driver's window vertices don't take a corner far past the screen (the attract's sky, millions of pixels off):
+   a frame with a model's corner there is ordered here */
+static int order_fits(void) {
+    const RD_TRI* t = fr->tris[RD_TRANS];
+    int n = fr->ntris[RD_TRANS], i, k;
+    for (i = 0; i < n; i++) {
+        prefetch_tri(&t[i + 8]);
+        if (fr->states[t[i].state].origin != RD_SCENE) {
+            continue;
+        }
+        for (k = 0; k < 3; k++) {
+            if ((zbits(t[i].v[k].x) & 0x7FFFFFFFu) > 0x45800000u || (zbits(t[i].v[k].y) & 0x7FFFFFFFu) > 0x45800000u) {
+                return 0;   /* past 4096 */
+            }
+        }
+    }
+    return 1;
+}
+
 static void put_trans(void) {
     const RD_TRI* tris = fr->tris[RD_TRANS];
     int n = fr->ntris[RD_TRANS], i, j, nshal = 0, ndeep = 0, k, grid, sweep, ahead;
     const SORTED* r;
     nitems = nparts = 0;
+    if (ord_frame) {
+        /* in the game's own order: the driver orders and cuts them */
+        for (i = 0; i < n; i++) {
+            prefetch_tri(&tris[i + 8]);
+            put_tri(RD_TRANS, &tris[i], 1);
+        }
+        return;
+    }
     if (!grow((void**)&cuts, &maxcuts, 2 * n + 1, sizeof *cuts) || !grow((void**)&shal, &maxshal, n + 1, sizeof *shal) ||
         !grow((void**)&deep, &maxdeep, n + 1, sizeof *deep)) {
         return;
@@ -2426,6 +2556,11 @@ static void draw_batches(int upto) {
         if (late && drawn == solid) {
             background(1);
         }
+        if (ord_frame && drawn >= solid && !ord_live) {
+            glEnable(GL_WINDOW_VERTICES_PND);
+            glEnable(GL_ORDERED_TRANSLUCENCY_PND);
+            ord_live = 1;
+        }
         if (pointed != verts) {
             pointers();
         }
@@ -2455,6 +2590,9 @@ void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog_o
     }
     glViewport(0, 0, out_w, out_h);
     projection();
+    if (ord_on) {
+        glWindowOriginPND(upward ? GL_LOWER_LEFT : GL_UPPER_LEFT);
+    }
     any_fogged = 1;
     scan();
     vstride = any_fogged ? (int)sizeof(GV) : (int)offsetof(GV, s);
@@ -2484,10 +2622,16 @@ void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog_o
         }
     }
     solid = nbatches;
+    ord_frame = ord_on && order_fits();
     put_trans();
     rd_gl1_stats.us_build = us_since(t0);
     t0 = SDL_GetPerformanceCounter();
     draw_batches(nbatches);
+    if (ord_live) {
+        glDisable(GL_ORDERED_TRANSLUCENCY_PND);
+        glDisable(GL_WINDOW_VERTICES_PND);
+        ord_live = 0;
+    }
     if (late && solid == nbatches) {
         background(1);
     }
@@ -2535,6 +2679,10 @@ static GLuint small_texture(int w, const uint8_t* rgba) {
     return name;
 }
 
+int rd_gl1_ordered(void) {
+    return ord_on;
+}
+
 int rd_gl1_init(RD_GL_PROC proc) {
     static const uint8_t white[4] = { 255, 255, 255, 255 };
     static const float opaque[4] = { 0, 0, 0, 1 };
@@ -2566,6 +2714,18 @@ int rd_gl1_init(RD_GL_PROC proc) {
             (const char*)glGetString(GL_VERSION), units, depth_bits, alpha_bits, max_tex);
     if (units < 2) {
         return 0;
+    }
+    {
+        const char* e = (const char*)glGetString(GL_EXTENSIONS);
+        glWindowOriginPND = (void(GLCALL*)(GLenum))proc("glWindowOriginPND");
+        glColorTableEXT = (void(GLCALL*)(GLenum, GLenum, GLsizei, GLenum, GLenum, const void*))proc("glColorTableEXT");
+        ord_on = order_want && e != NULL && strstr(e, "GL_PND_ordered_translucency") != NULL &&
+                 strstr(e, "GL_PND_window_vertices") != NULL && glWindowOriginPND != NULL;
+        clut_on = clut_want && e != NULL && strstr(e, "GL_EXT_paletted_texture") != NULL && glColorTableEXT != NULL;
+        if (order_want || clut_want) {
+            fprintf(stderr, "rd_gl1: translucent order by the driver %s, palettes by the driver %s\n",
+                    ord_on ? "on" : order_want ? "not there" : "off", clut_on ? "on" : clut_want ? "not there" : "off");
+        }
     }
     offset_unit = 1;
     fog_unit = units >= 3 ? 2 : 1;

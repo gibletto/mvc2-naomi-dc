@@ -96,8 +96,10 @@ static int open_gl(void) {
         pnd_swap_interval(vsynced);
     }
     counters = pnd_get_stats != NULL ? pnd_get_stats() : NULL;
-    /* RGBA8 (the driver's 16-bit path costs its thread more), sprite tiles pooled, the opaque list nearest first */
-    rd_gl1_options(getenv("MVC2_GL1") != NULL ? getenv("MVC2_GL1") : "less pool");
+    /* RGBA8 (the driver's 16-bit path costs its thread more), sprite tiles pooled, the opaque list nearest first; and
+       where the driver has them, the translucent list ordered by the driver and the palettes expanded by it, both
+       on its own thread on the second core (Pinedra release 20261123, driver 0.5.44, for the order) */
+    rd_gl1_options(getenv("MVC2_GL1") != NULL ? getenv("MVC2_GL1") : "less pool order clut");
     rd_gl1_size(w, h);
     if (!rd_gl1_init(gl_proc)) {
         close_gl();
@@ -361,6 +363,10 @@ int mister_gl_init(void) {
 
 int mister_gl_piped(void) {
     return piped;
+}
+
+int mister_gl_ordered(void) {
+    return !piped && rd_gl1_ordered();
 }
 
 /* the frame's states' textures, the palette and the fog as they are now, for the drawing to read */

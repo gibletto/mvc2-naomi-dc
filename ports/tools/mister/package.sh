@@ -22,7 +22,7 @@ cp "$port/tools/mister/agpl/wrapper/"* "$port/tools/mister/build-hps.sh" "$s/gam
 cp "$port/tools/mister/mvc2_setup.sh" "$s/Scripts/mvc2_setup.sh"
 # one setname for both (one MiSTer.ini section, one button map); the wrapper takes the mode from the file's path
 for m in Arcade:arcade Dreamcast:dc; do
-    printf '%s\n' '<mistergamedescription>' '  <rbf>pinedra/config/Pinedra Config</rbf>' \
+    printf '%s\n' '<mistergamedescription>' '  <rbf>pinedra/config/Pinedra Collection</rbf>' \
         '  <setname same_dir="1">MVC2 Pinedra</setname>' "  <file delay=\"0\" type=\"f\" index=\"0\" path=\"${m#*:}\"/>" \
         '</mistergamedescription>' > "$s/_Other/MVC2 ${m%%:*} (Pinedra).mgl"
 done
