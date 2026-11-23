@@ -33,6 +33,11 @@ No game data comes with it:
   `.bin`s, an `.iso` of track 3, or its files (`1ST_READ.BIN` and the rest). The first start unpacks an image
   there (210 MB).
 
+They can be on a USB drive or a network share instead, in `games/mvc2/roms/mvsc2` and `games/mvc2/disc` there, and
+each is looked for on the USB drives, then the network shares, then the SD card, as MiSTer's cores look for their
+games. The drive has to be writable for the first start's unpacking. The game itself and its saves stay on the SD
+card. `MVC2_ROM=` and `MVC2_DC_DISC=` in `games/mvc2/env.txt` name another folder.
+
 In the menu, under _Other, "MVC2 Arcade (Pinedra)" starts the arcade game and "MVC2 Dreamcast (Pinedra)" the
 Dreamcast version. If what one needs is missing, it says so on the screen and goes back to the menu
 (`games/mvc2/logs/last-run.log` has the details).

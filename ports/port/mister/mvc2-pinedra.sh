@@ -20,5 +20,19 @@ if [ -f env.txt ]; then
     . ./env.txt
     set +a
 fi
+# the ROMs and the disc from a USB drive's or a network share's games/mvc2 before the SD card's, as MiSTer's cores look
+# for their games, unless env.txt (MVC2_ROM, MVC2_DC_DISC) or mvc2.cfg (arcade=, dc=) says where they are
+has() { timeout 10 ls "$1" 2> /dev/null | grep -iqE "$2"; }
+in_cfg() { grep -Eq "^[[:space:]]*$1[[:space:]]*=" mvc2.cfg 2> /dev/null; }
+for m in /media/usb0 /media/usb1 /media/usb2 /media/usb3 /media/usb4 /media/usb5 /media/network /media/fat/cifs; do
+    d=$m/games/mvc2
+    if [ -z "$MVC2_ROM" ] && ! in_cfg arcade &&
+        { has "$d/roms/mvsc2" '^(mvsc2\.(bin|zip)|epr-23085a\.ic11)$' || has "$d/roms" '^mvsc2\.zip$'; }; then
+        export MVC2_ROM="$d/roms/mvsc2"
+    fi
+    if [ -z "$MVC2_DC_DISC" ] && ! in_cfg dc && has "$d/disc" '^1ST_READ\.BIN$|\.(chd|gdi|cue|iso)$'; then
+        export MVC2_DC_DISC="$d/disc"
+    fi
+done
 [ "$PND_240P" = 1 ] || unset PND_240P
 exec bin/mvc2-pinedra "$@"

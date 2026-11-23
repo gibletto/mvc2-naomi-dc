@@ -38,11 +38,8 @@ fail() {
 }
 
 # 0 when one of the paths is there
-any() {
-	for f; do
-		[ -e "$f" ] && return 0
-	done
-	return 1
+lists() {
+	timeout 10 ls "$1" 2> /dev/null | grep -iqE "$2"
 }
 has_section() { grep -q "^\[$SECTION\]" "$INI" 2> /dev/null; }
 
@@ -158,12 +155,27 @@ install() {
 
 	echo
 	say "Done: $version. In the menu: _Other, then \"MVC2 Arcade (Pinedra)\" or \"MVC2 Dreamcast (Pinedra)\"."
-	any "$GAME/roms/mvsc2/epr-23085a.ic11" "$GAME/roms/mvsc2/mvsc2.zip" "$GAME/roms/mvsc2.zip" &&
-		say "Arcade: the ROM set is in games/mvc2/roms/mvsc2." ||
-		say "Arcade: put MAME's mvsc2.zip (or its files) in games/mvc2/roms/mvsc2."
-	any "$GAME/disc/1ST_READ.BIN" "$GAME"/disc/*.chd "$GAME"/disc/*.gdi "$GAME"/disc/*.cue "$GAME"/disc/*.iso &&
-		say "Dreamcast: the disc is in games/mvc2/disc." ||
-		say "Dreamcast: put the USA disc (an image, or its files) in games/mvc2/disc."
+	# where the game's launcher will find them: a USB drive or a network share, then the SD card
+	local m d found_rom="" found_disc=""
+	for m in /media/usb0 /media/usb1 /media/usb2 /media/usb3 /media/usb4 /media/usb5 /media/network "$FAT/cifs" "$FAT"; do
+		d=$m/games/mvc2
+		if [ -z "$found_rom" ] && { lists "$d/roms/mvsc2" '^(mvsc2\.(bin|zip)|epr-23085a\.ic11)$' || lists "$d/roms" '^mvsc2\.zip$'; }; then
+			found_rom=$d/roms/mvsc2
+		fi
+		if [ -z "$found_disc" ] && lists "$d/disc" '^1ST_READ\.BIN$|\.(chd|gdi|cue|iso)$'; then
+			found_disc=$d/disc
+		fi
+	done
+	if [ -n "$found_rom" ]; then
+		say "Arcade: the ROM set is in $found_rom."
+	else
+		say "Arcade: put MAME's mvsc2.zip (or its files) in games/mvc2/roms/mvsc2, on the SD card, a USB drive or a network share."
+	fi
+	if [ -n "$found_disc" ]; then
+		say "Dreamcast: the disc is in $found_disc."
+	else
+		say "Dreamcast: put the USA disc (an image, or its files) in games/mvc2/disc, on the SD card, a USB drive or a network share."
+	fi
 }
 
 main() {
