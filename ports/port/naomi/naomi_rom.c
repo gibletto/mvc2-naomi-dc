@@ -475,6 +475,16 @@ const char* naomi_rom_image_name(void) {
     return IMAGE;
 }
 
+#ifdef MVC2_MISTER
+/* a zip on a drive that can't take its image: the image on the SD card, in the game's own folder */
+#define SD_DIR "roms/mvsc2"
+static int unpack_failed;
+
+int naomi_rom_unpack_failed(void) {
+    return unpack_failed;
+}
+#endif
+
 int naomi_rom_open(const char* dir) {
     char path[1100];
     size_t i;
@@ -487,6 +497,13 @@ int naomi_rom_open(const char* dir) {
         slot[i].block = -1;
         slot[i].used = 0;
     }
+#ifdef MVC2_MISTER
+    unpack_failed = 0;
+    if (!has_file(dir, IMAGE, ROM_SIZE) && missing_file(dir) != NULL && has_file(SD_DIR, IMAGE, ROM_SIZE)) {
+        host_log("the set's image from %s", SD_DIR);
+        dir = SD_DIR;
+    }
+#endif
     snprintf(path, sizeof path, "%s/%s", dir, IMAGE);
     if (reader != NULL && reader->open(dir)) {
         use_reader = 1;
@@ -495,6 +512,20 @@ int naomi_rom_open(const char* dir) {
             host_log("unpacking the set's zip into %s", path);
             if (!naomi_rom_make_image(dir, path, unpack_progress)) {
                 host_log("could not unpack the set's zip into %s", path);
+#ifdef MVC2_MISTER
+                if (strcmp(dir, SD_DIR) != 0) {
+                    make_dir("roms");
+                    make_dir(SD_DIR);
+                    snprintf(path, sizeof path, "%s/%s", SD_DIR, IMAGE);
+                    host_log("unpacking the set's zip into %s", path);
+                    if (naomi_rom_make_image(dir, path, unpack_progress)) {
+                        dir = SD_DIR;
+                    } else {
+                        host_log("could not unpack the set's zip into %s", path);
+                    }
+                }
+                unpack_failed = !has_file(dir, IMAGE, ROM_SIZE);
+#endif
             }
         }
         if (has_file(dir, IMAGE, ROM_SIZE)) {

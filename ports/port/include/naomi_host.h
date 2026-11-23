@@ -71,6 +71,7 @@ typedef struct {
 void naomi_rom_set_reader(const NAOMI_ROM_READER* reader);
 int naomi_rom_make_image(const char* dir, const char* path, void (*progress)(uint32_t done, uint32_t total));
 const char* naomi_rom_image_name(void);
+int naomi_rom_unpack_failed(void);         /* MiSTer: the zip fitted neither its drive nor the SD card */
 int naomi_rom_cached(uint32_t block);
 uint32_t naomi_rom_held(void);              /* the bytes the ROM cache holds */
 void naomi_rom_put(uint32_t block, const void* data);   /* a block read ahead, into the cache */
@@ -201,7 +202,7 @@ void* host_keep_block(size_t size); /* memory kept through restarts (the sound's
 void host_present(void);
 int pick_game(int argc, char** argv);   /* start.c: from the data found */
 const char* pick_message(void);         /* why none can run ("" when the player quit) */
-enum { PICK_QUIT, PICK_NO_DATA, PICK_NO_ARCADE, PICK_NO_DC, PICK_BAD_DISC };
+enum { PICK_QUIT, PICK_NO_DATA, PICK_NO_ARCADE, PICK_NO_DC, PICK_BAD_DISC, PICK_NO_ROOM };
 int pick_why(void);                     /* why pick_game or start_game gave up: a PICK_ */
 const char* config_get(const char* key);             /* mvc2.cfg's, or NULL */
 const char* host_save_path(const char* name);

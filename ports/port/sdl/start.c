@@ -496,8 +496,15 @@ int start_game(void) {
     }
 #ifdef MVC2_ARCADE
     if (mode == ARCADE) {
+        int started;
         host_keep_program(&arc_program);
-        return naomi_init(&arc_program, path[mode]);
+        started = naomi_init(&arc_program, path[mode]);
+#ifdef MVC2_MISTER
+        if (!started && naomi_rom_unpack_failed()) {
+            why = PICK_NO_ROOM;
+        }
+#endif
+        return started;
     }
 #endif
 #ifdef MVC2_DC

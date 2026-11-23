@@ -472,6 +472,8 @@ int main(int argc, char *argv[])
 			fail(" No Dreamcast disc in\n games/mvc2/disc", 10);
 		if (WIFEXITED(status) && WEXITSTATUS(status) == 14)
 			fail(" The disc in games/mvc2/disc\n could not be read, or it\n is not the USA disc", 10);
+		if (WIFEXITED(status) && WEXITSTATUS(status) == 15)
+			fail(" Could not unpack mvsc2.zip:\n its drive or the SD card\n needs 136 MB free", 10);
 		if (!restart || quit) back_to_menu();
 	}
 }
