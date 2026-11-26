@@ -80,7 +80,7 @@ index cba66c3..a828942 100644
  void reboot(int cold);
  void app_restart(const char *path, const char *xml = 0, const char *exe = 0);
 diff --git a/input.cpp b/input.cpp
-index 1389006..f7edd69 100644
+index 1389006..36c6d21 100644
 --- a/input.cpp
 +++ b/input.cpp
 @@ -1413,6 +1413,7 @@ static uint32_t tmp_axis[4];
@@ -91,7 +91,39 @@ index 1389006..f7edd69 100644
  
  static uint32_t osd_timer = 0;
  static uint32_t map_advance_timer = 0;
-@@ -2087,7 +2088,11 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int
+@@ -1523,13 +1524,21 @@ static char *get_unique_mapping(int dev, int force_unique = 0)
+ 	return str;
+ }
+ 
++static char map_core_name[64];
++
++// the core's name in its button maps' names: the core's own unless input_set_map_name gave another
++static const char *map_core()
++{
++	return map_core_name[0] ? map_core_name : user_io_get_core_name();
++}
++
+ static char *get_map_name(int dev, int def)
+ {
+ 	static char name[1024];
+ 	char *id = get_unique_mapping(dev);
+ 
+ 	if (def || is_menu()) sprintfz(name, "input_%s%s_v3.map", id, input[dev].mod ? "_m" : "");
+-	else sprintfz(name, "%s_input_%s%s_v3.map", user_io_get_core_name(), id, input[dev].mod ? "_m" : "");
++	else sprintfz(name, "%s_input_%s%s_v3.map", map_core(), id, input[dev].mod ? "_m" : "");
+ 	return name;
+ }
+ 
+@@ -1537,7 +1546,7 @@ static char *get_jkmap_name(int dev)
+ {
+ 	static char name[1024];
+ 	char *id = get_unique_mapping(dev);
+-	sprintfz(name, "%s_input_%s_jk.map", user_io_get_core_name(), id);
++	sprintfz(name, "%s_input_%s_jk.map", map_core(), id);
+ 	return name;
+ }
+ 
+@@ -2087,7 +2096,11 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int
  		// on OSD exit and causes combinations to match when partial buttons are pressed.
  		if (!user_io_osd_is_visible()) osdbtn = 0;
  
@@ -104,7 +136,7 @@ index 1389006..f7edd69 100644
  		{
  			mask &= ~JOY_BTN3;
  			if (press)
-@@ -2203,7 +2208,7 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int
+@@ -2203,7 +2216,7 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int
  			}
  			input_cb(&ev, 0, 0, true);
  		}
@@ -113,7 +145,7 @@ index 1389006..f7edd69 100644
  		{
  			switch (mask)
  			{
-@@ -2746,6 +2751,17 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int
+@@ -2746,6 +2759,17 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int
  				{
  					// not defined try to guess the mapping
  					map_joystick(input[dev].map, input[dev].mmap);
@@ -131,7 +163,7 @@ index 1389006..f7edd69 100644
  				}
  				else
  				{
-@@ -3288,7 +3304,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int
+@@ -3288,7 +3312,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int
  					if (osd_event == 2) joy_digital(input[dev].num, 0, 0, 0, BTN_OSD);
  				}
  
@@ -140,7 +172,7 @@ index 1389006..f7edd69 100644
  				{
  					if (ev->value <= 1)
  					{
-@@ -5935,6 +5951,10 @@ void key_update_frames_held()
+@@ -5935,6 +5959,10 @@ void key_update_frames_held()
  	}
  }
  
@@ -151,7 +183,7 @@ index 1389006..f7edd69 100644
  int input_poll(int getchar)
  {
  
-@@ -5989,6 +6009,7 @@ int input_poll(int getchar)
+@@ -5989,6 +6017,7 @@ int input_poll(int getchar)
  	for (int i = 0; i < NUMPLAYERS; i++) {
  		joy_mask[i] = build_joy_mask(i);
  		autofire_mask[i] = build_autofire_mask(i);
@@ -159,7 +191,7 @@ index 1389006..f7edd69 100644
  	}
  
  	if (grabbed)
-@@ -6001,16 +6022,24 @@ int input_poll(int getchar)
+@@ -6001,16 +6030,24 @@ int input_poll(int getchar)
  				joy_mask_prev[i] = joy_mask[i];
  				user_io_digital_joystick(i, joy_mask[i], newdir);
  			}
@@ -186,7 +218,16 @@ index 1389006..f7edd69 100644
  	}
  
  	if (mouse_req)
-@@ -6547,3 +6576,20 @@ void input_advanced_save_entry(advancedButtonMap *abm_entry, int devnum)
+@@ -6410,7 +6447,7 @@ static void input_advanced_save_filename(char *fname, size_t pathlen, int dev_nu
+   char *id = get_unique_mapping(dev_num);
+ 
+ 	if (def || is_menu()) snprintf(fname, pathlen, "advanced_input_%s%s_v1.map", id, input[dev_num].mod ? "_m" : "");
+-	else snprintf(fname, pathlen, "%s_advanced_input_%s%s_v1.map", user_io_get_core_name(), id, input[dev_num].mod ? "_m" : "");
++	else snprintf(fname, pathlen, "%s_advanced_input_%s%s_v1.map", map_core(), id, input[dev_num].mod ? "_m" : "");
+ }
+ 
+ void input_advanced_save(int dev_num, bool do_delete)
+@@ -6547,3 +6584,25 @@ void input_advanced_save_entry(advancedButtonMap *abm_entry, int devnum)
  		return;
  	}
  }
@@ -207,17 +248,23 @@ index 1389006..f7edd69 100644
 +{
 +	input_joy_passthrough = enable;
 +}
++
++void input_set_map_name(const char *name)
++{
++	snprintf(map_core_name, sizeof(map_core_name), "%s", name ? name : "");
++}
 diff --git a/input.h b/input.h
-index 97c9b1d..2551a64 100644
+index 97c9b1d..5a842de 100644
 --- a/input.h
 +++ b/input.h
-@@ -130,6 +130,11 @@ void input_lightgun_save(int idx, int32_t *cal);
+@@ -130,6 +130,12 @@ void input_lightgun_save(int idx, int32_t *cal);
  
  void input_switch(int grab);
  int input_state();
 +void input_get_joy_mask(uint32_t *out, int count);
 +void input_get_joy_mask_raw(uint32_t *out, int count);
 +void input_set_joy_passthrough(int enable);
++void input_set_map_name(const char *name);
 +
 +extern int input_btncheck_active;
  void input_uinp_destroy();

@@ -1,5 +1,5 @@
 /*
- * menu_sdl.c  The controls screen (F1): each player's keys and buttons, the renderer and exit, over the paused game
+ * menu_sdl.c  The controls screen (F1): each player's keys and buttons, the renderer, full screen and exit, over the paused game
  */
 
 #include <stdio.h>
@@ -13,7 +13,7 @@
 #include "menu_sdl.h"
 #include "menu_font.h"
 
-enum { SCALE = 2, CW = 6 * SCALE, CH = 10 * SCALE, LEFT = 32, TOP = 24 };
+enum { SCALE = 2, CW = 6 * SCALE, CH = 19, LEFT = 32, TOP = 16 };     /* 24 lines */
 
 #define WHITE 0xFFFFFFFFu
 #define YELLOW 0xFFFFE040u
@@ -35,7 +35,7 @@ static const char* const labels[ACTIONS] = {
     "LIGHT KICK", "HEAVY KICK", "ASSIST 2", "START", "COIN",
 };
 
-enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_HUD, ROW_DEFAULTS, ROW_DONE, ROW_EXIT, ROWS };
+enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_HUD, ROW_FULL, ROW_DEFAULTS, ROW_DONE, ROW_EXIT, ROWS };
 
 static int row_line(int a) {
     return 2 + a;
@@ -117,7 +117,7 @@ static void change_hud(int way) {
 static void change_picture(int way) {
     int i, now = -1;
 #ifdef MVC2_SDL3
-    if (renderer_gpu()) {
+    if (renderer_kind() != RENDERER_SOFT) {
         now = gpu_picture();
         now = now < 0 ? 0 : (now + way + GPU_PICTURES) % GPU_PICTURES;
         config_set("resolution", gpu_pictures[now].resolution);
@@ -138,13 +138,18 @@ static void change_picture(int way) {
 
 static const char* renderer_note;
 
-static void change_renderer(void) {
+/* GPU, GL and SOFT in turn (dir 1 or -1); the GPU falls to OpenGL and OpenGL to SOFT where they can't start */
+static void change_renderer(int dir) {
 #ifdef MVC2_SDL3
-    int want = !renderer_gpu();
-    int now = renderer_set_gpu(want);
-    config_set("renderer", now ? "gpu" : "soft");
-    renderer_note = now == want ? NULL : "THE GPU COULD NOT START";
+    int want = (renderer_kind() + (dir < 0 ? 1 : 2)) % 3;
+    int now = renderer_set(want);
+    config_set("renderer", now == RENDERER_SOFT ? "soft" : want == RENDERER_GL ? "gl" : "gpu");
+    renderer_note = now == want           ? NULL
+                    : now == RENDERER_GL  ? "NO VULKAN OR D3D12"
+                    : want == RENDERER_GL ? "NO OPENGL"
+                                          : "NO GPU OR OPENGL";
 #else
+    (void)dir;
     renderer_note = "THE SDL3 BUILD'S";
 #endif
 }
@@ -152,18 +157,25 @@ static void change_renderer(void) {
 static const char* setting(int a, char* buf, size_t size) {
     size_t i;
     if (a == ROW_RENDERER) {
-        snprintf(buf, size, "%s%s%s", renderer_gpu() ? "GPU" : "SOFT", renderer_note != NULL ? "  " : "",
+        static const char* const kinds[] = { "SOFT", "GL", "GPU" };
+        snprintf(buf, size, "%s%s%s", kinds[renderer_kind()], renderer_note != NULL ? "  " : "",
                  renderer_note != NULL ? renderer_note : "");
     } else if (a == ROW_SPRITES) {
         snprintf(buf, size, "%s%s", sprite_modes[sprites()], renderer_gpu() ? "" : "  (GPU ONLY)");
     } else if (a == ROW_HUD) {
         snprintf(buf, size, "%s%s", hud(), renderer_gpu() ? "" : "  (GPU ONLY)");
-    } else if (renderer_gpu()) {
+    } else if (a == ROW_FULL) {
+        static const char* const kinds[] = { "OFF", "DESKTOP", "EXCLUSIVE" };
+        snprintf(buf, size, "%s", kinds[fullscreen_kind()]);
+    } else if (renderer_kind() != RENDERER_SOFT) {
+        /* OpenGL: the resolution, not the aa */
         int i = gpu_picture(), w = 0, h = 0;
+        int aa_off = renderer_kind() == RENDERER_GL && i >= 0 && strcmp(gpu_pictures[i].aa, "1") != 0;
 #ifdef MVC2_SDL3
         view_drawn(&w, &h);
 #endif
-        snprintf(buf, size, "%s: %d by %d", i >= 0 ? gpu_pictures[i].name : "mvc2.cfg's", w, h);
+        snprintf(buf, size, "%s: %d by %d%s", i >= 0 ? gpu_pictures[i].name : "mvc2.cfg's", w, h,
+                 aa_off ? "  (AA GPU ONLY)" : "");
     } else {
         snprintf(buf, size, "%s", picture());
     }
@@ -223,9 +235,10 @@ void menu_draw(uint32_t* frame, int w, int h) {
             draw_text(0, row_line(a), a == ROW_DONE ? "DONE" : "EXIT THE GAME", color);
             continue;
         }
-        if (a == ROW_RENDERER || a == ROW_PICTURE || a == ROW_SPRITES || a == ROW_HUD) {
+        if (a >= ROW_RENDERER && a <= ROW_FULL) {
             draw_text(0, row_line(a),
-                      a == ROW_RENDERER ? "RENDERER" : a == ROW_PICTURE ? "PICTURE" : a == ROW_SPRITES ? "SPRITES" : "HUD", color);
+                      a == ROW_RENDERER ? "RENDERER" : a == ROW_PICTURE ? "PICTURE" : a == ROW_SPRITES ? "SPRITES"
+                      : a == ROW_HUD ? "HUD" : "FULL SCREEN", color);
             snprintf(line, sizeof line, "< %s >", setting(a, one, sizeof one));
             draw_text(13, row_line(a), line, color);
             continue;
@@ -243,8 +256,8 @@ void menu_draw(uint32_t* frame, int w, int h) {
         }
         draw_text(13, row_line(a), n > 0 ? line : "-", color);
     }
-    draw_text(0, 21, "UP/DOWN CHOOSE   LEFT/RIGHT PLAYER OR SETTING", GREY);
-    draw_text(0, 22, "ENTER/A SET   DEL/X DEFAULT   ESC/B DONE", GREY);
+    draw_text(0, 22, "UP/DOWN CHOOSE   LEFT/RIGHT PLAYER OR SETTING", GREY);
+    draw_text(0, 23, "ENTER/A SET   DEL/X DEFAULT   ESC/B DONE", GREY);
 }
 
 static void close_menu(void) {
@@ -271,7 +284,9 @@ static void act(int up, int down, int left, int right, int enter, int reset, int
     } else if ((left || right || enter) && row == ROW_HUD) {
         change_hud(left ? -1 : 1);
     } else if ((left || right || enter) && row == ROW_RENDERER) {
-        change_renderer();
+        change_renderer(left ? -1 : 1);
+    } else if ((left || right || enter) && row == ROW_FULL) {
+        fullscreen_set((fullscreen_kind() + (left ? 2 : 1)) % 3);     /* off, desktop, exclusive */
     } else if (enter && row == ROW_PICTURE) {
         change_picture(1);
     } else if (left || right) {

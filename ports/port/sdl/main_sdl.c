@@ -18,6 +18,8 @@
 #include "rd.h"
 #ifdef MVC2_SDL3
 #include "rd_gpu.h"
+#include "gl_sdl.h"
+#include "rd_gl1.h"
 #endif
 #include "input_sdl.h"
 #include "menu_sdl.h"
@@ -25,6 +27,7 @@
 #include "hunt.h"
 #ifdef _WIN32
 #include "console_win32.h"
+#include "display_win32.h"
 void config_read(void);             /* start.c */
 #endif
 
@@ -40,8 +43,14 @@ static SDL_Texture* screen;
 #ifdef MVC2_SDL3
 static SDL_GPUDevice* gpu;
 static SDL_Texture* gpu_screen;
+static int glr;             /* the OpenGL renderer (gl_sdl.c), where SDL_GPU has neither Vulkan nor Direct3D 12 */
+#define gl_uploads() (glr ? rd_gl1_stats.uploads : 0)
+#define gl_upload_kb() (glr ? rd_gl1_stats.upload_bytes >> 10 : 0)
 #else
 #define gpu 0
+#define glr 0
+#define gl_uploads() 0
+#define gl_upload_kb() 0u
 #endif
 static HOST_INPUT input;
 
@@ -164,6 +173,10 @@ static void read_frame(void) {
     if (gpu && !frame_read) {
         frame_read = rd_gpu_read(frame);
     }
+    if (glr && !frame_read) {
+        gl_read(renderer, frame);
+        frame_read = 1;
+    }
 #endif
 }
 
@@ -209,8 +222,14 @@ static void screenshot(void) {
 }
 
 /* both boards: a 27 MHz pixel clock, 858 by 525 */
-static double frame_rate = 27000000.0 / (858.0 * 525.0);
-static Uint64 next_frame;
+#define BOARD_RATE (27000000.0 / (858.0 * 525.0))
+static double frame_rate = BOARD_RATE;
+static double next_at;      /* the next frame's time, in performance counter ticks */
+static double sync_step;    /* exclusive full screen's (sync_judge): ticks a frame, 0 for frame_rate's */
+static int sync_keep;       /* after a stall, the frames kept on the display's refreshes */
+#ifdef MVC2_SDL3
+static void sync_snap(void);
+#endif
 
 static void pace_init(void) {
     const char* fps = getenv("MVC2_FPS");
@@ -223,24 +242,208 @@ static void pace_init(void) {
 
 /* sleep most of the way, then spin the last 2 ms */
 static void pace(void) {
-    Uint64 now, freq = SDL_GetPerformanceFrequency(), step;
+    double freq = (double)SDL_GetPerformanceFrequency(), step, now;
     if (frame_rate <= 0) {
         return;
     }
-    step = (Uint64)(freq / frame_rate);
-    now = SDL_GetPerformanceCounter();
-    if (next_frame == 0 || now > next_frame + step * 4) {
-        next_frame = now;   /* after a stall, don't catch up */
+    step = sync_step > 0 ? sync_step : freq / frame_rate;
+    now = (double)SDL_GetPerformanceCounter();
+    if (next_at == 0 || (now > next_at + step * 4 && !sync_keep)) {
+        next_at = now;      /* after a stall, don't catch up */
+    } else if (now > next_at + step * 4) {
+        next_at += floor((now - next_at) / step) * step;
     }
-    while (now < next_frame) {
-        Uint64 left_ms = (next_frame - now) * 1000 / freq;
+#ifdef MVC2_SDL3
+    sync_snap();
+#endif
+    while (now < next_at) {
+        double left_ms = (next_at - now) * 1000 / freq;
         if (left_ms > 2) {
             SDL_Delay((Uint32)(left_ms - 2));
         }
-        now = SDL_GetPerformanceCounter();
+        now = (double)SDL_GetPerformanceCounter();
     }
-    next_frame += step;
+    next_at += step;
 }
+
+#ifdef MVC2_SDL3
+/* The timer paces every renderer; vsync only times each present to a refresh. A display slower than the game's
+   59.94 Hz (a 50 Hz TV) would hold it back, so there vsync is off: from the display's mode, or measured, when the
+   frames come late with it on and in time without (a GL driver waits in the next frame's drawing, not the present) */
+enum { VSYNC_TRUSTED, VSYNC_TRIED_OFF, VSYNC_KEPT_OFF, VSYNC_NOT_THE_CAUSE };
+static int vsync_on = -1, vsync_trial;
+static Uint64 watch_last, watch_with;
+static Uint64 watch_gaps[120];
+static int watch_frames;
+
+/* Exclusive full screen at the board's rate, with vsync. A display with variable refresh (VRR: G-Sync, FreeSync) on
+   follows the timer's 59.94 Hz, each frame shown as it comes. One without shows each frame for a whole number N of
+   its refreshes, and against the timer one frame in every few hundred for one more (at 240 Hz, every 3 s): there the
+   frames are locked to N refreshes (60.02 Hz at 240.08, 60.00 at 60), each present 2 ms before its refresh by the
+   compositor's clock, the sound stretched to match (sdl_audio.c). Locked frames on a VRR display come unevenly (the
+   clock means nothing there), so they are only for a display known to be without. Which: mvc2.cfg's vrr = on or off,
+   else NVIDIA's driver, asked after a second of frames (it says so only for a program presenting), else not known,
+   and the timer stays. The presents themselves can't tell: SDL's swapchains queue them, not waiting a refresh each */
+enum { SYNC_TIMER, SYNC_ASKING, SYNC_VRR, SYNC_LOCKED };
+static int sync_mode, sync_n, sync_frames;
+static float sync_hz;
+static double sync_lead;    /* ticks before the refresh */
+
+static int vrr_wanted(void) {
+    const char* v = config_get("vrr");
+    return v != NULL && strcmp(v, "on") == 0 ? 1 : v != NULL && strcmp(v, "off") == 0 ? 0 : -1;
+}
+
+/* the last refresh's time and the period, in performance counter ticks */
+static int sync_clock(Uint64* last, Uint64* period) {
+#ifdef _WIN32
+    return display_vblank(last, period);
+#else
+    (void)last, (void)period;
+    return 0;
+#endif
+}
+
+static void sync_say(const char* text) {
+    static char said[240];
+    if (strcmp(said, text) != 0) {
+        snprintf(said, sizeof said, "%s", text);
+        host_log("%s", text);
+    }
+}
+
+/* vrr: 1 on, 0 off, -1 not known; how: who says */
+static void sync_set(int vrr, const char* how) {
+    double freq = (double)SDL_GetPerformanceFrequency();
+    char text[240];
+    Uint64 last, period;
+    sync_mode = SYNC_TIMER, sync_step = 0, sync_keep = 0;
+    if (vrr == 1) {
+        sync_mode = SYNC_VRR;
+        snprintf(text, sizeof text, "pacing: VRR on (%s): the timer at %.2f Hz, the display (%.2f Hz at most) following",
+                 how, frame_rate, sync_hz);
+    } else if (vrr < 0) {
+        snprintf(text, sizeof text, "pacing: VRR not known (%s): the timer at %.2f Hz (vrr = off locks the frames to the "
+                 "refreshes, for a display without)", how, frame_rate);
+    } else if (!sync_clock(&last, &period) || fabs(period * sync_hz / freq - 1) > 0.005) {
+        snprintf(text, sizeof text, "pacing: no VRR (%s), and no clock of the refreshes: the timer at %.2f Hz", how,
+                 frame_rate);
+    } else {
+        double now = (double)SDL_GetPerformanceCounter();
+        sync_mode = SYNC_LOCKED, sync_keep = 1;
+        sync_step = sync_n * (double)period;
+        sync_lead = freq * 0.002 < period / 2.0 ? freq * 0.002 : period / 2.0;
+        next_at = (double)last + ceil((now - (double)last) / (double)period) * (double)period - sync_lead;
+        snprintf(text, sizeof text, "pacing: no VRR (%s): locked to %d refreshes of %.2f Hz a frame, %.3f Hz, each "
+                 "present %.1f ms before its refresh; the sound stretched to match", how, sync_n,
+                 freq / (double)period, freq / sync_step, sync_lead * 1000 / freq);
+    }
+    sync_say(text);
+}
+
+static void sync_judge(void) {
+    const SDL_DisplayMode* m = window != NULL ? SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window)) : NULL;
+    int vrr = vrr_wanted();
+    sync_hz = m != NULL ? m->refresh_rate : 0;
+    sync_mode = SYNC_TIMER, sync_step = 0, sync_keep = 0;
+    if (frame_rate <= 0 || fabs(frame_rate - BOARD_RATE) > 0.001 || vsync_on != 1 || renderer == NULL ||
+        fullscreen_kind() != FULL_EXCLUSIVE || sync_hz <= 0 || (sync_n = (int)(sync_hz / BOARD_RATE + 0.5)) < 1) {
+        char text[100];
+        snprintf(text, sizeof text, "pacing: the timer at %.2f Hz", frame_rate);
+        sync_say(text);
+        return;
+    }
+    if (vrr >= 0) {
+        sync_set(vrr, "mvc2.cfg's vrr");
+        return;
+    }
+    sync_mode = SYNC_ASKING;    /* the timer meanwhile */
+    sync_frames = 0;
+}
+
+/* after each present: NVIDIA's driver asked, a second into exclusive full screen */
+static void sync_presented(void) {
+    if (sync_mode != SYNC_ASKING || ++sync_frames < 60) {
+        return;
+    }
+#ifdef _WIN32
+    {
+        int vrr = display_vrr(SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+                                                     NULL));
+        sync_set(vrr, vrr >= 0 ? "NVIDIA's driver" : "no NVIDIA driver to ask");
+    }
+#else
+    sync_set(-1, "nothing to ask");
+#endif
+}
+
+/* the frame's time on the refreshes' clock: the refresh nearest it, less the lead */
+static void sync_snap(void) {
+    Uint64 last, period;
+    if (sync_mode == SYNC_LOCKED && sync_clock(&last, &period)) {
+        double k = floor((next_at + sync_lead - (double)last) / (double)period + 0.5);
+        next_at = (double)last + k * (double)period - sync_lead;
+    }
+}
+
+static void set_vsync(void) {
+    const SDL_DisplayMode* m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
+    float hz = m != NULL ? m->refresh_rate : 0;
+    int off = vsync_trial == VSYNC_TRIED_OFF || vsync_trial == VSYNC_KEPT_OFF;
+    int on = !off && !(frame_rate > 0 && hz > 0 && hz < frame_rate - 1);
+    if (on != vsync_on) {
+        if (!SDL_SetRenderVSync(renderer, on)) {
+            host_log("pacing: vsync not set (%s)", SDL_GetError());
+        }
+        vsync_on = on;
+        watch_frames = 0, watch_last = 0;
+        host_log("pacing: a timer at %.2f Hz, vsync %s (the display at %.2f Hz%s)", frame_rate, on ? "on" : "off", hz,
+                 vsync_trial == VSYNC_TRIED_OFF   ? "; frames late with it on: tried off"
+                 : vsync_trial == VSYNC_KEPT_OFF  ? "; in time only with it off"
+                 : vsync_trial == VSYNC_NOT_THE_CAUSE ? "; as late with it off" : "");
+    }
+    sync_judge();
+}
+
+static int by_size(const void* a, const void* b) {
+    Uint64 x = *(const Uint64*)a, y = *(const Uint64*)b;
+    return x < y ? -1 : x > y;
+}
+
+/* each frame: the middle interval of 120, late by 3% with vsync on, tries it off for 120 more; kept off when that
+   is in time, and on again, not tried again, when not */
+static void watch_vsync(void) {
+    Uint64 now = SDL_GetPerformanceCounter(), step, mid;
+    sync_presented();
+    if (frame_rate <= 0 || vsync_trial == VSYNC_KEPT_OFF || vsync_trial == VSYNC_NOT_THE_CAUSE ||
+        sync_mode == SYNC_LOCKED) {
+        watch_frames = 0, watch_last = 0;
+        return;
+    }
+    if (watch_last != 0) {
+        watch_gaps[watch_frames++] = now - watch_last;
+    }
+    watch_last = now;
+    if (watch_frames < 120) {
+        return;
+    }
+    watch_frames = 0;
+    qsort(watch_gaps, 120, sizeof *watch_gaps, by_size);
+    mid = watch_gaps[60];
+    step = (Uint64)(SDL_GetPerformanceFrequency() / frame_rate);
+    if (vsync_trial == VSYNC_TRUSTED && vsync_on == 1 && mid > step * 103 / 100) {
+        watch_with = mid;
+        vsync_trial = VSYNC_TRIED_OFF;
+        set_vsync();
+    } else if (vsync_trial == VSYNC_TRIED_OFF) {
+        vsync_trial = mid < watch_with * 97 / 100 ? VSYNC_KEPT_OFF : VSYNC_NOT_THE_CAUSE;
+        if (vsync_trial == VSYNC_KEPT_OFF) {
+            host_log("pacing: vsync kept off, the frames in time without it");
+        }
+        set_vsync();
+    }
+}
+#endif
 
 static int scaling;     /* 0 aspect, 1 integer, 2 stretch */
 static int scale_given; /* by mvc2.cfg or F10, else set_scaling's choice */
@@ -317,11 +520,37 @@ static int view_args(float* res, int* aa, int* w, int* h) {
     return 0;
 }
 
+/* the OpenGL renderer's: resolution times the game's 640 by 480, or (auto) enough for h; no aa */
+static void gl_size(int h, int* fw, int* fh) {
+    float k = view_res > 0 ? view_res : h <= 0 ? 1 : (float)((h + RD_HEIGHT - 1) / RD_HEIGHT);
+    k = k < 1 ? 1 : k > RD_GPU_MAX_SCALE ? RD_GPU_MAX_SCALE : k;
+    *fh = 3 * (int)(RD_HEIGHT * k / 3 + 0.5f), *fw = *fh / 3 * 4;
+}
+
 void view_drawn(int* fw, int* fh) {
     float res;
     int aa, w, h;
+    if (glr) {
+        view_size(&w, &h);
+        gl_size(h, fw, fh);
+        return;
+    }
     view_args(&res, &aa, &w, &h);
     rd_gpu_view_size(res, aa, h, view_sprites, fw, fh);
+}
+
+/* the frame drawn by OpenGL, shown nearest when at the picture's size and filtered when not */
+static SDL_Texture* gl_picture(void) {
+    SDL_Texture* t;
+    int w, h, fw, fh;
+    view_size(&w, &h);
+    gl_size(h, &fw, &fh);
+    t = gl_frame(renderer, fw, fh);
+    if (t == NULL) {
+        return screen;
+    }
+    SDL_SetTextureScaleMode(t, fh == h || h <= 0 ? SDL_SCALEMODE_NEAREST : SDL_SCALEMODE_LINEAR);
+    return t;
 }
 
 static SDL_Texture* gpu_frame(void) {
@@ -476,6 +705,9 @@ static void show(SDL_Texture* t) {
 #endif
     pace();
     SDL_RenderPresent(renderer);
+#ifdef MVC2_SDL3
+    watch_vsync();
+#endif
 }
 
 static Uint64 fl_draw;     /* MVC2_FRAMELOG */
@@ -488,6 +720,9 @@ void host_present(void) {
     if (gpu) {
         t = gpu_frame();
         frame_read = 0;
+    } else if (glr) {
+        t = gl_picture();
+        frame_read = 0;
     } else
 #endif
     {
@@ -496,7 +731,7 @@ void host_present(void) {
     rd_begin_frame();
     presented++;
     screenshot();
-    if (!gpu) {
+    if (!gpu && !glr) {
         SDL_UpdateTexture(screen, NULL, frame, RD_WIDTH * 4);
     }
     if (getenv("MVC2_FRAMELOG")) {
@@ -563,8 +798,8 @@ static void first_size(int* w, int* h) {
 }
 
 #ifdef MVC2_SDL3
-/* when a step fails, nothing is kept and the software renderer draws */
-static void open_gpu(void) {
+/* SDL_GPU's renderer; when a step fails, nothing is kept */
+static int open_gpu(void) {
     /* Vulkan first: Direct3D 12 makes each new texture and buffer on its own, and a hyper combo's can stall a
        frame by 20 ms or more, enough to run the sound dry */
     static const char* const drivers[] = { "vulkan", NULL };
@@ -577,7 +812,7 @@ static void open_gpu(void) {
                 renderer = SDL_CreateGPURenderer(gpu, window);
                 if (renderer != NULL) {
                     host_log("renderer: gpu (%s, %s)", SDL_GetGPUDeviceDriver(gpu), SDL_GetCurrentVideoDriver());
-                    return;
+                    return 1;
                 }
             }
             rd_gpu_quit();
@@ -585,7 +820,20 @@ static void open_gpu(void) {
             gpu = NULL;
         }
     }
-    host_log("renderer: no gpu (%s), soft", SDL_GetError());
+    host_log("renderer: no gpu (%s)", SDL_GetError());
+    return 0;
+}
+
+/* the OpenGL renderer (gl_sdl.c) */
+static int open_gl(void) {
+    renderer = gl_open(window);
+    glr = renderer != NULL;
+    if (glr) {
+        host_log("renderer: gl (%s, %s)", gl_name(), SDL_GetCurrentVideoDriver());
+    } else {
+        host_log("renderer: no gl (%s)", SDL_GetError());
+    }
+    return glr;
 }
 
 /* rd_gpu.c's state starts again with the other program */
@@ -605,10 +853,14 @@ static void gpu_restart(int stop) {
 #define gpu_restart(stop)
 #endif
 
-static int make_renderer(int want_gpu) {
+/* want: RENDERER_GPU tries SDL_GPU, then OpenGL; RENDERER_GL OpenGL; and where those fail, or RENDERER_SOFT, rd_soft
+   draws, shown by SDL's own renderer */
+static int make_renderer(int want) {
 #ifdef MVC2_SDL3
-    if (want_gpu) {
-        open_gpu();
+    int up = want == RENDERER_GPU && open_gpu();
+    up = up || (want != RENDERER_SOFT && open_gl());
+    if (!up) {
+        host_log("renderer: soft%s", want == RENDERER_SOFT ? " (as asked)" : "");
     }
     if (renderer == NULL) {
         renderer = SDL_CreateRenderer(window, NULL);
@@ -616,9 +868,10 @@ static int make_renderer(int want_gpu) {
     if (renderer == NULL) {
         return 0;
     }
-    SDL_SetRenderVSync(renderer, 1);
+    vsync_on = -1;
+    set_vsync();
 #else
-    (void)want_gpu;
+    (void)want;
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer == NULL) {
         return 0;
@@ -637,19 +890,24 @@ int renderer_gpu(void) {
     return gpu != 0;
 }
 
-int renderer_set_gpu(int on) {
+int renderer_kind(void) {
+    return gpu ? RENDERER_GPU : glr ? RENDERER_GL : RENDERER_SOFT;
+}
+
+/* the renderer closed, with what it holds */
+static void close_renderer(void) {
 #ifdef MVC2_SDL3
     SDL_Texture** own[] = { &times_tex, &screen, &gpu_screen };
     size_t i;
-    if ((gpu != NULL) == on) {
-        return on;
-    }
-    read_frame();
     for (i = 0; i < sizeof own / sizeof own[0]; i++) {
         if (*own[i] != NULL) {
             SDL_DestroyTexture(*own[i]);
             *own[i] = NULL;
         }
+    }
+    if (glr) {
+        gl_close(renderer);
+        glr = 0;
     }
     SDL_DestroyRenderer(renderer);
     renderer = NULL;
@@ -658,16 +916,172 @@ int renderer_set_gpu(int on) {
         SDL_DestroyGPUDevice(gpu);
         gpu = NULL;
     }
-    if (!make_renderer(on)) {
+#endif
+}
+
+#if defined(MVC2_SDL3) && defined(_WIN32)
+/* Windows gives Vulkan and Direct3D no swapchain in a window that OpenGL has drawn in after one of theirs (access
+   denied), so the renderer after OpenGL gets a new window, as SDL gives OpenGL itself: the same place, size and
+   full screen */
+static void window_again(void) {
+    SDL_Window* old = window;
+    SDL_Window* made;
+    int kind = fullscreen_kind(), x, y, w, h;
+    if (kind != FULL_OFF) {
+        SDL_SetWindowFullscreen(old, false);
+        SDL_SyncWindow(old);
+    }
+    SDL_GetWindowPosition(old, &x, &y);
+    SDL_GetWindowSize(old, &w, &h);
+    made = SDL_CreateWindow(SDL_GetWindowTitle(old), w, h, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN |
+                                                               (SDL_GetWindowFlags(old) & SDL_WINDOW_MAXIMIZED));
+    if (made != NULL) {
+        SDL_SetWindowMinimumSize(made, RD_WIDTH / 2, RD_HEIGHT / 2);
+        SDL_SetWindowPosition(made, x, y);
+        SDL_DestroyWindow(old);
+        window = made;
+    }
+    if (kind != FULL_OFF) {
+        fullscreen_set(kind);
+    }
+    SDL_ShowWindow(window);
+    SDL_SyncWindow(window);
+}
+#else
+#define window_again()
+#endif
+
+int renderer_set(int want) {
+#ifdef MVC2_SDL3
+    int was_gl = glr;
+    if (want == renderer_kind()) {
+        return want;
+    }
+    read_frame();
+    close_renderer();
+    if (was_gl) {
+        window_again();
+    }
+    if (!make_renderer(want)) {
         host_log("no renderer: %s", SDL_GetError());
     }
     frame_read = 1;     /* frame holds the last picture */
-    return gpu != NULL;
+    return renderer_kind();
 #else
-    (void)on;
-    return 0;
+    (void)want;
+    return RENDERER_SOFT;
 #endif
 }
+
+/* full screen: FULL_DESKTOP a window over the whole display at the desktop's mode, FULL_EXCLUSIVE a display mode of
+   its own (SDL3's; SDL restores the desktop's when the window goes, loses the focus or is minimized); full_kind is
+   the one Alt+Enter goes to */
+static int full_kind = FULL_DESKTOP;
+
+static int full_named(const char* v) {
+    return v == NULL                                                       ? -1
+           : strcmp(v, "off") == 0 || strcmp(v, "no") == 0                 ? FULL_OFF
+           : strcmp(v, "desktop") == 0 || strcmp(v, "yes") == 0            ? FULL_DESKTOP
+           : strcmp(v, "exclusive") == 0                                   ? FULL_EXCLUSIVE
+                                                                           : -1;
+}
+
+int fullscreen_kind(void) {
+    return !(SDL_GetWindowFlags(window) & FULLSCREEN) ? FULL_OFF
+#ifdef MVC2_SDL3
+           : SDL_GetWindowFullscreenMode(window) != NULL ? FULL_EXCLUSIVE
+#endif
+                                                         : FULL_DESKTOP;
+}
+
+#ifdef MVC2_SDL3
+/* the exclusive mode: the desktop's size, at the most refreshes a frame of the game's 59.94 Hz that a whole number
+   divides (240 or 120 Hz, nearest a multiple: 59.94 before 60), or at 60 alone with mvc2.cfg's refresh = 60; the
+   desktop's own mode when none is */
+static int exclusive_mode(SDL_DisplayMode* out) {
+    SDL_DisplayID d = SDL_GetDisplayForWindow(window);
+    const SDL_DisplayMode* desk = SDL_GetDesktopDisplayMode(d);
+    const char* r = config_get("refresh");
+    int only60 = r != NULL && strcmp(r, "60") == 0, n = 0, i, best_k = 0;
+    float best_off = 1;
+    SDL_DisplayMode** modes;
+    if (desk == NULL) {
+        return 0;
+    }
+    *out = *desk;
+    modes = SDL_GetFullscreenDisplayModes(d, &n);
+    for (i = 0; modes != NULL && i < n; i++) {
+        const SDL_DisplayMode* m = modes[i];
+        float k = m->refresh_rate / (float)(27000000.0 / (858.0 * 525.0));
+        int whole = (int)(k + 0.5f);
+        float off = fabsf(k - (float)whole) / (float)(whole > 0 ? whole : 1);
+        if (m->w != desk->w || m->h != desk->h || whole < 1 || off > 0.005f || (only60 && whole != 1)) {
+            continue;
+        }
+        if (whole > best_k || (whole == best_k && off < best_off)) {
+            *out = *m, best_k = whole, best_off = off;
+        }
+    }
+    SDL_free(modes);
+    return 1;
+}
+#endif
+
+static const char* const full_names[] = { "off", "desktop", "exclusive" };
+
+/* kind (FULL_OFF, _DESKTOP or _EXCLUSIVE), kept in mvc2.cfg unless a test run's: fullscreen the state, and
+   fullscreen_kind the kind last asked for, which Alt+Enter goes to from a window, at the next start too */
+void fullscreen_set(int kind) {
+    int asked = kind;
+#ifdef MVC2_SDL3
+    SDL_DisplayMode m;
+    if (kind == FULL_EXCLUSIVE && strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0) {
+        host_log("fullscreen: Wayland has no exclusive mode; the desktop's");
+        kind = FULL_DESKTOP;
+    }
+    if (kind == FULL_EXCLUSIVE && exclusive_mode(&m)) {
+        if (!SDL_SetWindowFullscreenMode(window, &m)) {
+            host_log("fullscreen: no exclusive mode (%s); the desktop's", SDL_GetError());
+            kind = FULL_DESKTOP;
+        } else {
+            host_log("fullscreen: exclusive, %d by %d at %.2f Hz", m.w, m.h, m.refresh_rate);
+        }
+    }
+    if (kind != FULL_EXCLUSIVE) {
+        SDL_SetWindowFullscreenMode(window, NULL);
+    }
+    SDL_SetWindowFullscreen(window, kind != FULL_OFF);
+#else
+    SDL_SetWindowFullscreen(window, kind != FULL_OFF ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#endif
+    full_kind = asked != FULL_OFF ? asked : full_kind;
+#ifdef MVC2_SDL3
+    sync_judge();
+#endif
+    if (keep_settings) {
+        const char* was = config_get("fullscreen_kind");
+        config_set("fullscreen", full_names[asked]);     /* as asked: exclusive again where it can be */
+        if (asked != FULL_OFF && (was == NULL || strcmp(was, full_names[asked]) != 0)) {
+            config_set("fullscreen_kind", full_names[asked]);
+        }
+    }
+}
+
+/* the desktop's mode back however the game ends: at exit, and (where the system doesn't, as X11) on a crash */
+static void full_restore(void) {
+    if (window != NULL && SDL_WasInit(SDL_INIT_VIDEO) && (SDL_GetWindowFlags(window) & FULLSCREEN)) {
+        SDL_SetWindowFullscreen(window, 0);
+    }
+}
+
+#ifndef _WIN32
+#include <signal.h>
+static void full_crash(int sig) {
+    full_restore();
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+#endif
 
 /* sizes in pixels, so a whole multiple stays sharp at any display scaling */
 static int open_window(void) {
@@ -675,64 +1089,88 @@ static int open_window(void) {
     const char* full = config_get("fullscreen");
     const char* scale = config_get("scale");
     const char* r;
-    int w, h, i;
+    int w, h, i, kind;
     keep_settings = getenv("MVC2_FRAMES") == NULL;
     if (!keep_settings) {
         full = NULL;
     } else if (full == NULL && getenv("GAMESCOPE_WAYLAND_DISPLAY") != NULL) {
         /* Steam's Game Mode scales a window up to the screen: full screen unless mvc2.cfg says */
-        full = "yes";
+        full = "desktop";
     }
+    full = getenv("MVC2_FULLSCREEN") != NULL ? getenv("MVC2_FULLSCREEN") : full;
+    kind = full_named(full) < 0 ? FULL_OFF : full_named(full);
+    full_kind = full_named(config_get("fullscreen_kind")) > FULL_OFF ? full_named(config_get("fullscreen_kind"))
+                                                                     : full_kind;
     if (size == NULL || sscanf(size, "%dx%d", &w, &h) != 2) {
         first_size(&w, &h);
     }
     w = w < RD_WIDTH / 2 ? RD_WIDTH / 2 : w;
     h = h < RD_HEIGHT / 2 ? RD_HEIGHT / 2 : h;
 #ifdef MVC2_SDL3
-    window = SDL_CreateWindow(game_title(), w, h,
-                              SDL_WINDOW_RESIZABLE | (full != NULL && strcmp(full, "yes") == 0 ? SDL_WINDOW_FULLSCREEN : 0));
+    /* hidden until full screen is set, so a window doesn't show first */
+    window = SDL_CreateWindow(game_title(), w, h, SDL_WINDOW_RESIZABLE | (kind != FULL_OFF ? SDL_WINDOW_HIDDEN : 0));
     if (window == NULL) {
         return 0;
     }
     SDL_SetWindowMinimumSize(window, RD_WIDTH / 2, RD_HEIGHT / 2);
+    if (kind != FULL_OFF) {
+        fullscreen_set(kind);
+        SDL_ShowWindow(window);
+        SDL_SyncWindow(window);
+    }
 #else
     window = SDL_CreateWindow(game_title(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h,
-                              SDL_WINDOW_RESIZABLE |
-                                  (full != NULL && strcmp(full, "yes") == 0 ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
+                              SDL_WINDOW_RESIZABLE | (kind != FULL_OFF ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (window == NULL) {
         return 0;
     }
     SDL_SetWindowMinimumSize(window, RD_WIDTH / 2, RD_HEIGHT / 2);
+#endif
+    full_kind = kind != FULL_OFF ? kind : full_kind;
+    atexit(full_restore);
+#ifndef _WIN32
+    signal(SIGSEGV, full_crash);
+    signal(SIGABRT, full_crash);
+    signal(SIGBUS, full_crash);
+    signal(SIGFPE, full_crash);
 #endif
     for (i = 0; i < 3; i++) {
         if (scale != NULL && strcmp(scale, scalings[i]) == 0) {
             scaling = i, scale_given = 1;
         }
     }
-    /* the GPU unless mvc2.cfg says soft; a test run draws by rd_soft.c's rules unless it says gpu */
+    /* the GPU (or OpenGL) unless mvc2.cfg says soft or gl; a test run draws by rd_soft.c's rules unless it says gpu
+       or gl */
     r = config_get("renderer");
-    return make_renderer(r != NULL ? strcmp(r, "soft") != 0 : !test_run);
+    return make_renderer(r == NULL ? (test_run ? RENDERER_SOFT : RENDERER_GPU)
+                         : strcmp(r, "soft") == 0 ? RENDERER_SOFT
+                         : strcmp(r, "gl") == 0   ? RENDERER_GL
+                                                  : RENDERER_GPU);
 }
 
 /* 1 when the window took the event */
 static int window_key(const SDL_Event* e) {
     if (window_resized(e)) {
         set_scaling();
+#ifdef MVC2_SDL3
+        if (e->type == SDL_EVENT_WINDOW_ENTER_FULLSCREEN || e->type == SDL_EVENT_WINDOW_LEAVE_FULLSCREEN) {
+            sync_judge();
+        }
+#endif
         return 0;
     }
+#ifdef MVC2_SDL3
+    if (e->type == SDL_EVENT_WINDOW_DISPLAY_CHANGED || e->type == SDL_EVENT_DISPLAY_CURRENT_MODE_CHANGED) {
+        vsync_trial = VSYNC_TRUSTED;   /* another display, or another mode: judged again */
+        set_vsync();
+        return 0;
+    }
+#endif
     if (e->type != SDL_EVENT_KEY_DOWN || e->key.repeat) {
         return 0;
     }
     if (key_sym(e) == SDLK_F11 || (key_sym(e) == SDLK_RETURN && key_alt(e))) {
-        int full = !(SDL_GetWindowFlags(window) & FULLSCREEN);
-#ifdef MVC2_SDL3
-        SDL_SetWindowFullscreen(window, full);
-#else
-        SDL_SetWindowFullscreen(window, full ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-#endif
-        if (keep_settings) {
-            config_set("fullscreen", full ? "yes" : "no");
-        }
+        fullscreen_set(fullscreen_kind() == FULL_OFF ? full_kind : FULL_OFF);
         return 1;
     }
     if (key_sym(e) == SDLK_F3) {
@@ -1046,12 +1484,13 @@ int main(int argc, char** argv) {
                 double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
                 if (f == NULL) {
                     f = fopen(getenv("MVC2_FRAMELOG"), "w");
-                    fprintf(f, "frame game_ms draw_ms gd_ms gd_kb sync req open tex_calls conv conv_ms same hash wall_ms\n");
+                    fprintf(f, "frame game_ms draw_ms gd_ms gd_kb sync req open tex_calls conv conv_ms same hash wall_ms gl_up gl_kb\n");
                 }
-                fprintf(f, "%u %.3f %.3f %.3f %u %u %u %u %u %u %.3f %d %08X %.3f\n", presented,
+                fprintf(f, "%u %.3f %.3f %.3f %u %u %u %u %u %u %.3f %d %08X %.3f %d %u\n", presented,
                         (double)(SDL_GetPerformanceCounter() - start - (present_ticks - presenting)) * ms,
                         (double)fl_draw * ms, fl.gd_ns / 1e6, fl.gd_bytes >> 10, fl.gd_sync, fl.gd_req, fl.gd_open,
-                        fl.tex_calls, fl.tex_conv, fl.conv_ns / 1e6, fl_hash == last_hash, fl_hash, (double)SDL_GetPerformanceCounter() * ms);
+                        fl.tex_calls, fl.tex_conv, fl.conv_ns / 1e6, fl_hash == last_hash, fl_hash, (double)SDL_GetPerformanceCounter() * ms,
+                        gl_uploads(), gl_upload_kb());
                 last_hash = fl_hash;
                 memset(&fl, 0, sizeof fl);
             }
@@ -1065,13 +1504,9 @@ int main(int argc, char** argv) {
     snd_close();
     sdl_audio_close();
     host_stub_report();
-#ifdef MVC2_SDL3
-    if (gpu) {
-        SDL_DestroyRenderer(renderer);
-        rd_gpu_quit();
-        SDL_DestroyGPUDevice(gpu);
+    if (gpu || glr) {
+        close_renderer();
     }
-#endif
     SDL_Quit();
     return 0;
 }

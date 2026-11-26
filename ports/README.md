@@ -67,7 +67,10 @@ decompilation, pass `-DMVC2_DECOMP=FOLDER` and make its tables with `tools/point
 `PLAYING.md` and a sample `mvc2.cfg` (kept if the folder has one), from `port/dist`.
 
 Both versions run at their boards' own 59.94 frames a second, whatever the monitor's refresh rate (both drive
-VGA from a 27 MHz clock, 858 by 525). `MVC2_FPS=n` sets another rate, and `MVC2_FPS=0` runs as fast as it can.
+VGA from a 27 MHz clock, 858 by 525): a timer paces every renderer, and vsync only times each present to a
+refresh. Where vsync would hold the game back (a display slower than 59.94 Hz, by its mode or measured: frames
+late with vsync on and in time without), it is turned off and the log says so. `MVC2_FPS=n` sets another rate,
+and `MVC2_FPS=0` runs as fast as it can.
 
 The picture is drawn by the GPU through SDL_GPU (Direct3D 12 or Vulkan), by the PowerVR2's rules, at the
 window's resolution: `resolution = 1` to `12` in `mvc2.cfg` sets a multiple of 640 by 480 instead (`4.2`, say), `aa = 2` to `4`
@@ -85,7 +88,10 @@ separate sprites meet without slivers or gaps; `object` keeps each sprite on its
 why, in pictures. `hud = arcade` (the default), `smooth` or `sharp` sets the rest: the game's front (models put
 without the camera's view, and strips: the timer, gauges, words and menus) in the 640 by 480 frame's own pixels,
 each a block, or anything that isn't a sprite read as the game filters it, or all of it as sprites are.
-`renderer = soft`, or a GPU that can't, draws it in software at 640 by 480 instead, on as many threads as the machine
+Where SDL_GPU can't start (a card with neither Vulkan nor Direct3D 12), OpenGL draws the frame's lists with its
+fixed function as the MiSTer's does (`port/render/rd_gl1.c`), in SDL's OpenGL renderer's context
+(`port/sdl/gl_sdl.c`), at the same sizes, without aa or the sprites' and HUD's modes; `renderer = gl` asks for it.
+`renderer = soft`, or neither starting, draws it in software at 640 by 480 instead, on as many threads as the machine
 has (`MVC2_RDTHREADS=n` sets the count; the picture is the same for any count). On a slow machine,
 `MVC2_RDQUALITY=half` draws it at 320 by 240 and shows each pixel as four: about three and a half times faster, but
 small text and sprites lose detail.
@@ -95,7 +101,7 @@ triangle), `lite` (near the exact pixels, in integers: with `fast`, the quickest
 `nofog` (no fog) and `nosort` (translucent triangles not sorted per pixel).
 
 The front end is built with SDL3 (`SDL3.dll` beside the executable). When the GPU can't start, it says why and
-draws in software; test runs draw in software unless `mvc2.cfg` names a renderer.
+draws with OpenGL, or in software; test runs draw in software unless `mvc2.cfg` names a renderer.
 `-DMVC2_SDL3=OFF` builds it with SDL2 (`mingw-w64-i686-SDL2`), software only.
 `-DMVC2_FMAC=OFF` rounds the sums the SH-4 fuses into one instruction twice, a multiply and then an add, as
 Flycast Dojo does: for checking against Fightcade's replays. The default rounds them once, as the board does.
@@ -153,11 +159,11 @@ controllers SDL doesn't know.
 | F3                           | the game's and the drawing's time a frame, and the frame rate     |
 | F9                           | switch to the other version                                       |
 | F10                          | scaling: `aspect` (4:3), `integer` (whole multiples) or `stretch` |
-| F11, Alt+Enter               | full screen                                                       |
+| F11, Alt+Enter               | full screen, `desktop` or `exclusive` (F1's FULL SCREEN)          |
 | Escape                       | quit                                                              |
 
 On the controls screen, Enter sets a control from the next key or button, Delete puts its default back, and
-Escape closes; it also switches the renderer and the picture quality. `mvc2.cfg` keeps the controls, a line
+Escape closes; it also sets the renderer, the picture and full screen. `mvc2.cfg` keeps the controls, a line
 each (`p1 b1 = key:A, pad:x`), and the settings, the scaling and the window's size.
 
 F2 opens the arcade's test menu: its game data, and its settings (difficulty, damage, timer, continue, game

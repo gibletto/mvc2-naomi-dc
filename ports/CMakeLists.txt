@@ -322,7 +322,11 @@ else()
     set(FRONT_SOURCES ${PORT}/sdl/main_sdl.c ${PORT}/sdl/hunt.c ${PORT}/sdl/start.c ${PORT}/sdl/input_sdl.c ${PORT}/sdl/menu_sdl.c
         ${PORT}/sdl/sdl_audio.c ${PORT}/sdl/sdl_save.c ${PORT}/sdl/test_mode.c ${PORT}/sdl/menu_font.c)
     if(WIN32)
-        list(APPEND FRONT_SOURCES ${PORT}/sdl/console_win32.c)
+        list(APPEND FRONT_SOURCES ${PORT}/sdl/console_win32.c ${PORT}/sdl/display_win32.c)
+    endif()
+    if(MVC2_SDL3)
+        # OpenGL's fixed function (the MiSTer's rd_gl1), where SDL_GPU has neither Vulkan nor Direct3D 12
+        list(APPEND FRONT_SOURCES ${PORT}/sdl/gl_sdl.c ${PORT}/render/rd_gl1.c ${PORT}/render/rd_gl1_tex.c)
     endif()
     endif()
 endif()

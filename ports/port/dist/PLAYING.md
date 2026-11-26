@@ -35,7 +35,8 @@ it says what and where; put it there and press Enter.
 free play and the rest). Arrows choose, Enter sets, Escape goes back; SAVE & EXIT keeps them for the next game.
 
 - F1: the controls screen (or Back with the right shoulder held). Enter sets a control from the next key
-  or button, Delete puts it back, Escape closes. It also sets the renderer, the picture, the sprites and the HUD.
+  or button, Delete puts it back, Escape closes. It also sets the renderer, the picture, the sprites, the HUD
+  and full screen.
 - F3: frame times.
 - F9: switch between the arcade and the Dreamcast.
 - F10: scaling (aspect, integer, stretch). F11 or Alt+Enter: full screen.
@@ -60,11 +61,15 @@ F1 sets the picture while you play. `mvc2.cfg` beside the executable keeps every
 ### Renderer (`renderer`)
 
 - **GPU** (`gpu`, the default): the graphics card draws the game larger than the arcade's 640 by 480, so 3D
-  stages, polygons and effects come out sharp at your screen's resolution.
+  stages, polygons and effects come out sharp at your screen's resolution. It needs Vulkan or Direct3D 12.
+- **GL** (`gl`): for an older card with neither, OpenGL draws the game (OpenGL 2.1 is enough), larger too, but
+  without the GPU's aa, sprites and HUD settings. The game uses it by itself when the GPU can't start.
 - **Soft** (`soft`): the CPU draws the arcade's own 640 by 480, as the board did. For a PC whose graphics card
-  can't run the game; the game uses it by itself when the card can't start.
+  can't run the game; the game uses it by itself when neither of the others can start.
 
-### Picture, on the GPU (`resolution`, `aa`)
+F1's RENDERER row shows the one drawing, and goes through GPU, GL and SOFT.
+
+### Picture, on the GPU or GL (`resolution`, `aa`)
 
 The game is drawn at a whole multiple of 640 by 480, then filtered down to the window. F1's PICTURE row shows the
 size it draws at in your window. Each step up draws more pixels, so a slower card should stay at **auto**.
@@ -79,7 +84,8 @@ size it draws at in your window. Each step up draws more pixels, so a slower car
 | 1x, the arcade's | `resolution = 1`           | 640 by 480                     | 640 by 480     |
 
 aa smooths the edges by drawing larger still; 7680 by 5760 (12 times) is the most. `resolution` takes any
-multiple from 1 to 12.
+multiple from 1 to 12. GL draws at the same sizes without the aa; on a slow card, `resolution = 1` asks the least
+of it.
 
 ### Picture, in software (`render`)
 
@@ -119,7 +125,18 @@ The timer, gauges, words and menus:
   - **aspect**: as large as it fits, at 4:3.
   - **integer**: whole multiples only, pixel exact.
   - **stretch**: the whole window.
-- F11 or Alt+Enter, or `fullscreen = yes`: full screen.
+- Full screen: F1's FULL SCREEN, or `fullscreen`:
+  - **off** (default): a window.
+  - **desktop**: the whole screen, at the desktop's resolution and refresh rate.
+  - **exclusive**: the whole screen in a display mode of the game's own: the desktop's resolution, at the highest
+    refresh rate that is a whole number of times the game's 60 frames a second (240 or 120 Hz, else 60), for the
+    least delay; `refresh = 60` asks for 60 Hz. Alt+Tab gives the desktop back its own. Not on Wayland, where it is
+    desktop. With variable refresh (G-Sync, FreeSync) on, the display follows the game's own 59.94 frames a second;
+    without, each frame is shown for the same number of refreshes, the game a hair faster (60.02 at 240 Hz) so none
+    is shown longer. `vrr = auto` asks NVIDIA's driver; with another card, set `vrr = off` for a display without
+    variable refresh (or with it turned off), `on` for one with.
+- F11 or Alt+Enter: full screen on and off, as the kind chosen last (kept as `fullscreen_kind`, so the next start
+  too).
 
 ### Unlock
 
@@ -145,9 +162,9 @@ arcade keeps its settings and book-keeping in `eeprom.bin` and `backup.bin` ther
 ## Linux and a Steam Machine
 
 The Linux build is one file, `MvC2-VERSION-i686.AppImage`, a 32-bit x86 program. It needs only the system's 32-bit
-C library, FUSE (to open the AppImage) and, for the GPU renderer, its 32-bit Vulkan driver: SteamOS and Steam
-install them. Unpack the archive in a folder you can write to (your home folder): the game's data, `mvc2.cfg` and
-the saves stay beside the AppImage.
+C library, FUSE (to open the AppImage) and, for the GPU renderer, its 32-bit Vulkan driver (for GL, its 32-bit
+OpenGL one): SteamOS and Steam install them. Unpack the archive in a folder you can write to (your home folder):
+the game's data, `mvc2.cfg` and the saves stay beside the AppImage.
 
 On a Steam Machine or Steam Deck, in Desktop Mode: unpack it (say into `~/Games/mvc2`), put the game's data in
 `roms/mvsc2` and `disc` there, then in Steam choose Games, "Add a Non-Steam Game to My Library", Browse, and pick

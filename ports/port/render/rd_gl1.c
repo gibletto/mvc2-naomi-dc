@@ -40,6 +40,7 @@ enum {
     GL_TRIANGLES = 0x0004, GL_CULL_FACE = 0x0B44, GL_LIGHTING = 0x0B50, GL_FOG = 0x0B60, GL_DEPTH_TEST = 0x0B71,
     GL_ALPHA_TEST = 0x0BC0, GL_DITHER = 0x0BD0, GL_BLEND = 0x0BE2, GL_SCISSOR_TEST = 0x0C11, GL_TEXTURE_2D = 0x0DE1,
     GL_PERSPECTIVE_CORRECTION_HINT = 0x0C50, GL_NICEST = 0x1102, GL_UNPACK_ALIGNMENT = 0x0CF5, GL_PACK_ALIGNMENT = 0x0D05,
+    GL_UNPACK_ROW_LENGTH = 0x0CF2,
     GL_NEVER = 0x0200, GL_GEQUAL = 0x0206, GL_ALWAYS = 0x0207,
     GL_SRC_COLOR = 0x0300, GL_ONE_MINUS_SRC_COLOR = 0x0301, GL_SRC_ALPHA = 0x0302, GL_ONE_MINUS_SRC_ALPHA = 0x0303,
     GL_DST_ALPHA = 0x0304, GL_ONE_MINUS_DST_ALPHA = 0x0305, GL_DST_COLOR = 0x0306, GL_ONE_MINUS_DST_COLOR = 0x0307,
@@ -62,7 +63,11 @@ enum {
     /* the Pinedra driver's GL_PND_ordered_translucency and GL_PND_window_vertices (driver 0.5.44) */
     GL_ORDERED_TRANSLUCENCY_PND = 0x1D100, GL_WINDOW_VERTICES_PND = 0x1D105, GL_LOWER_LEFT = 0x8CA1, GL_UPPER_LEFT = 0x8CA2,
     /* GL_EXT_paletted_texture */
-    GL_COLOR_INDEX = 0x1900, GL_COLOR_INDEX4_EXT = 0x80E4, GL_COLOR_INDEX8_EXT = 0x80E5, GL_RGBA8 = 0x8058
+    GL_COLOR_INDEX = 0x1900, GL_COLOR_INDEX4_EXT = 0x80E4, GL_COLOR_INDEX8_EXT = 0x80E5, GL_RGBA8 = 0x8058,
+    /* framebuffer objects (GL 3.0, GL_ARB_framebuffer_object, GL_EXT_framebuffer_object) */
+    GL_FRAMEBUFFER = 0x8D40, GL_RENDERBUFFER = 0x8D41, GL_COLOR_ATTACHMENT0 = 0x8CE0, GL_DEPTH_ATTACHMENT = 0x8D00,
+    GL_FRAMEBUFFER_COMPLETE = 0x8CD5, GL_DEPTH_COMPONENT16 = 0x81A5, GL_DEPTH_COMPONENT24 = 0x81A6,
+    GL_TEXTURE_RECTANGLE = 0x84F5
 };
 
 #define GL_FUNCS(X) \
@@ -105,8 +110,24 @@ enum {
     X(const unsigned char*, GetString, (GLenum)) \
     X(GLenum, GetError, (void))
 
+/* rd_gl1_offscreen's, by their GL 3.0 names or the extensions' (the same calls) */
+#define FBO_FUNCS(X) \
+    X(void, GenFramebuffers, (GLsizei, GLuint*)) \
+    X(void, DeleteFramebuffers, (GLsizei, const GLuint*)) \
+    X(void, BindFramebuffer, (GLenum, GLuint)) \
+    X(void, FramebufferTexture2D, (GLenum, GLenum, GLenum, GLuint, GLint)) \
+    X(void, GenRenderbuffers, (GLsizei, GLuint*)) \
+    X(void, DeleteRenderbuffers, (GLsizei, const GLuint*)) \
+    X(void, BindRenderbuffer, (GLenum, GLuint)) \
+    X(void, RenderbufferStorage, (GLenum, GLenum, GLsizei, GLsizei)) \
+    X(void, FramebufferRenderbuffer, (GLenum, GLenum, GLenum, GLuint)) \
+    X(GLenum, CheckFramebufferStatus, (GLenum))
+
 #define GL_PTR(ret, name, args) static ret(GLCALL* gl##name) args;
 GL_FUNCS(GL_PTR)
+FBO_FUNCS(GL_PTR)
+static void(GLCALL* glUseProgram)(GLuint);
+static RD_GL_PROC gl_proc;
 
 RD_GL1_STATS rd_gl1_stats;
 
@@ -130,6 +151,8 @@ static uint32_t frame_no;
 static RD_FRAME* fr;                /* the frame drawn, its palette (rd_gl1_pal) and its fog */
 static const RD_FOG* frame_fog = &rd_fog;
 static int out_w = RD_WIDTH, out_h = RD_HEIGHT;
+static GLuint fbo, fbo_tex, fbo_depth;  /* rd_gl1_offscreen's, drawn into in place of framebuffer 0 */
+static int fbo_w, fbo_h, fbo_had;
 static GLuint dummy_tex, fog_tex;
 
 static void option(const char* words, const char* name, float* value) {
@@ -947,6 +970,7 @@ static double depth_of(float z) {
 static int fog_on;
 static float ramp_w0, ramp_k;       /* s = (w - w0) * k */
 static uint8_t ramp[RAMP * 4], ramp_sent[RAMP * 4];
+static float ramp_made[2 + 128 + 1];    /* the range, density and table the ramp was made from */
 static uint16_t ramp_nz[RAMP + 1];  /* the ramp's non-zero entries before each */
 
 /* rd_soft.c's: the fog table at 1/w z */
@@ -998,14 +1022,13 @@ static void fog_ramp(uint32_t lo, uint32_t hi) {
     ramp_w0 = w0;
     ramp_k = 1.0f / (w1 - w0);
     {
-        static float made[2 + 128 + 1];
         float now[2 + 128 + 1];
         now[0] = w0, now[1] = w1, now[2] = frame_fog->density;
         memcpy(&now[3], frame_fog->table, sizeof frame_fog->table);
-        if (memcmp(now, made, sizeof now) == 0) {
+        if (memcmp(now, ramp_made, sizeof now) == 0) {
             return;
         }
-        memcpy(made, now, sizeof now);
+        memcpy(ramp_made, now, sizeof now);
     }
     for (i = 0; i < RAMP; i++) {
         float w = w0 + ((float)i + 0.5f) * (w1 - w0) / RAMP;
@@ -1476,7 +1499,9 @@ static void put_tri(int list, const RD_TRI* t, int check) {
 }
 
 /* The translucent list far to near, a triangle at a time by the middle of its 1/w, in order where level. A deep
-   triangle is cut at the shallow ones' (sprites') depths, so that each part sorts right against them. */
+   triangle is cut at the shallow ones' (sprites') depths, so that each part sorts right against them. One with a
+   corner far past the screen (the near plane's cut, its 1/w 10: the attract's sky) goes by the 1/w of its part on
+   the screen, as do its parts. */
 #define MAX_CUTS 32         /* a triangle's; and parts past half the list's count and 256 aren't cut */
 
 typedef struct {
@@ -1629,6 +1654,8 @@ static void split_poly(const RD_VTX* p, int n, RD_VTX* lo, int* nlo, RD_VTX* hi,
     *nhi = nh;
 }
 
+static float part_lo, part_hi;      /* the 1/w range of the cut triangle's part on the screen */
+
 /* a polygon of triangle t's, a fan sorted as one at its middle depth */
 static void add_poly(const RD_TRI* t, const RD_VTX* p, int n, int order) {
     float lo = p[0].z, hi = p[0].z;
@@ -1637,6 +1664,8 @@ static void add_poly(const RD_TRI* t, const RD_VTX* p, int n, int order) {
         lo = p[i].z < lo ? p[i].z : lo;
         hi = p[i].z > hi ? p[i].z : hi;
     }
+    lo = lo < part_lo ? part_lo : lo > part_hi ? part_hi : lo;
+    hi = hi < part_lo ? part_lo : hi > part_hi ? part_hi : hi;
     for (i = 2; i < n; i++) {
         RD_TRI* r;
         if (!grow((void**)&parts, &maxparts, nparts + 1, sizeof *parts)) {
@@ -1651,15 +1680,59 @@ static void add_poly(const RD_TRI* t, const RD_VTX* p, int n, int order) {
     }
 }
 
-/* its nearest and farthest 1/w; 0 when one isn't usable */
+#define ZFAR 65536.0f   /* game pixels past the screen: a corner farther is the near plane's cut's */
+#define ZCUT 64.0f      /* the screen's margin, for the 1/w of such a triangle's part on it */
+
+static int far_off(const RD_TRI* t) {
+    int k;
+    for (k = 0; k < 3; k++) {
+        const RD_VTX* v = &t->v[k];
+        if (!(v->x >= -ZFAR && v->x <= RD_WIDTH + ZFAR && v->y >= -ZFAR && v->y <= RD_HEIGHT + ZFAR)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* the 1/w range of a triangle's part on the screen (and ZCUT about it): 1/w is a plane over the screen, so it is
+   within both the corners' range and the plane's at the screen's corners. 0: none of it there */
+static int screen_z(const RD_TRI* t, float* lo, float* hi) {
+    const RD_VTX *a = &t->v[0], *b = &t->v[1], *c = &t->v[2];
+    float bx = b->x - a->x, by = b->y - a->y, cx = c->x - a->x, cy = c->y - a->y, bz = b->z - a->z, cz = c->z - a->z;
+    float d = bx * cy - cx * by, kx, ky, z0, x0, x1, y0, y1, z;
+    *lo = a->z < b->z ? a->z : b->z;
+    *lo = c->z < *lo ? c->z : *lo;
+    *hi = a->z > b->z ? a->z : b->z;
+    *hi = c->z > *hi ? c->z : *hi;
+    if (fabsf(d) > 1e-3f) {
+        kx = (bz * cy - cz * by) / d;
+        ky = (cz * bx - bz * cx) / d;
+        z0 = a->z - kx * a->x - ky * a->y;
+        x0 = kx * -ZCUT, x1 = kx * (RD_WIDTH + ZCUT);
+        y0 = ky * -ZCUT, y1 = ky * (RD_HEIGHT + ZCUT);
+        z = z0 + (kx < 0.0f ? x1 : x0) + (ky < 0.0f ? y1 : y0);
+        *lo = z > *lo ? z : *lo;
+        z = z0 + (kx < 0.0f ? x0 : x1) + (ky < 0.0f ? y0 : y1);
+        *hi = z < *hi ? z : *hi;
+        return *lo <= *hi;
+    }
+    return 1;
+}
+
+/* its nearest and farthest 1/w, those of its part on the screen when a corner is far past it; 0 when one isn't
+   usable */
 static int z_range(const RD_TRI* t, float* lo, float* hi) {
     uint32_t a = zbits(t->v[0].z), b = zbits(t->v[1].z), c = zbits(t->v[2].z), l, h;
+    float sl, sh;
     if (!usable_b(a) || !usable_b(b) || !usable_b(c)) {
         return 0;
     }
     l = a < b ? a : b, h = a > b ? a : b;
     l = c < l ? c : l, h = c > h ? c : h;
     *lo = zfloat(l), *hi = zfloat(h);
+    if (l != h && far_off(t) && screen_z(t, &sl, &sh)) {
+        *lo = sl, *hi = sh;
+    }
     return 1;
 }
 
@@ -2253,6 +2326,7 @@ static void put_trans(void) {
             }
         }
         if (m <= MAX_CUTS && nparts + 2 * m + 1 <= n / 2 + 256) {
+            part_lo = e->lo, part_hi = e->hi;
             cut_item(e->item, 0, m);
         }
     }
@@ -2645,14 +2719,63 @@ void rd_gl1_end_frame(void) {
     rd_gl1_draw_frame(rd_frame, rd_palette, &rd_fog);
 }
 
-void rd_gl1_read(uint32_t* argb) {
-    int y, x;
-    if (out_w != RD_WIDTH || out_h != RD_HEIGHT) {
+/* drawn larger than the game's size: each of its pixels the average of those drawn whose centres are in it */
+static void read_scaled(uint32_t* argb) {
+    uint8_t* big = malloc((size_t)out_w * out_h * 4);
+    int y, x, i, j, c;
+    if (big == NULL) {
         memset(argb, 0, RD_WIDTH * RD_HEIGHT * sizeof *argb);
         return;
     }
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, out_w, out_h, GL_RGBA, GL_UNSIGNED_BYTE, big);
+    for (y = 0; y < RD_HEIGHT; y++) {
+        /* the rows from the top, the GL's from the bottom unless drawn upward */
+        int y0 = y * out_h / RD_HEIGHT, y1 = (y + 1) * out_h / RD_HEIGHT;
+        if (!upward) {
+            int t = out_h - y1;
+            y1 = out_h - y0, y0 = t;
+        }
+        for (x = 0; x < RD_WIDTH; x++) {
+            int x0 = x * out_w / RD_WIDTH, x1 = (x + 1) * out_w / RD_WIDTH;
+            uint32_t sum[4] = { 0, 0, 0, 0 }, n = (uint32_t)((x1 - x0) * (y1 - y0));
+            for (j = y0; j < y1; j++) {
+                const uint8_t* p = big + ((size_t)j * out_w + (size_t)x0) * 4;
+                for (i = x0; i < x1; i++, p += 4) {
+                    for (c = 0; c < 4; c++) {
+                        sum[c] += p[c];
+                    }
+                }
+            }
+            /* R, G, B, A in memory, as the read below takes them */
+            argb[y * RD_WIDTH + x] = argb_to_rgba((sum[0] + n / 2) / n | (sum[1] + n / 2) / n << 8 |
+                                                  (sum[2] + n / 2) / n << 16 | (sum[3] + n / 2) / n << 24);
+        }
+    }
+    free(big);
+}
+
+void rd_gl1_read(uint32_t* argb) {
+    int y, x;
+    if (out_w < RD_WIDTH || out_h < RD_HEIGHT) {
+        memset(argb, 0, RD_WIDTH * RD_HEIGHT * sizeof *argb);
+        return;
+    }
+    if (fbo != 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    }
+    if (out_w != RD_WIDTH || out_h != RD_HEIGHT) {
+        read_scaled(argb);
+        if (fbo != 0) {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+        return;
+    }
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
     glReadPixels(0, 0, RD_WIDTH, RD_HEIGHT, GL_RGBA, GL_UNSIGNED_BYTE, argb);
+    if (fbo != 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
     for (y = 0; y < RD_HEIGHT / 2 && !upward; y++) {
         uint32_t* a = &argb[y * RD_WIDTH];
         uint32_t* b = &argb[(RD_HEIGHT - 1 - y) * RD_WIDTH];
@@ -2736,10 +2859,157 @@ int rd_gl1_ordered(void) {
     return ord_on;
 }
 
+/* the GL's state as the drawing takes it, set again whatever another user of the context left (rd_gl1_offscreen) */
+static void base_state(void) {
+    static const float opaque[4] = { 0, 0, 0, 1 };
+    int u;
+    if (glUseProgram != NULL) {
+        glUseProgram(0);
+    }
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_FOG);
+    glDisable(GL_DITHER);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_DEPTH_TEST);
+    glShadeModel(GL_SMOOTH);
+    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
+    glAlphaFunc(GL_GEQUAL, 128.0f / 255.0f);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
+    for (u = 0; u < units && u < 3; u++) {
+        glClientActiveTexture(GL_TEXTURE0 + (GLenum)u);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
+    memset(&gs, 0, sizeof gs);
+    gs.active = -1;
+    gs.blend = gs.alpha_test = -1;
+    gs.depth_func = gs.depth_mask = -1;
+    for (u = 0; u < 4; u++) {
+        gs.u[u].on = -1;
+        gs.u[u].tex = ~0u;
+        gs.u[u].color = 1;
+    }
+    active(0);
+    glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, opaque);
+    gs.u[0].color = 0xFF000000u;
+    pointed = NULL;
+}
+
+/* ---- drawn into a framebuffer object, in a context shared with another user (the PC's SDL renderer) ---- */
+
+/* the framebuffer object's calls, 0 when the GL has none */
+static int fbo_calls(void) {
+    int missing = 0;
+    if (fbo_had == 0) {
+#define FBO_GET(ret, name, args)                                                                                    \
+    gl##name = (ret(GLCALL*) args)gl_proc("gl" #name);                                                             \
+    gl##name = gl##name != NULL ? gl##name : (ret(GLCALL*) args)gl_proc("gl" #name "EXT");                         \
+    missing += gl##name == NULL;
+        FBO_FUNCS(FBO_GET)
+        glUseProgram = (void(GLCALL*)(GLuint))gl_proc("glUseProgram");
+        glUseProgram = glUseProgram != NULL ? glUseProgram : (void(GLCALL*)(GLuint))gl_proc("glUseProgramObjectARB");
+        fbo_had = missing == 0 ? 1 : -1;
+        if (missing > 0) {
+            fprintf(stderr, "rd_gl1: no framebuffer objects\n");
+        }
+    }
+    return fbo_had > 0;
+}
+
+static void offscreen_free(void) {
+    if (fbo != 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteRenderbuffers(1, &fbo_depth);
+        glDeleteTextures(1, &fbo_tex);
+        fbo = fbo_depth = fbo_tex = 0;
+        fbo_w = fbo_h = 0;
+    }
+}
+
+/* a framebuffer object of width by height, RGBA8 with a depth buffer of 24 bits (or 16) */
+static int offscreen_make(int width, int height) {
+    static const GLenum depths[2] = { GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT16 };
+    int i;
+    for (i = 0; i < 2; i++) {
+        glGenTextures(1, &fbo_tex);
+        glBindTexture(GL_TEXTURE_2D, fbo_tex);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+        glGenRenderbuffers(1, &fbo_depth);
+        glBindRenderbuffer(GL_RENDERBUFFER, fbo_depth);
+        glRenderbufferStorage(GL_RENDERBUFFER, depths[i], width, height);
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo_tex, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, fbo_depth);
+        fbo_w = width, fbo_h = height;
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
+            glGetIntegerv(GL_DEPTH_BITS, &depth_bits);
+            depth_bits = depth_bits < 16 ? 16 : depth_bits;
+            return 1;
+        }
+        offscreen_free();
+    }
+    fprintf(stderr, "rd_gl1: no framebuffer object of %d by %d\n", width, height);
+    return 0;
+}
+
+unsigned rd_gl1_offscreen(int width, int height) {
+    if (!fbo_calls()) {
+        return 0;
+    }
+    if (fbo == 0 || width != fbo_w || height != fbo_h) {
+        offscreen_free();
+        if (!offscreen_make(width, height)) {
+            return 0;
+        }
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    }
+    glGetError();
+    glDisable(GL_TEXTURE_RECTANGLE);  /* the other user's, which outranks a 2D texture (an error where there is none) */
+    glGetError();
+    glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);     /* SDL leaves its last texture's */
+    base_state();
+    out_w = width, out_h = height;
+    return fbo_tex;
+}
+
+void rd_gl1_release(void) {
+    int u;
+    for (u = (units < 4 ? units : 4) - 1; u >= 0; u--) {
+        glActiveTexture(GL_TEXTURE0 + (GLenum)u);
+        glDisable(GL_TEXTURE_2D);
+        glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glClientActiveTexture(GL_TEXTURE0 + (GLenum)u);
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
+    if (lod_bias_ok) {
+        glTexEnvf(GL_TEXTURE_FILTER_CONTROL, GL_TEXTURE_LOD_BIAS, 0.0f);
+    }
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_BLEND);
+    glDepthMask(1);
+    if (fbo != 0) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+    gs.active = -1;
+}
+
 int rd_gl1_init(RD_GL_PROC proc) {
     static const uint8_t white[4] = { 255, 255, 255, 255 };
-    static const float opaque[4] = { 0, 0, 0, 1 };
-    int u, missing = 0, max_tex = 0, alpha_bits = 0;
+    int missing = 0, max_tex = 0, alpha_bits = 0;
+    gl_proc = proc;
 #define GL_GET(ret, name, args)                                                                                    \
     gl##name = (ret(GLCALL*) args)proc("gl" #name);                                                                \
     if (gl##name == NULL) {                                                                                         \
@@ -2786,37 +3056,11 @@ int rd_gl1_init(RD_GL_PROC proc) {
     }
     glTexEnvf(GL_TEXTURE_FILTER_CONTROL, GL_TEXTURE_LOD_BIAS, 0.0f);
     lod_bias_ok = glGetError() == 0;
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_LIGHTING);
-    glDisable(GL_FOG);
-    glDisable(GL_DITHER);
-    glDisable(GL_SCISSOR_TEST);
-    glEnable(GL_DEPTH_TEST);
-    glShadeModel(GL_SMOOTH);
-    glHint(GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST);
-    glAlphaFunc(GL_GEQUAL, 128.0f / 255.0f);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glEnableClientState(GL_VERTEX_ARRAY);
-    glEnableClientState(GL_COLOR_ARRAY);
-    for (u = 0; u < units && u < 3; u++) {
-        glClientActiveTexture(GL_TEXTURE0 + (GLenum)u);
-        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
-    }
-    memset(&gs, 0, sizeof gs);
-    gs.active = -1;
-    gs.blend = gs.alpha_test = -1;
-    gs.depth_func = gs.depth_mask = -1;
-    for (u = 0; u < 4; u++) {
-        gs.u[u].on = -1;
-        gs.u[u].tex = ~0u;
-        gs.u[u].color = 1;
-    }
-    active(0);
-    glTexEnvfv(GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, opaque);
-    gs.u[0].color = 0xFF000000u;
+    base_state();
     dummy_tex = small_texture(1, white);
     memset(ramp, 0, sizeof ramp);
     memset(ramp_sent, 0, sizeof ramp_sent);
+    memset(ramp_made, 0, sizeof ramp_made);
     fog_tex = small_texture(RAMP, ramp);
     gs.u[0].tex = fog_tex;
     glGenTextures(NAMES, names);
@@ -2851,4 +3095,7 @@ void rd_gl1_quit(void) {
     rd_gl1_pool_forget();
     glDeleteTextures(n_names, names);
     n_names = 0;
+    offscreen_free();
+    fbo_had = 0;            /* a new context's calls may be others */
+    glUseProgram = NULL;
 }

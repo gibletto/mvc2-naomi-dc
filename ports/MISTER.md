@@ -45,23 +45,31 @@ Dreamcast version. If what one needs is missing, it says so on the screen and go
 
 ## Controls
 
-Set the buttons once in the OSD (System, Define joystick buttons), as for any core. A six-button pad or stick
-plays as the cabinet: Y X L over B A R.
+Set the buttons once in the OSD (System, Define joystick buttons), as for any core. It asks for the game's own
+buttons, in the game's order: LP, HP, A1 (light punch, heavy punch, assist 1), LK, HK, A2 (the kicks and assist 2),
+Coin, Start, Test and Service, then 2nd A1 and 2nd A2, a second button for each assist on an eight-button stick or
+pad (L2 and R2, say). Test opens the arcade's test menu (difficulty, timer, free play).
+
+A pad not set up yet plays as the cabinet, Y X L over B A R:
 
 | Button      |                     |
 |-------------|---------------------|
 | D-pad       | move                |
 | Y, X        | light, heavy punch  |
 | B, A        | light, heavy kick   |
-| L, L2       | assist 1            |
-| R, R2       | assist 2            |
-| Start       | start               |
+| L           | assist 1            |
+| R           | assist 2            |
 | Select      | coin                |
-| L3          | Test: the arcade's test menu (difficulty, timer, free play) |
-| R3          | service             |
+| Start       | start               |
 
-The first pad is player 1's, the second player 2's. Test is the step after Coin when the OSD asks for the buttons. In
-the test menu the D-pad moves, A or Start chooses, and B or Test goes back. The Dreamcast version has its own options.
+Test, Service and the second assists are on no button until they are set. The first pad is player 1's, the second
+player 2's.
+
+The maps are kept in `config/inputs` as `MVC2 Buttons_input_*.map`. A map from an older version, by Pinedra's names
+(A B X Y L R Select Start L2 R2 L3 R3, `MVC2 Pinedra_input_*.map`), is copied to the game's buttons at the next start
+(L2 becomes 2nd A1, R2 2nd A2, L3 Test and R3 Service); the old map is left as it is.
+In the test menu the D-pad moves, HK or Start chooses, and LK or Test goes back (the screen calls them A and B, their
+buttons on a pad not set up). The Dreamcast version has its own options.
 
 ## The OSD
 
@@ -84,7 +92,7 @@ take 1000 MHz (the game hangs or the MiSTer stops answering): `PND_CPU_MHZ=800` 
 
 ## Quitting
 
-Hold Start and Select for two seconds: the game ends and the MiSTer's menu comes back. Or choose Core in the
+Hold Start and Coin for two seconds: the game ends and the MiSTer's menu comes back. Or choose Core in the
 OSD's System page and load another.
 
 ## Licences

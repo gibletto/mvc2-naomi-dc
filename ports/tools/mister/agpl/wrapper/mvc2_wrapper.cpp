@@ -4,6 +4,7 @@
 // the game through shared memory), turns the MVC2 core's frame reader on, and
 // goes back to the menu core when the game ends.
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/kd.h>
@@ -123,19 +124,68 @@ void joy_open()
 	g_joy->version = MVC2_JOY_SHM_VERSION;
 }
 
-// Pinedra's core names its buttons A B X Y L R Select Start L2 R2 L3 R3 (bits 4-15).
-// Arcade layout on a six-button pad: Y X L over B A R, as LP HP A1 over LK HK A2;
-// the triggers are the assists too, Select is the coin.
+// Under Pinedra's core the OSD asks for the game's own buttons, in the game's order (bits 4-13), then a second A1 and
+// A2 (14, 15), in place of the core's names (A B X Y L R Select Start L2 R2 L3 R3): Main_MiSTer's override, as an
+// MRA's <buttons names>. A pad not defined yet takes them from its menu map, by name or by place (gamepad_defaults)
+// the same: Y X L over B A R as LP HP A1 over LK HK A2, Select the coin (the menu map has no L2, R2, L3 or R3).
+// Their maps have their own name, as a map by Pinedra's names gives its bits other buttons.
+char g_buttons[]  = "LP,HP,A1,LK,HK,A2,Coin,Start,Test,Service,2nd A1,2nd A2";
+char g_defaults[] = "Y,X,L,B,A,R,Select,Start,,,,";
+constexpr const char *kMapName = "MVC2 Buttons";
+
+// the game's order but Start before Coin, and the second A1 and A2 as A1 and A2
 uint32_t pinedra_to_mvc2(uint32_t m)
 {
-	static const struct { uint8_t from, to; } map[] = {
-		{4, 8}, {5, 7}, {6, 5}, {7, 4}, {8, 6}, {9, 9}, {10, 11}, {11, 10},
-		{12, 6}, {13, 9}, {14, 12}, {15, 13},
-	};
-	uint32_t out = m & 0xF;
-	for (const auto &e : map)
-		if (m & (1u << e.from)) out |= 1u << e.to;
-	return out;
+	return (m & 0x33FFu) | (m >> 1 & 0x400) | (m << 1 & 0x800) | (m >> 8 & 0x40) | (m >> 6 & 0x200);
+}
+
+// A pad's maps by Pinedra's names (MVC2 Pinedra's: its buttons, its advanced map's button masks, and a key map as it
+// is) copied once to the game's buttons, the old ones only read: Y X L B A R Select Start L3 R3 L2 R2 as LP HP A1 LK
+// HK A2 Coin Start Test Service and the second A1 and A2
+void maps_move()
+{
+	static const uint8_t from[] = { 7, 6, 8, 5, 4, 9, 10, 11, 14, 15, 12, 13 };
+	union
+	{
+		uint32_t map[NUMBUTTONS];
+		advancedButtonMap adv[ADVANCED_MAP_MAX];
+		uint16_t jk[1024];
+	} was, now;
+	DIR *d = opendir(getFullPath(CONFIG_DIR "/inputs"));
+	if (!d) return;
+	size_t n = strlen(kGLName);
+	while (struct dirent *e = readdir(d))
+	{
+		size_t l = strlen(e->d_name);
+		if (l < n + 7 || l > 200 || strncasecmp(e->d_name, kGLName, n)) continue;
+		const char *rest = e->d_name + n, *end = e->d_name + l - 7;
+		int size;
+		if (!strncmp(rest, "_input_", 7) && !strcmp(end, "_v3.map")) size = sizeof(was.map);
+		else if (!strncmp(rest, "_input_", 7) && !strcmp(end, "_jk.map")) size = sizeof(was.jk);
+		else if (!strncmp(rest, "_advanced_input_", 16) && !strcmp(end, "_v1.map")) size = sizeof(was.adv);
+		else continue;
+		char old_name[256], new_name[256];
+		snprintf(old_name, sizeof(old_name), "inputs/%s", e->d_name);
+		snprintf(new_name, sizeof(new_name), "inputs/%s%s", kMapName, rest);
+		if (FileLoadConfig(new_name, nullptr, 0) > 0 || FileLoadConfig(old_name, nullptr, 0) != size ||
+		    FileLoadConfig(old_name, &was, size) != size)
+			continue;
+		now = was;
+		if (size == (int)sizeof(was.map))
+			for (int i = 0; i < 12; i++) now.map[4 + i] = was.map[from[i]];
+		if (size == (int)sizeof(was.adv))
+			for (int a = 0; a < ADVANCED_MAP_MAX; a++)
+			{
+				now.adv[a].button_mask &= ~0xFFF0u;
+				for (int i = 0; i < 12; i++)
+					if (was.adv[a].button_mask >> from[i] & 1) now.adv[a].button_mask |= 0x10u << i;
+			}
+		if (FileSaveConfig(new_name, &now, size) == size)
+			logf("buttons: %s copied to the game's buttons as %s", old_name, new_name);
+		else
+			FileDeleteConfig(new_name);
+	}
+	closedir(d);
 }
 
 // The user's Pinedra Config settings (pinedra/settings/all.cfg) that Pinedra's
@@ -430,6 +480,12 @@ int main(int argc, char *argv[])
 	joy_open();
 	if (g_gl)
 	{
+		set_ovr_buttons(g_buttons, 0);
+		set_ovr_buttons(g_defaults, 1);
+		set_ovr_buttons(g_defaults, 2);
+		parse_buttons();  // the names in the autofire message too
+		input_set_map_name(kMapName);
+		maps_move();
 		pinedra_settings();
 		menu_core_entry = 1;  // the OSD's way out: Pinedra's core has no Exit
 	}

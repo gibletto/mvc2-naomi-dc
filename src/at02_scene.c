@@ -61,6 +61,9 @@ typedef struct { Uint8 buff[0x1d0] ; } AT02_WORK_BUFF ;
 #else
 #define AT02_NEXT_W( w )	( ( ( AT02_WORK_BUFF * )( w ) ) ++ )	/* the cast is used as an lvalue */
 #endif
+#ifdef HOST_PORT
+extern int host_unlock ;	/* the host's unlock = all */
+#endif
 
 /* a frame of the demo: the home game's is timed again, to the stream that is its music, and it
    has no later frames for the faster display */
@@ -1016,6 +1019,12 @@ static void at02_name_disp( void )
 	nlLoadMatrix( &at02_view_mtx ) ;
 	bits[0] = Sys->char_open0 ;
 	bits[1] = Sys->char_open1 ;
+#ifdef HOST_PORT
+	if( host_unlock ){	/* every character, as select.c opens them */
+		bits[0] = 0xf8ffffff ;
+		bits[1] = 0x07ffffff ;
+	}
+#endif
 	if( at02_name_no < 28 ){
 		i = at02_name_no % 5 ;
 		if( Sys->timer1 >= AT02_NAME2_IN ) no = at02_name_ord0[at02_name_no] ;

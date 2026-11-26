@@ -19,7 +19,13 @@ void rd_gl1_end_frame(void);
 /* f with this palette and fog: a frame the game has handed on, drawn on another thread while it fills the next */
 void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog);
 void rd_gl1_size(int width, int height);
-/* what it drew, as ARGB rows from the top (at RD_WIDTH by RD_HEIGHT only) */
+/* the PC's: the frames drawn into a framebuffer object of the GL's of width by height (made again at a new size), in
+   a context another user shares (SDL's renderer). Bound, with the GL's state set as the drawing takes it, and the
+   size set: its texture's name, 0 when the GL has no framebuffer objects. rd_gl1_release then leaves the state at the
+   GL's defaults, framebuffer 0 bound, for the other user */
+unsigned rd_gl1_offscreen(int width, int height);
+void rd_gl1_release(void);
+/* what it drew, as ARGB rows from the top (drawn larger, averaged; nothing when smaller) */
 void rd_gl1_read(uint32_t* argb);
 /* a picture made on the CPU, RD_WIDTH by RD_HEIGHT ARGB rows from the top, drawn over the whole frame */
 void rd_gl1_show(const uint32_t* argb);
@@ -27,7 +33,8 @@ void rd_gl1_quit(void);
 
 /* MVC2_GL1 words, also set by a front end: tex16 (16-bit textures as the GPU takes them, not RGBA8), up (drawn
    bottom row first), less (depth tests the other way, the opaque list nearest first), snap=N (the GPU's grid,
-   N a pixel), deep=K, shallow=K (the translucent list's cuts) */
+   N a pixel), deep=K, shallow=K (the translucent list's cuts), pool (small textures drawn again and again kept),
+   atlas, order, clut */
 void rd_gl1_options(const char* words);
 int rd_gl1_ordered(void);           /* the driver orders the translucent list */
 
