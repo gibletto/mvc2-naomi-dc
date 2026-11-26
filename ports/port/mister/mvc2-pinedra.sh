@@ -8,8 +8,6 @@ grep -qx 'splash=0' /media/fat/pinedra/settings/all.cfg 2>/dev/null && export PN
 export PND_MSAA=0
 # the driver one frame ahead, not its default: a frame shown a vblank or two sooner, as fast
 export PND_FRAMES_AHEAD=1
-# the sound thread (SDLAudio) on CPU1, off the game thread's CPU0: select about 1 ms a frame faster
-export PND_AUDIO_CORE=1
 # the ARM at 1000 MHz while the game runs, which the Pinedra driver sets and puts back when it ends: a board that
 # doesn't take it, PND_CPU_MHZ=800 in env.txt
 export PND_CPU_MHZ=1000

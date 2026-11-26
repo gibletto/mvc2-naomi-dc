@@ -36,7 +36,6 @@ void rd_gl1_quit(void);
    N a pixel), deep=K, shallow=K (the translucent list's cuts), pool (small textures drawn again and again kept),
    atlas, order, clut */
 void rd_gl1_options(const char* words);
-int rd_gl1_ordered(void);           /* the driver orders the translucent list */
 
 typedef struct {
     int batches, tris, verts, uploads, textures, skipped, offset_lost;

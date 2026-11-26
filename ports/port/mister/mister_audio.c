@@ -191,7 +191,7 @@ static void* make_thread(void* arg) {
     cpu_set_t set;
     long c, n = sysconf(_SC_NPROCESSORS_ONLN);
     (void)arg;
-    pthread_setname_np(pthread_self(), "SDLAudio");    /* the name Pinedra's PND_AUDIO_CORE places */
+    pthread_setname_np(pthread_self(), "SDLAudio");    /* the name Pinedra's driver places */
     CPU_ZERO(&set);
     if (on != NULL) {
         CPU_SET(atoi(on), &set);
@@ -269,8 +269,9 @@ void mister_audio_open(void) {
             put(quiet, 512);    /* a period of silence first: what a core just loaded starts from */
         }
     }
-    /* with the driver ordering the translucent list, CPU 1 is its thread's and the game's has room for the sound */
-    if (snd_enabled() && (t != NULL ? atoi(t) != 0 : !mister_gl_ordered()) &&
+    /* the sound made on a thread of its own, which Pinedra's driver puts on the core with room for it (by its name):
+       the heaviest fights' frames kept on the game's CPU0 (MVC2_SNDTHREAD=0: on the game's thread) */
+    if (snd_enabled() && (t == NULL || atoi(t) != 0) &&
         pthread_create(&maker, NULL, make_thread, NULL) == 0) {
         threaded = 1;
     }

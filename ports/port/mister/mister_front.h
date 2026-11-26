@@ -15,6 +15,7 @@ uint64_t mister_us(void);                   /* CLOCK_MONOTONIC */
 /* the lists drawn by the Pinedra core's OpenGL */
 int mister_gl_init(void);                   /* 0 without the core's library or context */
 void mister_gl_draw(void);                  /* the frame's lists, before rd_begin_frame */
+void mister_gl_show(const uint32_t* argb);   /* a whole RD_WIDTH x RD_HEIGHT picture, piped or not */
 void mister_gl_swap(void);                  /* shown from the next vblank, waited for when vsynced */
 int mister_gl_vsynced(void);
 void mister_gl_exit(void);
@@ -22,7 +23,6 @@ void mister_gl_exit(void);
 /* piped (MVC2_PIPE): the frame handed to the drawing thread, rd_frame then the next's; the game's next frame from the
    next vblank; the last frame drawn's stats and time, and the GL's memory, as of the hand-off */
 int mister_gl_piped(void);
-int mister_gl_ordered(void);                /* the driver's thread orders the translucent list, on CPU 1 */
 void mister_gl_hand(unsigned frame);
 void mister_gl_next(void);
 const RD_GL1_STATS* mister_gl_stats(void);

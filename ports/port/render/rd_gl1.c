@@ -2855,9 +2855,6 @@ static GLuint small_texture(int w, const uint8_t* rgba) {
     return name;
 }
 
-int rd_gl1_ordered(void) {
-    return ord_on;
-}
 
 /* the GL's state as the drawing takes it, set again whatever another user of the context left (rd_gl1_offscreen) */
 static void base_state(void) {

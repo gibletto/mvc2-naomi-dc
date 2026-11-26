@@ -5,6 +5,8 @@ or the clock differ, and prints what.
 
   python -I tools/fcreplay/fcstat.py SCRDDIR OUTDIR [--fight=N] [--exe=mvc2.exe] [--lag=N] [--j=4]
       [--session[=FRAMES]]   one run from the select on, synced once
+      [--write=FILE]         the (first) script written to FILE, the executable's addresses in it, and not run:
+                             a replay to watch (FCR_NM: the executable's nm, FCR_BUILD: its build with arc.o)
 """
 import glob, json, os, re, struct, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -17,7 +19,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 DECOMP = os.environ.get("MVC2_DECOMP", os.path.dirname(ROOT))
 BUILD = os.environ.get("FCR_BUILD", os.path.join(ROOT, "build-fcr"))
-NM = "C:/msys64/mingw32/bin/nm.exe"
+NM = os.environ.get("FCR_NM", "C:/msys64/mingw32/bin/nm.exe")
 PLW = 0x5A4
 NAMES = ["pl_work", "vs_sys_work", "sw_work", "sys_work", "sel_w", "nl_random_next", "work_buff", "rnd_hi", "stage_no"]
 DUMP = [("pl_work", PLW * 6), ("vs_sys_work", 0xC0), ("sw_work", 0x28), ("sys_work", 0x100), ("rnd_hi", 8),
@@ -455,6 +457,11 @@ def main():
     else:
         fights = read_fights(scrd_dir, ns, want)
     ps = port_syms(exe)
+    if "write" in opts:
+        head = ["sym %s 0x%X" % kv for kv in sorted(ps.items())]
+        text = script(fights[0], lag, ns, ps, session)
+        open(opts["write"], "w", newline="\n").write("\n".join(head) + "\n" + text)
+        return
 
     def one(fight):
         fo = os.path.join(out, "session" if session else "fight_%d" % fight.n)

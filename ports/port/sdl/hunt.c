@@ -1,8 +1,10 @@
 /*
- * hunt.c  A scripted run for comparing moves with an emulator: both players' input from a script that
- * waits on the game's memory, and the game's work dumped each game frame (tools/hunt)
+ * hunt.c  A scripted run for comparing moves with an emulator, or a replay to watch: both players' input from a
+ * script that waits on the game's memory, and the game's work dumped each game frame (tools/hunt, tools/fcreplay)
  *
  *   MVC2_HUNT=script  MVC2_HUNT_SYMS=name=addr,...  MVC2_HUNT_DUMP=name:len,...  MVC2_HUNT_TRACE=file
+ *
+ * The script's "sym NAME ADDR" lines name addresses as MVC2_HUNT_SYMS does, before the lines that use them.
  */
 
 #include <stdio.h>
@@ -11,6 +13,7 @@
 
 #include "naomi_input.h"
 #include "hunt.h"
+#include "naomi_host.h"
 
 #define MAX_OPS 400000
 #define MAX_SYMS 32
@@ -36,7 +39,7 @@ static struct {
 } dumps[MAX_SYMS];
 static int ndumps;
 static FILE* trace;
-static int tracing;
+static int tracing, quiet;
 static uint32_t timer_addr, last_timer = 0xFFFFFFFF;
 
 static uint32_t sym(const char* name) {
@@ -105,6 +108,13 @@ static void load(const char* path) {
         if (n < 1 || w[0][0] == '#') {
             continue;
         }
+        if (strcmp(w[0], "sym") == 0 && n == 3) {
+            if (nsyms < MAX_SYMS) {
+                snprintf(syms[nsyms].name, sizeof syms[nsyms].name, "%.31s", w[1]);
+                syms[nsyms++].addr = (uint32_t)strtoul(w[2], NULL, 0);
+            }
+            continue;
+        }
         if ((strcmp(w[0], "wait") == 0 || strcmp(w[0], "waitne") == 0 || strcmp(w[0], "poke") == 0 ||
              strcmp(w[0], "keep") == 0) && n == 4) {
             /* keep ADDR SIZE VALUE: poked again each frame, till unkeep */
@@ -169,12 +179,13 @@ static uint32_t peek(uint32_t a, int size) {
                                                                      : *(volatile uint32_t*)(uintptr_t)a;
 }
 
-int hunt_init(void) {
+int hunt_init(int no_log) {
     const char* script = getenv("MVC2_HUNT");
     const char* s;
     if (script == NULL) {
         return 0;
     }
+    quiet = no_log;
     for (s = getenv("MVC2_HUNT_SYMS"); s != NULL && *s != 0 && nsyms < MAX_SYMS;) {
         unsigned long a;
         if (sscanf(s, "%31[^=]=%li", syms[nsyms].name, (long*)&a) == 2) {
@@ -183,6 +194,8 @@ int hunt_init(void) {
         s = strchr(s, ',');
         s = s ? s + 1 : NULL;
     }
+    load(script);
+    timer_addr = sym("sys_work") + 0x1C;    /* game_timer0 */
     for (s = getenv("MVC2_HUNT_DUMP"); s != NULL && *s != 0 && ndumps < MAX_SYMS;) {
         char name[64];
         unsigned len;
@@ -193,8 +206,6 @@ int hunt_init(void) {
         s = strchr(s, ',');
         s = s ? s + 1 : NULL;
     }
-    timer_addr = sym("sys_work") + 0x1C;    /* game_timer0 */
-    load(script);
     if (getenv("MVC2_HUNT_TRACE") != NULL) {
         trace = fopen(getenv("MVC2_HUNT_TRACE"), "wb");
     }
@@ -278,9 +289,9 @@ int hunt_frame(HOST_INPUT* in, unsigned frame) {
             break;
         }
     }
-    if (pc != logged) {
+    if (pc != logged && !quiet) {
         logged = pc;
-        fprintf(stderr, "hunt: frame %u timer %u line %d\n", frame, timer, pc < nops ? ops[pc].line : -1);
+        host_log("hunt: frame %u timer %u line %d", frame, timer, pc < nops ? ops[pc].line : -1);
     }
     in->player[0] = late[0], in->player[1] = late[1];
     in->coin = late_coin;

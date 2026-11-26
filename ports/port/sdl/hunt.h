@@ -7,7 +7,7 @@
 
 #include "naomi_input.h"
 
-int hunt_init(void);
+int hunt_init(int no_log);     /* no_log: no line as the script moves on */
 int hunt_frame(HOST_INPUT* in, unsigned frame);
 
 #endif

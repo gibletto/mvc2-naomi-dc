@@ -1364,7 +1364,7 @@ int main(int argc, char** argv) {
 #ifdef _WIN32
     console_read = console_start();
 #endif
-    hunting = test_run && hunt_init();
+    hunting = test_run && hunt_init(0);
 
     if (!naomi_map_ram()) {
         char text[100];

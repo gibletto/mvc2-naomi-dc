@@ -207,6 +207,7 @@ static int state;                   /* the thread's open: 0 not yet, 1 done, -1 
 static int has_work, reading, quit;
 static struct {
     RD_FRAME* f;
+    const uint32_t* shown;          /* or a whole picture (the test menu's) */
     unsigned frame;
     uint32_t began;                 /* the vblank its game frame began at, for the log */
 } work;
@@ -259,6 +260,16 @@ static void* render_main(void* arg) {
         f = work.f, frame = work.frame, at = work.began;
         has_work = 0;
         reading = 1;
+        if (f == NULL) {
+            pthread_mutex_unlock(&lock);
+            rd_gl1_show(work.shown);
+            pthread_mutex_lock(&lock);
+            reading = 0;
+            pthread_cond_broadcast(&changed);
+            pthread_mutex_unlock(&lock);
+            pnd_swap();
+            continue;
+        }
         t0 = mister_us();
         cycle_us = took_at != 0 ? t0 - took_at : 0;
         took_at = t0;
@@ -363,10 +374,6 @@ int mister_gl_init(void) {
 
 int mister_gl_piped(void) {
     return piped;
-}
-
-int mister_gl_ordered(void) {
-    return !piped && rd_gl1_ordered();
 }
 
 /* the frame's states' textures, the palette and the fog as they are now, for the drawing to read */
@@ -478,6 +485,26 @@ void mister_gl_swap(void) {
         log_swap(n, n, began, v0, t0);
         began = reg(PND_VBLANKS) & 0xFFFF;     /* the next game frame begins as this returns */
     }
+}
+
+/* a whole picture shown, drawn by the time this returns */
+void mister_gl_show(const uint32_t* argb) {
+    if (!piped) {
+        rd_gl1_show(argb);
+        mister_gl_swap();
+        return;
+    }
+    pthread_mutex_lock(&lock);
+    while (has_work || reading) {
+        pthread_cond_wait(&changed, &lock);
+    }
+    work.f = NULL, work.shown = argb;
+    has_work = 1;
+    pthread_cond_broadcast(&changed);
+    while (has_work || reading) {
+        pthread_cond_wait(&changed, &lock);
+    }
+    pthread_mutex_unlock(&lock);
 }
 
 int mister_gl_vsynced(void) {

@@ -4,6 +4,7 @@
 // the game through shared memory), turns the MVC2 core's frame reader on, and
 // goes back to the menu core when the game ends.
 
+#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -58,6 +59,7 @@ constexpr int kBitExit    = 22;
 
 FILE *g_log;
 const char *g_mode;     // --arcade or --dc, from the .mgl's <file path="arcade"> or "dc"; else mvc2.cfg's mode
+char g_replay[128];     // replays/NAME.txt, played in the arcade game, from the .mgl's <file path="replay/NAME">
 volatile uint32_t *g_ctrl;
 MisterJoyShm *g_joy;
 volatile sig_atomic_t g_signal;
@@ -332,6 +334,16 @@ void video_poll()
 		cfg.vga_mode[0] ? cfg.vga_mode : "rgb");
 }
 
+// a replay's name: letters, digits, spaces, '_', '-' and '.', not starting with '.'
+bool replay_name(const char *s)
+{
+	size_t n = strlen(s);
+	if (n == 0 || n > 100 || s[0] == '.') return false;
+	for (; *s; s++)
+		if (!isalnum((unsigned char)*s) && !strchr(" _-.", *s)) return false;
+	return true;
+}
+
 pid_t game_start()
 {
 	if (g_joy) g_joy->unpack_kb_total = 0;
@@ -360,6 +372,7 @@ pid_t game_start()
 		if (chdir(kHome)) _exit(126);
 		setenv("MVC2_JOY_SHM", MVC2_JOY_SHM_PATH, 1);
 		setenv("MVC2_MISTER", "1", 1);
+		if (g_replay[0]) setenv("MVC2_HUNT", g_replay, 1);
 		if (g_gl) setenv("MVC2_VIDEO", "pinedra", 1);
 		// a test binary can stand in for the game until the next boot
 		char alt[256] = {};
@@ -455,6 +468,11 @@ int main(int argc, char *argv[])
 		const char *p = mgl_get()->item[i].path;
 		if (!strcasecmp(p, "arcade")) g_mode = "--arcade";
 		else if (!strcasecmp(p, "dc")) g_mode = "--dc";
+		else if (!strncasecmp(p, "replay/", 7) && replay_name(p + 7))
+		{
+			snprintf(g_replay, sizeof(g_replay), "replays/%s.txt", p + 7);
+			g_mode = "--arcade";
+		}
 	}
 	mgl_get()->done = 1;
 

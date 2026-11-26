@@ -295,7 +295,7 @@ else()
         set(FRONT_SOURCES ${PORT}/mister/main_mister.c ${PORT}/mister/mister_pinedra.c ${PORT}/mister/mister_audio.c
             ${PORT}/mister/mister_save.c ${PORT}/mister/mister_prof.c ${PORT}/mister/mister_input.c ${PORT}/sdl/start.c
             ${PORT}/render/rd_gl1.c ${PORT}/render/rd_gl1_tex.c ${PORT}/mister/mister_reader.c ${PORT}/mister/mister_log.c
-            ${PORT}/sdl/test_mode.c ${PORT}/sdl/menu_font.c)
+            ${PORT}/sdl/test_mode.c ${PORT}/sdl/menu_font.c ${PORT}/sdl/hunt.c)
         # -O3 vectorizes the translucent sort's box tests
         set_source_files_properties(${PORT}/render/rd_gl1.c PROPERTIES COMPILE_OPTIONS -O3)
         set_source_files_properties(${PORT}/nl/nl_obj.c ${PORT}/render/rd.c ${PORT}/nl/nl_matha.c PROPERTIES COMPILE_OPTIONS -O3)

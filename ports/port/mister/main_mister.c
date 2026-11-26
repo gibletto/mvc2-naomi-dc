@@ -24,6 +24,7 @@
 #include "../nl/nl_port.h"
 #include "rd_gl1.h"
 #include "frame_log.h"
+#include "../sdl/hunt.h"
 #include "snd_drv.h"
 #include "test_mode.h"
 #include "menu_font.h"
@@ -117,8 +118,23 @@ static uint32_t pressed(int side) {
 static int test_open, test_held;
 static void pace(void);
 
+/* MVC2_HUNT=script: both players' input from a script (port/sdl/hunt.c), a replay the wrapper starts or a test run's */
+static int hunting, hunt_done;
+
 /* the Test button opens the port's test menu (the arcade's has no boot ROM here to go to) */
 static void read_input(void) {
+    if (hunting) {
+        HOST_INPUT pads;
+        if (!test_run) {
+            mister_input_read(&pads);   /* the menu button still quits */
+        }
+        hunt_done = hunt_frame(&input, presented);
+        input.test = 0;
+        if (hunt_done && !test_run) {
+            hunting = 0;    /* the replay over: the pads play on */
+        }
+        return;
+    }
     input.player[0] = pressed(0);
     input.player[1] = pressed(1);
     input.coin = coin_req;
@@ -127,7 +143,7 @@ static void read_input(void) {
     if (!test_run) {
         mister_input_read(&input);
     }
-    if (input.test && !test_held && !mister_gl_piped() && strstr(game_title(), "Dreamcast") == NULL) {
+    if (input.test && !test_held && strstr(game_title(), "Dreamcast") == NULL) {
         test_mode_open("A", "B");
         test_open = 1;
     }
@@ -170,8 +186,7 @@ static int test_frame(void) {
             }
         }
     }
-    rd_gl1_show(shown);
-    mister_gl_swap();
+    mister_gl_show(shown);
     pace();
     return 0;
 }
@@ -400,6 +415,38 @@ static void slow_frame(uint64_t took, long major, long minor) {
              spans[T_DRAW].last / 1000.0, spans[T_OUT].last / 1000.0, spans[T_SOUND].last / 1000.0,
              spans[T_MAKE].last / 1000.0, spans[T_WAIT].last / 1000.0, major, draw_major, minor, g->uploads,
              g->upload_bytes / 1024, g->us_build / 1000.0, g->us_draw / 1000.0);
+}
+
+/* the time between one frame's measured part and the next's, over 50 ms: whether the game's thread ran (its CPU
+   time), waited (its voluntary switches: a read, a lock), was put off its CPU for another, or read pages from the card */
+typedef struct {
+    uint64_t at, cpu;
+    long waits, preempted, major;
+} GAP;
+
+static void gap_mark(GAP* g) {
+    struct rusage r;
+    long minor;
+    g->at = mister_us();
+    g->cpu = cpu_us();
+    getrusage(RUSAGE_THREAD, &r);
+    g->waits = r.ru_nvcsw;
+    g->preempted = r.ru_nivcsw;
+    faults(&g->major, &minor);
+}
+
+static void gap_check(const GAP* from) {
+    GAP now;
+    if (from->at == 0 || stat_every == 0) {
+        return;
+    }
+    gap_mark(&now);
+    if (now.at - from->at >= 50000) {
+        host_log("stall before frame %u: %.1f ms between frames: the game's thread on its CPU %.1f ms, %ld waits, put off "
+                 "its CPU %ld times, %ld pages read", presented + 1, (now.at - from->at) / 1000.0,
+                 (now.cpu - from->cpu) / 1000.0, now.waits - from->waits, now.preempted - from->preempted,
+                 now.major - from->major);
+    }
 }
 
 static void stats_frame(void) {
@@ -665,6 +712,7 @@ int main(int argc, char** argv) {
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
     uint64_t frame_start = 0;
     test_run = frames_left >= 0;
+    hunting = hunt_init(!test_run);
     atexit(mister_log_flush);
     stat_every = test_run ? 300 : 0;
     if (getenv("MVC2_STATS") != NULL) {
@@ -707,6 +755,7 @@ int main(int argc, char** argv) {
     if (!start_game()) {
         return pick_why() != PICK_QUIT ? 10 + pick_why() : 1;
     }
+    GAP gap = { 0 };
     for (;;) {
         uint64_t start, presenting, sounded, cpu, cpu_presenting;
         uint32_t waited;
@@ -725,12 +774,14 @@ int main(int argc, char** argv) {
                 break;
             }
             frame_start = 0;
+            gap.at = 0;     /* the menu's frames are no stall */
             continue;
         }
         waited = mister_audio_wait_us;
         faults(&major, &minor);
         draw_major = 0;
         read_input();
+        gap_check(&gap);
         start = mister_us(), presenting = present_us;
         cpu = cpu_us(), cpu_presenting = present_cpu;
         naomi_run_frame();
@@ -748,10 +799,11 @@ int main(int argc, char** argv) {
         }
         frame_start = start;
         faults(&major_end, &minor_end);
+        gap_mark(&gap);
         slow_frame(mister_us() - start, major_end - major, minor_end - minor);
         frame_log();
         stats_frame();
-        if ((frames_left > 0 && --frames_left == 0) || mister_input_quit() || stop_req) {
+        if ((frames_left > 0 && --frames_left == 0) || (hunt_done && test_run) || mister_input_quit() || stop_req) {
             break;
         }
     }

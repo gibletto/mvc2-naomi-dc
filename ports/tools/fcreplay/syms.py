@@ -3,7 +3,7 @@ turn a pointer of the arcade's into the port's."""
 import bisect, os, re, subprocess
 
 DECOMP = os.environ.get("MVC2_DECOMP", os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-NM = "C:/msys64/mingw32/bin/nm.exe"
+NM = os.environ.get("FCR_NM", "C:/msys64/mingw32/bin/nm.exe")    # the executable's own binutils' nm
 FILES = 0x0C400000      # from here main RAM holds the files the game loads, at the same addresses in both
 
 
@@ -41,6 +41,9 @@ class Symbols:
         self.r_addrs = [a for a, _, _ in self.routines]
         self.build, self.arc_o, self.exe = os.path.dirname(arc_o), arc_o, exe
         self.modules = None
+        with open(exe, "rb") as f:
+            head = f.read(20)
+        self.thumb = int(head[:4] == b"\x7fELF" and head[18] == 40)    # an ARM build's code is Thumb: its pointers odd
 
     @staticmethod
     def _port(exe, arc_o):
@@ -124,7 +127,8 @@ class Symbols:
             return ptr
         name, off = self.where(ptr)
         if name in self.code:
-            return self.routine(ptr)
+            r = self.routine(ptr)
+            return r | self.thumb if r is not None else None
         if name is None or name not in self.port or off >= self.size(name):
             return None     # a static of the module's, which the map leaves out
         return self.port[name] + off
