@@ -7037,7 +7037,8 @@ int ctr_render_init(int full, int stretch, int wide) {
         }
         if (pipe_on) {
             host_log("textures: none in VRAM, the drawing thread makes them beside the frame's copies (MVC2_TEX_VRAM)");
-        } else if (atoi(getenv("MVC2_TEX_VRAM")) != 2 && (staging_buf = linearAlloc(staging_size * 2)) == NULL) {
+        } else if ((atoi(getenv("MVC2_TEX_VRAM")) != 2 || !ctr_vram_writable) &&
+                   (staging_buf = linearAlloc(staging_size * 2)) == NULL) {
             host_log("textures: none in VRAM, no linear memory for the staging ring (MVC2_TEX_VRAM)");
         } else {
             tex_vram = 1;
@@ -7068,7 +7069,8 @@ int ctr_render_init(int full, int stretch, int wide) {
             }
         }
     }
-    if (tex_vram && !vram_direct && getenv("MVC2_TEX_GX") != NULL && strcmp(getenv("MVC2_TEX_GX"), "0") != 0) {
+    if (tex_vram && !vram_direct && ctr_vram_writable && getenv("MVC2_TEX_GX") != NULL &&
+        strcmp(getenv("MVC2_TEX_GX"), "0") != 0) {
         int flip = gx_test();
         tex_gx = flip >= 0;
         gx_flip = tex_gx ? flip : 0;

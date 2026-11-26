@@ -39,6 +39,7 @@ void ctr_unpack_screen(const char* text);               /* a long unpack's text 
 void ctr_unpack_progress(uint32_t done, uint32_t total);   /* its bar */
 extern const char* ctr_rom_error;                       /* or NULL */
 extern int ctr_memcpy_fast;                             /* MVC2_MEMCPY_FAST=1: memcpy by ldm and stm (ctr_memcpy.c) */
+extern int ctr_vram_writable;                           /* the CPU may write VRAM: not in the Homebrew Launcher's 3dsx */
 void* ctr_memcpy(void* to, const void* from, size_t n);
 void* __real_memcpy(void* to, const void* from, size_t n);
 #include <stdio.h>

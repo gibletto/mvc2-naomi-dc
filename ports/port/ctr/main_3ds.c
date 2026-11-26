@@ -967,6 +967,21 @@ static void clear_top(void) {
     }
 }
 
+int ctr_vram_writable;
+
+/* whether the CPU may write VRAM: the CIA maps it so (its .rsf), the Homebrew Launcher's 3dsx process only to be
+   read, where the bottom screen's text in VRAM stopped the program at its first character. MVC2_VRAM_RO=1 runs a
+   CIA the 3dsx's way */
+static int vram_writable(void) {
+    MemInfo mi;
+    PageInfo pi;
+    if (getenv("MVC2_VRAM_RO") != NULL && strcmp(getenv("MVC2_VRAM_RO"), "0") != 0) {
+        return 0;
+    }
+    return !envIsHomebrew() ||
+           (R_SUCCEEDED(svcQueryMemory(&mi, &pi, OS_VRAM_VADDR)) && (mi.perm & MEMPERM_WRITE) != 0);
+}
+
 int main(int argc, char** argv) {
     long frames_left;
     bool n3ds = false;
@@ -998,6 +1013,12 @@ int main(int argc, char** argv) {
              !ctr_ram_mapped ? "not mapped" : host_ram_size < RAM_SIZE ? "mapped (the Dreamcast's 16 MB)" : "mapped");
     /* MVC2_VRAM_FB=1: the screens' framebuffers in VRAM, libctru having no way to move the top's alone */
     vram_fb = getenv("MVC2_VRAM_FB") != NULL && strcmp(getenv("MVC2_VRAM_FB"), "0") != 0;
+    ctr_vram_writable = vram_writable();
+    if (!ctr_vram_writable) {
+        host_log("VRAM: mapped here only to be read, so the screens' framebuffers and textures are written through "
+                 "linear memory (MVC2_VRAM_FB and MVC2_TEX_VRAM=2 off)");
+        vram_fb = 0;
+    }
     if (vram_fb) {
         gfxExit();
         gfxInit(GSP_BGR8_OES, GSP_BGR8_OES, true);

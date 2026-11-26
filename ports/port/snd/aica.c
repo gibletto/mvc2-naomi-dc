@@ -80,6 +80,11 @@ static uint32_t lfo_step[32];                       /* the phase (256 a period) 
 static int32_t att_gain[1024];                      /* 2^(-a/64), Q15: an attenuation of a/1024 of 96 dB */
 static int32_t level_gain[16];                      /* a send level: 0 off, then 3 dB steps to 15 = 0 dB */
 static int32_t pan_gain[16];                        /* the side a pan turns down: 3 dB a step, 15 off */
+
+/* 16 bits, the width of the output and of the DSP's EFREG */
+static int32_t out_level(int32_t s) {
+    return s > 32767 ? 32767 : s < -32768 ? -32768 : s;
+}
 static int32_t plfo_tab[8][256];                    /* pitch: Q16 factors */
 static int32_t alfo_tab[8][256];                    /* attenuation units */
 
@@ -1278,7 +1283,7 @@ static void dsp_fast_sample(const int32_t* mix, int32_t* l, int32_t* r) {
         aica_dsp_jit_run(&dsp, mix);
     }
     for (k = 0; k < dsp_outs_n; k++) {
-        int32_t v = dsp.efreg[dsp_outs[k].e], sl, sr;
+        int32_t v = out_level(dsp.efreg[dsp_outs[k].e]), sl, sr;
         if (!v) {
             continue;
         }
@@ -1898,10 +1903,6 @@ static void reverb(int len) {
     }
 }
 
-static int32_t out_level(int32_t s) {
-    return s > 32767 ? 32767 : s < -32768 ? -32768 : s;
-}
-
 void aica_render(int16_t* out, int n) {
     while (n > 0) {
         int len = n < chunk ? n : chunk, i, c, mvol = reg16(0x2800) & 15;
@@ -1965,7 +1966,7 @@ void aica_render(int16_t* out, int n) {
                     if (!lv || !dsp.efreg[e]) {
                         continue;
                     }
-                    sl = sr = dsp.efreg[e] * lv >> 15;
+                    sl = sr = out_level(dsp.efreg[e]) * lv >> 15;
                     if (ef & 0x10) {
                         sr = sr * pan_gain[ef & 15] >> 15;
                     } else {
@@ -1976,8 +1977,8 @@ void aica_render(int16_t* out, int n) {
                 }
             }
             g = level_gain[mvol];
-            out[i * 2] = (int16_t)out_level(l * g >> 15);
-            out[i * 2 + 1] = (int16_t)out_level(r * g >> 15);
+            out[i * 2] = (int16_t)out_level((int32_t)((int64_t)l * g >> 15));
+            out[i * 2 + 1] = (int16_t)out_level((int32_t)((int64_t)r * g >> 15));
         }
         out += len * 2;
         n -= len;

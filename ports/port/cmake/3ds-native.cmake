@@ -56,6 +56,7 @@ function(ctr_create_3dsx target title description icon)
     add_custom_command(TARGET ${target} POST_BUILD
         COMMAND ${CTR_SMDHTOOL} --create ${title} ${description} "mvc2-naomi-dc" ${icon} ${smdh}
         COMMAND ${CTR_3DSXTOOL} $<TARGET_FILE:${target}> ${CMAKE_CURRENT_BINARY_DIR}/${target}.3dsx --smdh=${smdh} ${romfs}
+        COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/port/tools/check_3dsx.py ${CMAKE_CURRENT_BINARY_DIR}/${target}.3dsx
         COMMENT "Making ${target}.3dsx")
 endfunction()
 
