@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "mister_front.h"
 #include "naomi_host.h"
 
 #define RING (256 << 10)
@@ -59,6 +60,7 @@ void mister_log_flush(void) {
 
 static void* writer(void* arg) {
     (void)arg;
+    mister_on_cpu1();
     for (;;) {
         pthread_mutex_lock(&lock);
         while (written == put_at && lost == 0) {

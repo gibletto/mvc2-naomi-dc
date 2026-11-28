@@ -85,13 +85,23 @@ static int open_gl(void) {
     if (size != NULL && (sscanf(size, "%dx%d", &w, &h) != 2 || w < 64 || h < 48 || w > RD_WIDTH || h > RD_HEIGHT)) {
         w = RD_WIDTH, h = RD_HEIGHT;
     }
+    {
+        /* mvc2.cfg's rate as the analog scan's (HDMI follows it with vsync_adjust), and its vrr; env.txt's PND_
+           settings go first */
+        char hz[16];
+        snprintf(hz, sizeof hz, "%.4f", mister_rate());
+        setenv("PND_SCAN_HZ", hz, 0);
+        if (config_on("vrr") == 1) {
+            setenv("PND_VRR", "1", 0);
+        }
+    }
     if (!pnd_open(w, h)) {
         host_log("gl: no %dx%d context", w, h);
         close_gl();
         return 0;
     }
     opened = 1;
-    vsynced = pnd_swap_interval != NULL && (vsync == NULL || atoi(vsync) != 0);
+    vsynced = pnd_swap_interval != NULL && (vsync != NULL ? atoi(vsync) != 0 : config_on("vsync") != 0 && config_on("vrr") != 1);
     if (pnd_swap_interval != NULL) {
         pnd_swap_interval(vsynced);
     }
@@ -478,7 +488,7 @@ void mister_gl_draw(void) {
 void mister_gl_swap(void) {
     static unsigned n;
     uint32_t v0 = reg(PND_VBLANKS) & 0xFFFF;
-    uint64_t t0 = mister_us();
+    uint64_t t0 = pipe_log != NULL ? mister_us() : 0;
     pnd_swap();
     if (pipe_log != NULL) {
         n++;

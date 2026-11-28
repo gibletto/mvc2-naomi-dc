@@ -127,7 +127,7 @@ static double queued_frames(void) {
 #else
     double bytes = SDL_GetQueuedAudioSize(dev);
 #endif
-    return bytes / (CHANNELS * 2.0) / (dev_rate / 59.94);
+    return bytes / (CHANNELS * 2.0) / (dev_rate * snd_base_us() / 1e6);
 }
 
 /* the frame's samples, at the device's rate times (1 + stretch) */
@@ -157,12 +157,12 @@ static void queue(const int16_t* in, int n, double stretch) {
     put(out, o);
 }
 
-/* frames run faster than 59.94 (MVC2_FPS) wait for the device while the queue is 2.5 frames past its mark, but
+/* frames run faster than the rate (MVC2_FPS) wait for the device while the queue is 2.5 frames past its mark, but
    only until the frame has taken a frame's time, so a frame never waits twice */
 static double backstop(double frames) {
     static Uint64 last;
     Uint64 freq = SDL_GetPerformanceFrequency(), now = SDL_GetPerformanceCounter();
-    Uint64 until = last + (Uint64)(freq / 59.94);
+    Uint64 until = last + (Uint64)(freq * snd_base_us() / 1e6);
     if (last != 0 && now < until && frames > TARGET + 2.5) {
         waited++;
         while (now < until && (frames = queued_frames()) > TARGET + 2.5) {
@@ -188,7 +188,7 @@ void sdl_audio_frame(void) {
     frames = backstop(queued_frames());
     if (frames < 0.25) {
         /* ran dry: silence ahead to fill the queue again, then this frame */
-        int q = (int)((TARGET - 1) * dev_rate / 59.94);
+        int q = (int)((TARGET - 1) * dev_rate * snd_base_us() / 1e6);
         put(quiet, q < 4096 ? q : 4096);
         frames = level = queued_frames();
         if (dry++ > 0 && getenv("MVC2_SNDDBG") != NULL) {

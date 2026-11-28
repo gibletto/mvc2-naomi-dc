@@ -70,6 +70,7 @@ typedef struct {
 
 extern uint32_t rd_palette[1024];
 extern uint32_t rd_palette_serial;
+extern int rd_palette_mode;     /* the palette RAM's format: 0 ARGB1555, 1 RGB565, 2 ARGB4444 */
 
 /* the fog registers; FOG_DENSITY is a 1.7 mantissa in bits 8-15 over a signed exponent */
 void rd_fog_table(const float* table);

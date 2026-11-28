@@ -66,11 +66,13 @@ decompilation, pass `-DMVC2_DECOMP=FOLDER` and make its tables with `tools/point
 `cmake --install build --prefix FOLDER` makes a folder to play from: the two executables, SDL's DLL,
 `PLAYING.md` and a sample `mvc2.cfg` (kept if the folder has one), from `port/dist`.
 
-Both versions run at their boards' own 59.94 frames a second, whatever the monitor's refresh rate (both drive
-VGA from a 27 MHz clock, 858 by 525): a timer paces every renderer, and vsync only times each present to a
-refresh. Where vsync would hold the game back (a display slower than 59.94 Hz, by its mode or measured: frames
-late with vsync on and in time without), it is turned off and the log says so. `MVC2_FPS=n` sets another rate,
-and `MVC2_FPS=0` runs as fast as it can.
+Both versions run at 59.94 frames a second by default, the Dreamcast's VGA (858 by 525 at 27 MHz), whatever the
+monitor's refresh rate: a timer paces every renderer, and vsync only times each present to a refresh. The arcade
+board runs a little slower: its Kamui library sets 852 by 530 at 31 kHz (59.79 Hz) and 852 by 269 at 15 kHz
+(58.90 Hz). `rate` in `mvc2.cfg` (`dc`, `arcade`, `arcade15` or 57 to 61) sets the timer and each frame's sound
+together. Where vsync would hold the game back (a display slower than the rate, by its mode or measured: frames
+late with vsync on and in time without), it is turned off and the log says so; `vsync = on` or `off` decides it
+instead. `MVC2_FPS=n` sets any rate for a test, and `MVC2_FPS=0` runs as fast as it can.
 
 The picture is drawn by the GPU through SDL_GPU (Direct3D 12 or Vulkan), by the PowerVR2's rules, at the
 window's resolution: `resolution = 1` to `12` in `mvc2.cfg` sets a multiple of 640 by 480 instead (`4.2`, say), `aa = 2` to `4`

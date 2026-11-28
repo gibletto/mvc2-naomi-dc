@@ -251,17 +251,16 @@ static void screenshot(const uint32_t* px, const char* kind) {
     }
 }
 
-/* both boards: a 27 MHz pixel clock, 858 by 525 */
-static double frame_rate = 27000000.0 / (858.0 * 525.0);
+static double frame_rate;
 static uint64_t next_frame;
 
+/* after mvc2.cfg is read: its rate, for the timer, the scan (mister_pinedra.c) and the sound */
 static void pace_init(void) {
-    const char* fps = getenv("MVC2_FPS");
-    if (fps != NULL) {
-        frame_rate = atof(fps);
-    } else if (test_run) {
-        frame_rate = 0;
-    }
+    frame_rate = test_run && getenv("MVC2_FPS") == NULL ? 0 : config_rate();
+}
+
+double mister_rate(void) {
+    return frame_rate > 0 ? frame_rate : config_rate();
 }
 
 /* by the clock, unless the swap waited for the core's vblank */
@@ -305,6 +304,18 @@ static uint64_t cpu_us(void) {
     return (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
 }
 
+/* the frame's parts timed: a run that logs its stats or its frames (each clock read is a system call on the A9: none a
+   frame in play) */
+static int timed;
+
+static uint64_t span_us(void) {
+    return timed ? mister_us() : 0;
+}
+
+static uint64_t span_cpu(void) {
+    return timed ? cpu_us() : 0;
+}
+
 /* the game's thread taken off its CPU for another */
 static long switches(void) {
     struct rusage r;
@@ -315,6 +326,10 @@ static long switches(void) {
 /* the process's page faults so far: the major ones read a page from the card */
 static void faults(long* major, long* minor) {
     struct rusage r;
+    if (!timed) {
+        *major = *minor = 0;
+        return;
+    }
     getrusage(RUSAGE_SELF, &r);
     *major = r.ru_majflt;
     *minor = r.ru_minflt;
@@ -354,7 +369,12 @@ static void frame_log(void) {
         tried = 1;
         frame_file = path != NULL ? fopen(path, "w") : NULL;
         if (frame_file != NULL) {
-            setvbuf(frame_file, NULL, _IOFBF, 1 << 20);   /* written at the end: the card is mounted sync */
+            /* written at the end: the card is mounted sync, and each of glibc's own 8 KB writes held the game's
+               thread 5 to 13 ms. A buffer of its own, as glibc takes no size without one */
+            char* buf = malloc(1 << 22);
+            if (buf != NULL) {
+                setvbuf(frame_file, buf, _IOFBF, 1 << 22);
+            }
             f = frame_file;
             fprintf(f, "n");
             for (i = 0; i < T_SPANS; i++) {
@@ -417,8 +437,11 @@ static void slow_frame(uint64_t took, long major, long minor) {
              g->upload_bytes / 1024, g->us_build / 1000.0, g->us_draw / 1000.0);
 }
 
-/* the time between one frame's measured part and the next's, over 50 ms: whether the game's thread ran (its CPU
-   time), waited (its voluntary switches: a read, a lock), was put off its CPU for another, or read pages from the card */
+/* the time between one frame's measured part and the next's, over MVC2_STALL_MS (50 unless set): whether the game's
+   thread ran (its CPU time), waited (its voluntary switches: a read, a lock), was put off its CPU for another, or read
+   pages from the card. Only in a run that logs its stats */
+static uint64_t stall_us = 50000;
+
 typedef struct {
     uint64_t at, cpu;
     long waits, preempted, major;
@@ -427,6 +450,9 @@ typedef struct {
 static void gap_mark(GAP* g) {
     struct rusage r;
     long minor;
+    if (stat_every == 0) {
+        return;
+    }
     g->at = mister_us();
     g->cpu = cpu_us();
     getrusage(RUSAGE_THREAD, &r);
@@ -441,7 +467,7 @@ static void gap_check(const GAP* from) {
         return;
     }
     gap_mark(&now);
-    if (now.at - from->at >= 50000) {
+    if (now.at - from->at >= stall_us) {
         host_log("stall before frame %u: %.1f ms between frames: the game's thread on its CPU %.1f ms, %ld waits, put off "
                  "its CPU %ld times, %ld pages read", presented + 1, (now.at - from->at) / 1000.0,
                  (now.cpu - from->cpu) / 1000.0, now.waits - from->waits, now.preempted - from->preempted,
@@ -474,9 +500,9 @@ static void stats_frame(void) {
              (double)(switches() - stat_switches) / stat_frames, rss_kb(0) / 1024);
     stat_switches = switches();
     host_log("%s", line);
-    host_log("gl: build %.2f draw %.2f ms, %.1f uploads %.0f batches %.0f tris %.0f verts a frame",
+    host_log("gl: build %.2f draw %.2f ms, %.1f uploads (%.0f KB) %.0f batches %.0f tris %.0f verts a frame",
              gl_sum.us_build / 1000.0 / stat_frames, gl_sum.us_draw / 1000.0 / stat_frames,
-             (double)gl_sum.uploads / stat_frames,
+             (double)gl_sum.uploads / stat_frames, gl_sum.upload_bytes / 1024.0 / stat_frames,
              (double)gl_sum.batches / stat_frames, (double)gl_sum.tris / stat_frames, (double)gl_sum.verts / stat_frames);
     memset(&gl_sum, 0, sizeof gl_sum);
     memory_line();
@@ -487,7 +513,7 @@ static void stats_frame(void) {
 
 static void gl_sum_add(const RD_GL1_STATS* g) {
     gl_sum.us_build += g->us_build, gl_sum.us_draw += g->us_draw;
-    gl_sum.uploads += g->uploads;
+    gl_sum.uploads += g->uploads, gl_sum.upload_bytes += g->upload_bytes;
     gl_sum.batches += g->batches, gl_sum.tris += g->tris;
     gl_sum.verts += g->verts;
 }
@@ -519,11 +545,11 @@ static void present_piped(uint64_t start) {
     }
     mister_gl_hand(presented);
     gl_sum_add(mister_gl_stats());
-    handed = mister_us();
+    handed = span_us();
     span_add(T_DRAW, mister_gl_draw_us());
     mister_gl_next();
-    span_add(T_OUT, mister_us() - handed);
-    present_us += mister_us() - start;
+    span_add(T_OUT, span_us() - handed);
+    present_us += span_us() - start;
 }
 
 /* the lists drawn by the core's GPU; a shot drawn by rd_soft too, and read back a frame later (the driver reads the
@@ -551,12 +577,12 @@ static void present_gl(uint64_t start) {
         pending = presented;
     }
     rd_begin_frame();
-    drawn = mister_us();
+    drawn = span_us();
     span_add(T_DRAW, drawn - start);
     mister_gl_swap();
-    span_add(T_OUT, mister_us() - drawn);
+    span_add(T_OUT, span_us() - drawn);
     pace();
-    present_us += mister_us() - start;
+    present_us += span_us() - start;
 }
 
 /* MVC2_STATELOG=file: a hash of each frame's program data, and every 60th frame's main RAM too, to show that a setting
@@ -598,7 +624,7 @@ static void state_log(void) {
 }
 
 void host_present(void) {
-    uint64_t start = mister_us(), cpu = cpu_us();
+    uint64_t start = span_us(), cpu = span_cpu();
     state_log();
     mister_prof_phase = 1;
     if (mister_gl_piped()) {
@@ -606,7 +632,7 @@ void host_present(void) {
     } else {
         present_gl(start);
     }
-    present_cpu += cpu_us() - cpu;
+    present_cpu += span_cpu() - cpu;
     mister_prof_phase = 0;
 }
 
@@ -622,6 +648,15 @@ int mister_pin(int cpu) {
         return 0;
     }
     return 1;
+}
+
+/* a thread started from the game's has its CPU, which Pinedra's driver pins to CPU0: the threads that write to the
+   card go to CPU1, where their bursts don't hold the game */
+void mister_on_cpu1(void) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(1, &set);
+    sched_setaffinity(0, sizeof set, &set);
 }
 
 void* host_try_malloc(size_t bytes) {
@@ -718,6 +753,11 @@ int main(int argc, char** argv) {
     if (getenv("MVC2_STATS") != NULL) {
         stat_every = (unsigned)atoi(getenv("MVC2_STATS"));
     }
+    timed = stat_every != 0 || getenv("MVC2_FRAMELOG") != NULL;
+    rd_gl1_timed = timed;
+    if (getenv("MVC2_STALL_MS") != NULL) {
+        stall_us = (uint64_t)atoi(getenv("MVC2_STALL_MS")) * 1000u;
+    }
     snd_drv_quiet(stat_every == 0);
     host_stubs_quiet = stat_every == 0;
     set_defaults();
@@ -731,11 +771,11 @@ int main(int argc, char** argv) {
     }
     signal(SIGTERM, on_stop);
     signal(SIGINT, on_stop);
-    pace_init();
     /* 10 + PICK_ when the data is missing or unreadable: the wrapper says so on the OSD */
     if (!pick_game(argc, argv)) {
         return pick_why() != PICK_QUIT ? 10 + pick_why() : 1;
     }
+    pace_init();
     rd_quality(config_get("render"));
     fl_timing = getenv("MVC2_LOAD_TIMES") != NULL && atoi(getenv("MVC2_LOAD_TIMES")) != 0;
     nl_tex_later = 1;
@@ -782,15 +822,15 @@ int main(int argc, char** argv) {
         draw_major = 0;
         read_input();
         gap_check(&gap);
-        start = mister_us(), presenting = present_us;
-        cpu = cpu_us(), cpu_presenting = present_cpu;
+        start = span_us(), presenting = present_us;
+        cpu = span_cpu(), cpu_presenting = present_cpu;
         naomi_run_frame();
-        sounded = mister_us();
-        span_add(T_CPU, cpu_us() - cpu - (present_cpu - cpu_presenting));
+        sounded = span_us();
+        span_add(T_CPU, span_cpu() - cpu - (present_cpu - cpu_presenting));
         mister_prof_phase = 2;
         mister_audio_frame();
         mister_prof_phase = 0;
-        span_add(T_SOUND, mister_us() - sounded);
+        span_add(T_SOUND, span_us() - sounded);
         span_add(T_MAKE, mister_audio_make_us);
         span_add(T_WAIT, mister_audio_wait_us - waited);
         span_add(T_GAME, sounded - start - (present_us - presenting));
@@ -800,7 +840,7 @@ int main(int argc, char** argv) {
         frame_start = start;
         faults(&major_end, &minor_end);
         gap_mark(&gap);
-        slow_frame(mister_us() - start, major_end - major, minor_end - minor);
+        slow_frame(span_us() - start, major_end - major, minor_end - minor);
         frame_log();
         stats_frame();
         if ((frames_left > 0 && --frames_left == 0) || (hunt_done && test_run) || mister_input_quit() || stop_req) {

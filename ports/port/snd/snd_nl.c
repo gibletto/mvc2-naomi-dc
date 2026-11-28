@@ -715,7 +715,7 @@ void nlsndStreamSetHdPan(uint8_t* hd, int16_t c, int32_t pan) {
 static int16_t frame_buf[2 * 2048];
 static int16_t mix_buf[2 * 2048];   /* the mixer's part of the next frame */
 static uint32_t frac;
-static uint32_t frame_us = FRAME_US;
+static uint32_t base_us = FRAME_US, frame_us = FRAME_US;
 static int prepared;                /* mix_buf holds the next frame's */
 static SND_MIXER mixer;
 static void (*sync_fn)(void);
@@ -777,8 +777,17 @@ int snd_defer(SND_WORK work, int a, int b) {
     return defer_fn != NULL && defer_fn(work, a, b);
 }
 
+void snd_set_rate(double fps) {
+    base_us = fps >= 50 && fps <= 70 ? (uint32_t)(1000000 / fps + 0.5) : FRAME_US;
+    frame_us = base_us;
+}
+
+uint32_t snd_base_us(void) {
+    return base_us;
+}
+
 void snd_set_frame_us(uint32_t us) {
-    frame_us = us < FRAME_US ? FRAME_US : us > 2 * FRAME_US ? 2 * FRAME_US : us;
+    frame_us = us < base_us ? base_us : us > 2 * base_us ? 2 * base_us : us;
 }
 
 /* the next frame's samples, without counting them yet */
@@ -870,12 +879,12 @@ void snd_set_extra_mixer(SND_EXTRA_MIXER fn) {
 
 /* a frame between the game's with the mixer's part: none when the mixer can't make it */
 static int frame_extra_mixed(const int16_t** out) {
-    uint32_t n = (frac + AICA_RATE * FRAME_US) / 1000000u, i;
+    uint32_t n = (frac + AICA_RATE * base_us) / 1000000u, i;
     memset(extra_buf, 0, n * 4);
     if (!extra_mixer(extra_buf, (int)n)) {
         return 0;
     }
-    frac += AICA_RATE * FRAME_US;
+    frac += AICA_RATE * base_us;
     frac -= n * 1000000u;
     aica_render(frame_buf, (int)n);
     for (i = 0; i < n * 2; i++) {
@@ -897,7 +906,7 @@ int snd_frame_extra(const int16_t** out) {
     if (!snd_enabled() || !inited || mixer != NULL) {
         return 0;
     }
-    frac += AICA_RATE * FRAME_US;
+    frac += AICA_RATE * base_us;
     n = frac / 1000000u;
     frac -= n * 1000000u;
     aica_render(frame_buf, (int)n);

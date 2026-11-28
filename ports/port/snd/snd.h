@@ -9,7 +9,7 @@
 #include <stdio.h>
 
 #define SND_RATE 44100
-#define SND_FRAME_US 16683          /* the board's frame, as the port's timer counts it */
+#define SND_FRAME_US 16683          /* the game's frame at 59.94 Hz, as the board's timer counts it */
 
 int snd_enabled(void);                      /* MVC2_SOUND=0 turns it off */
 int snd_frame(const int16_t** out);         /* a frame's stereo samples (about 736), made once a frame */
@@ -20,6 +20,8 @@ void snd_free(void);                        /* at a restart: the sound RAM given
    first calls snd_sync, and fn waits for that frame */
 void snd_prepare(void);
 void snd_set_frame_us(uint32_t us);         /* before snd_prepare: a longer frame, when the game falls behind */
+void snd_set_rate(double fps);              /* the game's frames a second: each frame's sound 1/fps s long */
+uint32_t snd_base_us(void);                 /* that frame, in us */
 int snd_frame_extra(const int16_t** out);   /* a frame between the game's (no mixer); 0 if it can't be made */
 void snd_set_sync(void (*fn)(void));
 void snd_sync(void);

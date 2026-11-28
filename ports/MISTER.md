@@ -80,6 +80,11 @@ game in 240 lines, shown without interlace. A line in `games/mvc2/env.txt` sets 
 `PND_240P=1` on, `PND_240P=0` off. The game's own settings (difficulty, timer and the rest) are in its options or the
 arcade's test menu, and kept in `games/mvc2`.
 
+The game runs at 59.94 frames a second, the TV's refresh set to match. `rate` in `games/mvc2/mvc2.cfg` sets
+another: `arcade` (59.79, the arcade board at 31 kHz), `arcade15` (58.90, at 15 kHz) or 57 to 61; HDMI follows it
+with `vsync_adjust=1` or `2` in MiSTer.ini. `vrr = on` there, for a FreeSync TV on HDMI, shows each frame as it
+comes, the game paced by its own clock; `vsync = off` paces it so without variable refresh.
+
 A TV with only S-Video or composite: `vga_mode=svideo` or `vga_mode=cvbs` in MiSTer.ini (with `vga_scaler=0`), and
 15 kHz in the OSD. Pinedra's core makes the colour (release 20261115 or later; not yet tried on a real set).
 

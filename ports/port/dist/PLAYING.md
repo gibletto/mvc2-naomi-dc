@@ -131,7 +131,7 @@ The timer, gauges, words and menus:
   - **exclusive**: the whole screen in a display mode of the game's own: the desktop's resolution, at the highest
     refresh rate that is a whole number of times the game's 60 frames a second (240 or 120 Hz, else 60), for the
     least delay; `refresh = 60` asks for 60 Hz. Alt+Tab gives the desktop back its own. Not on Wayland, where it is
-    desktop. With variable refresh (G-Sync, FreeSync) on, the display follows the game's own 59.94 frames a second;
+    desktop. With variable refresh (G-Sync, FreeSync) on, the display follows the game's own frames a second (`rate`);
     without, each frame is shown for the same number of refreshes, the game a hair faster (60.02 at 240 Hz) so none
     is shown longer. `vrr = auto` asks NVIDIA's driver; with another card, set `vrr = off` for a display without
     variable refresh (or with it turned off), `on` for one with.

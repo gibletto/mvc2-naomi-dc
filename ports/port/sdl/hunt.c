@@ -26,7 +26,7 @@ typedef struct {
 } OP;
 
 static OP ops[MAX_OPS];
-static int nops, pc, left, logged = -1;
+static int nops, pc, left;
 static uint32_t held[2], late[2];   /* late: what the game reads, a frame behind, as an emulator's JVS read is */
 static int coin_now, late_coin;
 static struct {
@@ -270,6 +270,9 @@ int hunt_frame(HOST_INPUT* in, unsigned frame) {
         } else if (o->op == OP_TRACE) {
             tracing = o->n;
             pc++;
+            if (!quiet) {
+                host_log("hunt: frame %u timer %u line %d", frame, timer, pc < nops ? ops[pc].line : -1);
+            }
         } else if (o->op == OP_QUIT) {
             return 1;
         } else if (o->op == OP_COIN) {
@@ -289,9 +292,8 @@ int hunt_frame(HOST_INPUT* in, unsigned frame) {
             break;
         }
     }
-    if (pc != logged && !quiet) {
-        logged = pc;
-        host_log("hunt: frame %u timer %u line %d", frame, timer, pc < nops ? ops[pc].line : -1);
+    if (pc >= nops && !quiet) {
+        host_log("hunt: frame %u timer %u line -1", frame, timer);
     }
     in->player[0] = late[0], in->player[1] = late[1];
     in->coin = late_coin;

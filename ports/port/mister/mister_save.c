@@ -9,6 +9,7 @@
 #include <sys/resource.h>
 #include <sys/syscall.h>
 
+#include "mister_front.h"
 #include "naomi_host.h"
 
 #define SLOTS 4
@@ -28,6 +29,7 @@ static void* writer_main(void* arg) {
     static char name[256], data[MOST];
     (void)arg;
     setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), 10);
+    mister_on_cpu1();
     for (;;) {
         int i, size = 0;
         pthread_mutex_lock(&lock);

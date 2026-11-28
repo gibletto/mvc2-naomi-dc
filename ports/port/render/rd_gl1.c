@@ -64,6 +64,7 @@ enum {
     GL_ORDERED_TRANSLUCENCY_PND = 0x1D100, GL_WINDOW_VERTICES_PND = 0x1D105, GL_LOWER_LEFT = 0x8CA1, GL_UPPER_LEFT = 0x8CA2,
     /* GL_EXT_paletted_texture */
     GL_COLOR_INDEX = 0x1900, GL_COLOR_INDEX4_EXT = 0x80E4, GL_COLOR_INDEX8_EXT = 0x80E5, GL_RGBA8 = 0x8058,
+    GL_RGB5 = 0x8050, GL_RGBA4 = 0x8056, GL_RGB5_A1 = 0x8057,
     /* framebuffer objects (GL 3.0, GL_ARB_framebuffer_object, GL_EXT_framebuffer_object) */
     GL_FRAMEBUFFER = 0x8D40, GL_RENDERBUFFER = 0x8D41, GL_COLOR_ATTACHMENT0 = 0x8CE0, GL_DEPTH_ATTACHMENT = 0x8D00,
     GL_FRAMEBUFFER_COMPLETE = 0x8CD5, GL_DEPTH_COMPONENT16 = 0x81A5, GL_DEPTH_COMPONENT24 = 0x81A6,
@@ -632,7 +633,9 @@ static GTEX* clut_texture(GTEX* e, const RD_TEXTURE* t, int palette, uint32_t ph
         e->min = e->mag = e->wrap_s = e->wrap_t = 0;
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, t->levels);
     }
-    glColorTableEXT(GL_TEXTURE_2D, GL_RGBA8, n, GL_RGBA, GL_UNSIGNED_BYTE, pt);
+    /* the palette's own format: Pinedra's driver makes the texels in it, 2 bytes each */
+    glColorTableEXT(GL_TEXTURE_2D, rd_palette_mode == 0 ? GL_RGB5_A1 : rd_palette_mode == 1 ? GL_RGB5 : GL_RGBA4, n,
+                    GL_RGBA, GL_UNSIGNED_BYTE, pt);
     for (k = 0; !same && k <= t->levels; k++) {
         int w = t->width >> k, h = t->height >> k;
         w = w < 1 ? 1 : w;
@@ -995,9 +998,10 @@ static float fog_value(float z) {
     return frame_fog->table[i] + (frame_fog->table[i + 1] - frame_fog->table[i]) * (pos - (float)i);
 }
 
-static uint8_t* st_fogged;
-static int any_fogged;              /* a state fogged this frame */         /* each state's fogged(), this frame */
-static int maxst;
+static uint8_t* st_fogged;          /* each state's fogged(), this frame, and with fog on the ramp at its triangles */
+static int any_fogged;              /* a state fogged this frame */
+static uint32_t* st_z;              /* each fogged state's triangles' 1/w range, on its bits: lowest, highest */
+static int maxst, maxst_z;
 
 static int grow(void** p, int* room, int want, size_t size);
 
@@ -1060,6 +1064,20 @@ static int fog_none(float s0, float s1) {
     return ramp_nz[j + 1] == ramp_nz[i];
 }
 
+/* The fog unit off for a fogged state whose triangles' 1/w range the ramp gives no fog, as a corner's fog
+   coordinate is put_tri's (s falls as 1/w rises), and on for all of another's: a state's batches aren't split by
+   their triangles' fog, and where the ramp has none it changes nothing */
+static void fog_states(void) {
+    int i;
+    for (i = 0; i < fr->nstates; i++) {
+        if (st_fogged[i] && fr->states[i].fog == RD_FOG_TABLE && st_z[2 * i + 1] != 0) {
+            float s0 = (1.0f / zfloat(st_z[2 * i + 1]) - ramp_w0) * ramp_k;
+            float s1 = (1.0f / zfloat(st_z[2 * i]) - ramp_w0) * ramp_k;
+            st_fogged[i] = (uint8_t)!fog_none(s0, s1);
+        }
+    }
+}
+
 /* ---- the frame's scan ---- */
 
 /* all of a triangle's cache lines, as a pass reaches the triangles some way before it: the A9 fetches none ahead of
@@ -1080,13 +1098,15 @@ static void scan(void) {
     for (i = 0; i < 128; i++) {
         fog_on |= frame_fog->table[i] != 0.0f;
     }
-    if (!grow((void**)&st_fogged, &maxst, fr->nstates + 1, 1)) {
+    if (!grow((void**)&st_fogged, &maxst, fr->nstates + 1, 1) ||
+        !grow((void**)&st_z, &maxst_z, 2 * fr->nstates + 2, sizeof *st_z)) {
         return;
     }
     any_fogged = 0;
     for (i = 0; i < fr->nstates; i++) {
         st_fogged[i] = (uint8_t)fogged(&fr->states[i]);
         any_fogged |= st_fogged[i];
+        st_z[2 * i] = 0xFFFFFFFFu, st_z[2 * i + 1] = 0;
     }
     nflats = 0;
     for (l = 0; l < RD_LISTS; l++) {
@@ -1111,20 +1131,25 @@ static void scan(void) {
                 last = a;
             }
             if (st_fogged[t->state]) {
+                uint32_t* r = &st_z[2 * t->state];
+                uint32_t tl = 0xFFFFFFFFu, th = 0;
                 if (ua) {
-                    flo = a < flo ? a : flo, fhi = a > fhi ? a : fhi;
+                    tl = a < tl ? a : tl, th = a > th ? a : th;
                 }
                 if (ub) {
-                    flo = b < flo ? b : flo, fhi = b > fhi ? b : fhi;
+                    tl = b < tl ? b : tl, th = b > th ? b : th;
                 }
                 if (uc) {
-                    flo = c < flo ? c : flo, fhi = c > fhi ? c : fhi;
+                    tl = c < tl ? c : tl, th = c > th ? c : th;
                 }
+                flo = tl < flo ? tl : flo, fhi = th > fhi ? th : fhi;
+                r[0] = tl < r[0] ? tl : r[0], r[1] = th > r[1] ? th : r[1];
             }
         }
     }
     layout_depth(lo, hi);
     fog_ramp(flo, fhi);
+    fog_states();
 }
 
 /* ---- the vertices and batches ---- */
@@ -1294,6 +1319,7 @@ static void snapped(const RD_TRI* t, GV* g) {
 
 static const RD_TRI* last_tri;     /* the triangle put last, and its corners' indices */
 static GLuint last_ix[3];
+static int last_plain, last_state;  /* it went by put_tri's 3D way, its corners with colours of their own; its state */
 
 static int same_vertex(const GV* a, const GV* b) {
     const uint32_t *x = (const uint32_t*)a, *y = (const uint32_t*)b;
@@ -1346,6 +1372,20 @@ static void corner(GV* g, const RD_VTX* v, float w, uint32_t argb) {
     g->rgba = argb_to_rgba(argb);
 }
 
+/* a 3D corner by itself, as put_tri makes it with the others: from the corner, its state and the frame alone */
+static void corner_alone(GV* g, const RD_VTX* v, uint32_t argb) {
+    uint32_t u = zbits(v->z);
+    float w;
+    if (scaled3 && in_3d(u)) {
+        float z = zfloat(u);
+        w = 1.0f / z;
+        g->z = (float)((z3_a + z * z3_b) * w);
+    } else {
+        w = depth_w(u, &g->z);
+    }
+    corner(g, v, w, argb);
+}
+
 static void draw_batches(int upto);
 
 /* order: a translucent triangle's corners in window space, x and y as they are, the window depth and 1/w for the
@@ -1393,7 +1433,7 @@ static void win_tri(const RD_STATE* s, const RD_TRI* t, int flat, GV* g) {
 /* check: dropped as rd_soft drops it (not a part of one cut, which was) */
 static void put_tri(int list, const RD_TRI* t, int check) {
     const RD_STATE* s = &fr->states[t->state];
-    int flat = flat_tri(t), k, fog;
+    int flat = flat_tri(t), k, fog, plain = 0, shared[2] = { -1, -1 };
     uint32_t off;
     GV tri[3], *g = tri;
     BATCH* b;
@@ -1407,6 +1447,24 @@ static void put_tri(int list, const RD_TRI* t, int check) {
     if (!grow((void**)&verts, &maxverts, nverts + 3, sizeof *verts) ||
         !grow((void**)&ix, &maxix, nix + 3, sizeof *ix)) {
         return;
+    }
+    fog = st_fogged[t->state];      /* fog_states's */
+    off = tri_offset(s, t);
+    b = nbatches > 0 ? &batches[nbatches - 1] : NULL;
+    if (b == NULL || b->count >= 3 * BATCH_TRIS || b->list != list || b->offset != off || b->fog != fog ||
+        (atlas ? st_key[b->state] != st_key[t->state]
+               : b->state != t->state && !same_gl_state(&fr->states[b->state], s))) {
+        if (!grow((void**)&batches, &maxbatches, nbatches + 1, sizeof *batches)) {
+            return;
+        }
+        b = &batches[nbatches++];
+        b->first = nix;
+        b->count = 0;
+        b->state = t->state;
+        b->list = list;
+        b->offset = off;
+        b->fog = fog;
+        draw_batches(nbatches - 1);
     }
     if (ord_frame && list == RD_TRANS) {
         win_tri(s, t, flat, tri);
@@ -1436,63 +1494,57 @@ static void put_tri(int list, const RD_TRI* t, int check) {
             g->rgba = argb_to_rgba(s->use_alpha ? c : c | 0xFF000000u);
         }
     } else {
-        /* 1/w's bits tested before its divisions, the corners a step at a time so that their divisions and
-           multiplies overlap: on the A9 a move from a float register waits for those before it */
         const RD_VTX* v = t->v;
-        uint32_t u0 = zbits(v[0].z), u1 = zbits(v[1].z), u2 = zbits(v[2].z);
         uint32_t c0 = s->flat ? v[2].base : v[0].base, c1 = s->flat ? v[2].base : v[1].base, c2 = v[2].base;
-        float w0, w1, w2;
-        if (scaled3 && in_3d(u0) & in_3d(u1) & in_3d(u2)) {
-            float z0 = zfloat(u0), z1 = zfloat(u1), z2 = zfloat(u2);
-            w0 = 1.0f / z0, w1 = 1.0f / z1, w2 = 1.0f / z2;
-            tri[0].z = (float)((z3_a + z0 * z3_b) * w0);
-            tri[1].z = (float)((z3_a + z1 * z3_b) * w1);
-            tri[2].z = (float)((z3_a + z2 * z3_b) * w2);
-        } else {
-            w0 = depth_w(u0, &tri[0].z), w1 = depth_w(u1, &tri[1].z), w2 = depth_w(u2, &tri[2].z);
+        plain = !s->flat;
+        /* a corner the triangle before has (its share), where both came this way in one state with their corners'
+           own colours: the same vertex, as a corner is made from itself, its state and the frame alone */
+        if (plain && last_plain && last_tri == t - 1 && last_state == t->state) {
+            shared[0] = (t->share & 3) - 1, shared[1] = (t->share >> 2 & 3) - 1;
         }
-        corner(&tri[0], &v[0], w0, s->use_alpha ? c0 : c0 | 0xFF000000u);
-        corner(&tri[1], &v[1], w1, s->use_alpha ? c1 : c1 | 0xFF000000u);
-        corner(&tri[2], &v[2], w2, s->use_alpha ? c2 : c2 | 0xFF000000u);
+        if (shared[0] >= 0 || shared[1] >= 0) {
+            if (shared[0] < 0) {
+                corner_alone(&tri[0], &v[0], s->use_alpha ? c0 : c0 | 0xFF000000u);
+            }
+            if (shared[1] < 0) {
+                corner_alone(&tri[1], &v[1], s->use_alpha ? c1 : c1 | 0xFF000000u);
+            }
+            corner_alone(&tri[2], &v[2], s->use_alpha ? c2 : c2 | 0xFF000000u);
+        } else {
+            /* 1/w's bits tested before its divisions, the corners a step at a time so that their divisions and
+               multiplies overlap: on the A9 a move from a float register waits for those before it */
+            uint32_t u0 = zbits(v[0].z), u1 = zbits(v[1].z), u2 = zbits(v[2].z);
+            float w0, w1, w2;
+            if (scaled3 && in_3d(u0) & in_3d(u1) & in_3d(u2)) {
+                float z0 = zfloat(u0), z1 = zfloat(u1), z2 = zfloat(u2);
+                w0 = 1.0f / z0, w1 = 1.0f / z1, w2 = 1.0f / z2;
+                tri[0].z = (float)((z3_a + z0 * z3_b) * w0);
+                tri[1].z = (float)((z3_a + z1 * z3_b) * w1);
+                tri[2].z = (float)((z3_a + z2 * z3_b) * w2);
+            } else {
+                w0 = depth_w(u0, &tri[0].z), w1 = depth_w(u1, &tri[1].z), w2 = depth_w(u2, &tri[2].z);
+            }
+            corner(&tri[0], &v[0], w0, s->use_alpha ? c0 : c0 | 0xFF000000u);
+            corner(&tri[1], &v[1], w1, s->use_alpha ? c1 : c1 | 0xFF000000u);
+            corner(&tri[2], &v[2], w2, s->use_alpha ? c2 : c2 | 0xFF000000u);
+        }
     }
     if (atlas && st_at[t->state] >= 0) {
         float ax = (float)(st_at[t->state] % RD_ATLAS), ay = (float)(st_at[t->state] / RD_ATLAS);
         for (k = 0; k < 3; k++) {
+            if (k < 2 && shared[k] >= 0) {
+                continue;
+            }
             tri[k].u = (ax + tri[k].u * RD_TILE) * (1.0f / RD_ATLAS);
             tri[k].v = (ay + tri[k].v * RD_TILE) * (1.0f / RD_ATLAS);
         }
     }
-    fog = st_fogged[t->state];
-    if (fog && s->fog == RD_FOG_TABLE) {
-        float s0 = tri[0].s, s1 = tri[0].s;
-        for (k = 1; k < 3; k++) {
-            s0 = tri[k].s < s0 ? tri[k].s : s0;
-            s1 = tri[k].s > s1 ? tri[k].s : s1;
-        }
-        fog = !fog_none(s0, s1);
-    }
-    off = tri_offset(s, t);
-    b = nbatches > 0 ? &batches[nbatches - 1] : NULL;
-    if (b == NULL || b->count >= 3 * BATCH_TRIS || b->list != list || b->offset != off || b->fog != fog ||
-        (atlas ? st_key[b->state] != st_key[t->state]
-               : b->state != t->state && !same_gl_state(&fr->states[b->state], s))) {
-        if (!grow((void**)&batches, &maxbatches, nbatches + 1, sizeof *batches)) {
-            return;
-        }
-        b = &batches[nbatches++];
-        b->first = nix;
-        b->count = 0;
-        b->state = t->state;
-        b->list = list;
-        b->offset = off;
-        b->fog = fog;
-        draw_batches(nbatches - 1);
-    }
     for (k = 0; k < 3; k++) {
-        ix[nix + k] = vertex(t, k, &tri[k]);
+        ix[nix + k] = k < 2 && shared[k] >= 0 ? last_ix[shared[k]] : vertex(t, k, &tri[k]);
     }
     memcpy(last_ix, &ix[nix], sizeof last_ix);
     last_tri = t;
+    last_plain = plain, last_state = t->state;
     nix += 3;
     b->count += 3;
     rd_gl1_stats.tris++;
@@ -2651,8 +2703,10 @@ static void draw_batches(int upto) {
     }
 }
 
+int rd_gl1_timed = 1;
+
 void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog_of) {
-    uint64_t t0 = SDL_GetPerformanceCounter();
+    uint64_t t0 = rd_gl1_timed ? SDL_GetPerformanceCounter() : 0;
     int l, i;
     fr = f;
     rd_gl1_pal = palette;
@@ -2698,8 +2752,10 @@ void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog_o
     solid = nbatches;
     ord_frame = ord_on && order_fits();
     put_trans();
-    rd_gl1_stats.us_build = us_since(t0);
-    t0 = SDL_GetPerformanceCounter();
+    if (rd_gl1_timed) {
+        rd_gl1_stats.us_build = us_since(t0);
+        t0 = SDL_GetPerformanceCounter();
+    }
     draw_batches(nbatches);
     if (ord_live) {
         glDisable(GL_ORDERED_TRANSLUCENCY_PND);
@@ -2709,7 +2765,9 @@ void rd_gl1_draw_frame(RD_FRAME* f, const uint32_t* palette, const RD_FOG* fog_o
     if (late && solid == nbatches) {
         background(1);
     }
-    rd_gl1_stats.us_draw = us_since(t0);
+    if (rd_gl1_timed) {
+        rd_gl1_stats.us_draw = us_since(t0);
+    }
     rd_gl1_stats.batches = nbatches;
     rd_gl1_stats.verts = sent_verts + nverts;
     rd_gl1_stats.textures = ngtex;

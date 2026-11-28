@@ -45,6 +45,7 @@ typedef struct {
 } RD_GL1_STATS;
 
 extern RD_GL1_STATS rd_gl1_stats;   /* the last frame's */
+extern int rd_gl1_timed;            /* us_build and us_draw kept (1); 0: no clock read */
 
 typedef struct {
     int textures;                   /* the GL textures held for the lists' (not the pool's) */

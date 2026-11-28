@@ -205,6 +205,8 @@ const char* pick_message(void);         /* why none can run ("" when the player 
 enum { PICK_QUIT, PICK_NO_DATA, PICK_NO_ARCADE, PICK_NO_DC, PICK_BAD_DISC, PICK_NO_ROOM };
 int pick_why(void);                     /* why pick_game or start_game gave up: a PICK_ */
 const char* config_get(const char* key);             /* mvc2.cfg's, or NULL */
+double config_rate(void);                            /* the game's frames a second: rate, or MVC2_FPS; 0 unpaced */
+int config_on(const char* key);                      /* mvc2.cfg's key: 1 on, 0 off, -1 auto or not set */
 const char* host_save_path(const char* name);
 void config_set(const char* key, const char* value); /* and saves mvc2.cfg */
 int start_game(void);

@@ -14,6 +14,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
+#include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -23,7 +25,7 @@
 
 #define OUT_RATE 48000
 #define TARGET 3.0                  /* frames kept queued */
-#define FRAME_BYTES (OUT_RATE / 59.94 * 4)
+#define FRAME_BYTES (OUT_RATE * 4 * snd_base_us() / 1e6)    /* a frame's, at the game's rate */
 
 static int dev = -1;
 static int64_t pos;                 /* in 2^-32 of an input sample */
@@ -140,7 +142,7 @@ static void publish(const int16_t* s, int n) {
     last = read_at;
     frames = q / FRAME_BYTES;
     if (frames < 0.25) {
-        int fill = (int)((TARGET - 1) * OUT_RATE / 59.94);
+        int fill = (int)((TARGET - 1) * OUT_RATE * snd_base_us() / 1e6);
         put(quiet, fill < 2048 ? fill : 2048);
         level = TARGET - 1;
         dry++;
@@ -191,7 +193,11 @@ static void* make_thread(void* arg) {
     cpu_set_t set;
     long c, n = sysconf(_SC_NPROCESSORS_ONLN);
     (void)arg;
-    pthread_setname_np(pthread_self(), "SDLAudio");    /* the name Pinedra's driver places */
+    const char* nice = getenv("MVC2_SNDNICE");
+    pthread_setname_np(pthread_self(), "SDLAudio");    /* the name Pinedra's PND_AUDIO_CORE places */
+    /* ahead of MiSTer's main program on CPU1, as Pinedra's driver thread is (nice -10): behind it, a frame's 3 ms of
+       sound took a whole frame or more while the driver was busy, and the game waited for it */
+    setpriority(PRIO_PROCESS, (id_t)syscall(SYS_gettid), nice != NULL ? atoi(nice) : -10);
     CPU_ZERO(&set);
     if (on != NULL) {
         CPU_SET(atoi(on), &set);
@@ -269,14 +275,45 @@ void mister_audio_open(void) {
             put(quiet, 512);    /* a period of silence first: what a core just loaded starts from */
         }
     }
-    /* the sound made on a thread of its own, which Pinedra's driver puts on the core with room for it (by its name):
-       the heaviest fights' frames kept on the game's CPU0 (MVC2_SNDTHREAD=0: on the game's thread) */
+    /* the sound made on a thread of its own, which the launcher's PND_AUDIO_CORE=1 keeps off the game's CPU0 (by its
+       name; MVC2_SNDTHREAD=0: on the game's thread) */
     if (snd_enabled() && (t == NULL || atoi(t) != 0) &&
         pthread_create(&maker, NULL, make_thread, NULL) == 0) {
         threaded = 1;
     }
     host_log("audio: %s, made %s", dev >= 0 ? "to /dev/MrAudio" : "not played",
              threaded ? "on a thread of its own" : "on the game's thread");
+}
+
+static int by_size(const void* a, const void* b) {
+    uint32_t x = *(const uint32_t*)a, y = *(const uint32_t*)b;
+    return x < y ? -1 : x > y;
+}
+
+/* the game's frames a second: paced by the vblank, the refresh the driver's vsync follows (HDMI's, unless MiSTer.ini's
+   vsync_adjust makes it the analog output's, mvc2.cfg's rate), measured as the middle half of 64 frames' lengths;
+   else the rate */
+static double frame_rate(uint64_t gap) {
+    static uint32_t gaps[64], shown_us;
+    static int n;
+    if (!mister_gl_vsynced() || wav != NULL) {
+        return mister_rate();
+    }
+    if (gap > 0 && gap < 100000) {
+        gaps[n++] = (uint32_t)gap;
+    }
+    if (n == 64) {
+        uint32_t sum = 0, mid;
+        int i;
+        qsort(gaps, 64, sizeof *gaps, by_size);
+        for (i = 16; i < 48; i++) {
+            sum += gaps[i];
+        }
+        mid = sum / 32;
+        shown_us = mid > 1000000 / 70 && mid < 1000000 / 50 ? mid : shown_us;
+        n = 0;
+    }
+    return shown_us != 0 ? 1e6 / shown_us : mister_rate();
 }
 
 /* a frame's sound as long as the frame took, up to two, while the game runs under 60 fps: the music keeps its time
@@ -286,26 +323,29 @@ static void frame_length(void) {
     static int64_t owed;
     static uint32_t more;
     uint64_t now = mister_us();
-    int64_t room = SND_FRAME_US;
+    int64_t base, room;
+    snd_set_rate(frame_rate(last != 0 ? now - last : 0));   /* each frame: a restart puts the sound's statics back */
+    base = snd_base_us();
+    room = base;
     if (wav != NULL) {
         return;     /* a saved run's sound is the same every run (as on the PSP) */
     }
     if (last != 0) {
         /* no more than the sound's thread makes in 70% of the frame's time: more would hold the game up */
-        double cost = (double)mister_audio_make_us / (SND_FRAME_US + more);
+        double cost = (double)mister_audio_make_us / (base + more);
         if (cost > 0) {
-            room = (int64_t)(0.7 * (double)(now - last) / cost) - SND_FRAME_US;
+            room = (int64_t)(0.7 * (double)(now - last) / cost) - base;
         }
-        owed += (int64_t)(now - last) - (SND_FRAME_US + more);
-        owed = owed < -(int64_t)SND_FRAME_US ? -(int64_t)SND_FRAME_US : owed > 4 * SND_FRAME_US ? 4 * SND_FRAME_US : owed;
+        owed += (int64_t)(now - last) - (base + more);
+        owed = owed < -(int64_t)base ? -(int64_t)base : owed > 4 * base ? 4 * base : owed;
         if (level > TARGET + 1.5 && owed > 0) {
             owed = 0;
         }
     }
     last = now;
-    room = room < 0 ? 0 : room < SND_FRAME_US ? room : SND_FRAME_US;
+    room = room < 0 ? 0 : room < base ? room : base;
     more = owed <= 0 ? 0 : owed < room ? (uint32_t)owed : (uint32_t)room;
-    snd_set_frame_us(SND_FRAME_US + more);
+    snd_set_frame_us(base + more);
 }
 
 void mister_audio_frame(void) {

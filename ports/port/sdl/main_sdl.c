@@ -14,6 +14,7 @@
 #endif
 
 #include "naomi_host.h"
+#include "snd.h"
 #include "naomi_input.h"
 #include "rd.h"
 #ifdef MVC2_SDL3
@@ -221,7 +222,7 @@ static void screenshot(void) {
     save_bmp(name, frame, RD_WIDTH, RD_HEIGHT);
 }
 
-/* both boards: a 27 MHz pixel clock, 858 by 525 */
+/* the default rate, 59.94 Hz: 858 by 525 at 27 MHz */
 #define BOARD_RATE (27000000.0 / (858.0 * 525.0))
 static double frame_rate = BOARD_RATE;
 static double next_at;      /* the next frame's time, in performance counter ticks */
@@ -231,18 +232,16 @@ static int sync_keep;       /* after a stall, the frames kept on the display's r
 static void sync_snap(void);
 #endif
 
+/* after mvc2.cfg is read: its rate, and each frame's sound as long */
 static void pace_init(void) {
-    const char* fps = getenv("MVC2_FPS");
-    if (fps != NULL) {
-        frame_rate = atof(fps);
-    } else if (getenv("MVC2_FRAMES") != NULL) {
-        frame_rate = 0;
-    }
+    frame_rate = getenv("MVC2_FRAMES") != NULL && getenv("MVC2_FPS") == NULL ? 0 : config_rate();
+    snd_set_rate(frame_rate);
 }
 
 /* sleep most of the way, then spin the last 2 ms */
 static void pace(void) {
     double freq = (double)SDL_GetPerformanceFrequency(), step, now;
+    snd_set_rate(frame_rate);   /* again after a restart, which puts the sound's statics back */
     if (frame_rate <= 0) {
         return;
     }
@@ -268,7 +267,7 @@ static void pace(void) {
 
 #ifdef MVC2_SDL3
 /* The timer paces every renderer; vsync only times each present to a refresh. A display slower than the game's
-   59.94 Hz (a 50 Hz TV) would hold it back, so there vsync is off: from the display's mode, or measured, when the
+   rate (a 50 Hz TV, or 60 Hz for rate = 61) would hold it back, so there vsync is off: from the display's mode, or measured, when the
    frames come late with it on and in time without (a GL driver waits in the next frame's drawing, not the present) */
 enum { VSYNC_TRUSTED, VSYNC_TRIED_OFF, VSYNC_KEPT_OFF, VSYNC_NOT_THE_CAUSE };
 static int vsync_on = -1, vsync_trial;
@@ -290,8 +289,7 @@ static float sync_hz;
 static double sync_lead;    /* ticks before the refresh */
 
 static int vrr_wanted(void) {
-    const char* v = config_get("vrr");
-    return v != NULL && strcmp(v, "on") == 0 ? 1 : v != NULL && strcmp(v, "off") == 0 ? 0 : -1;
+    return config_on("vrr");
 }
 
 /* the last refresh's time and the period, in performance counter ticks */
@@ -390,7 +388,7 @@ static void set_vsync(void) {
     const SDL_DisplayMode* m = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(window));
     float hz = m != NULL ? m->refresh_rate : 0;
     int off = vsync_trial == VSYNC_TRIED_OFF || vsync_trial == VSYNC_KEPT_OFF;
-    int on = !off && !(frame_rate > 0 && hz > 0 && hz < frame_rate - 1);
+    int on = config_on("vsync") >= 0 ? config_on("vsync") : !off && !(frame_rate > 0 && hz > 0 && hz < frame_rate - 0.05);
     if (on != vsync_on) {
         if (!SDL_SetRenderVSync(renderer, on)) {
             host_log("pacing: vsync not set (%s)", SDL_GetError());
@@ -416,7 +414,7 @@ static void watch_vsync(void) {
     Uint64 now = SDL_GetPerformanceCounter(), step, mid;
     sync_presented();
     if (frame_rate <= 0 || vsync_trial == VSYNC_KEPT_OFF || vsync_trial == VSYNC_NOT_THE_CAUSE ||
-        sync_mode == SYNC_LOCKED) {
+        sync_mode == SYNC_LOCKED || config_on("vsync") >= 0) {
         watch_frames = 0, watch_last = 0;
         return;
     }
@@ -1373,7 +1371,6 @@ int main(int argc, char** argv) {
         return 1;
     }
     host_divzero_install();
-    pace_init();
 #ifdef MVC2_SDL3
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (test_run ? 0 : SDL_INIT_GAMEPAD))) {
 #else
@@ -1395,6 +1392,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     rd_quality(config_get("render"));   /* MVC2_RDQUALITY overrides it */
+    pace_init();
 #ifdef MVC2_SDL3
     view_settings();
 #endif

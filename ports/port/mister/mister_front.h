@@ -51,6 +51,8 @@ void mister_unpacking(const char* name, uint32_t done_kb, uint32_t total_kb);
 void mister_prof_start(void);
 /* MVC2_PIN=1: the calling thread kept on that CPU (the game on 0, the sound's maker on 1) */
 int mister_pin(int cpu);    /* 1: pinned */
+void mister_on_cpu1(void);  /* the calling thread on CPU1 alone */
+double mister_rate(void);   /* the game's frames a second (mvc2.cfg's rate) */
 /* what the main thread is doing, for the samples: 0 the game, 1 presenting, 2 the sound's frame; others' are 3 */
 enum { MISTER_PHASES = 4 };
 extern volatile int mister_prof_phase;

@@ -1031,7 +1031,6 @@ int nlCommonTextureReloadDrawn(int index, const void* texels, int drawn) {
 
 static uint16_t pal_work[1024];
 static int pal_dirty;
-static int pal_mode = 2;    /* NL_PALETTE_4444 */
 int nl_palette_direct;
 
 void nlInitPalette(void* work, int n) {
@@ -1046,7 +1045,7 @@ void nlPaletteDirectMode(int on) {
 }
 
 void nlSetPaletteMode(int mode) {
-    pal_mode = mode;
+    rd_palette_mode = mode;
     pal_dirty = 1;
 }
 
@@ -1067,7 +1066,7 @@ void func_0C1ED250(uint32_t no, const uint16_t* colours, int n) {
 }
 
 static uint32_t argb(uint16_t c) {
-    switch (pal_mode) {
+    switch (rd_palette_mode) {
     case 0:     /* 1555 */
         return (c & 0x8000 ? 0xFF000000u : 0) | (uint32_t)((c >> 10 & 31) * 255 / 31) << 16 |
                (uint32_t)((c >> 5 & 31) * 255 / 31) << 8 | (uint32_t)((c & 31) * 255 / 31);

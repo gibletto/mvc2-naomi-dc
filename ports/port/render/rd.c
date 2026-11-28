@@ -11,6 +11,7 @@
 
 uint32_t rd_palette[1024];
 uint32_t rd_palette_serial;
+int rd_palette_mode = 2;
 
 static RD_FRAME first_frame;
 RD_FRAME* rd_frame = &first_frame;
