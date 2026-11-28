@@ -68,8 +68,8 @@ decompilation, pass `-DMVC2_DECOMP=FOLDER` and make its tables with `tools/point
 
 Both versions run at 59.94 frames a second by default, the Dreamcast's VGA (858 by 525 at 27 MHz), whatever the
 monitor's refresh rate: a timer paces every renderer, and vsync only times each present to a refresh. The arcade
-board runs a little slower: its Kamui library sets 852 by 530 at 31 kHz (59.79 Hz) and 852 by 269 at 15 kHz
-(58.90 Hz). `rate` in `mvc2.cfg` (`dc`, `arcade`, `arcade15` or 57 to 61) sets the timer and each frame's sound
+board runs a little slower: its Kamui library sets 852 by 530 at 31 kHz (59.79 Hz) and 852 by 537 interlaced at
+15 kHz (59.01 fields a second, a frame each). `rate` in `mvc2.cfg` (`dc`, `arcade`, `arcade15` or 57 to 61) sets the timer and each frame's sound
 together. Where vsync would hold the game back (a display slower than the rate, by its mode or measured: frames
 late with vsync on and in time without), it is turned off and the log says so; `vsync = on` or `off` decides it
 instead. `MVC2_FPS=n` sets any rate for a test, and `MVC2_FPS=0` runs as fast as it can.

@@ -137,6 +137,11 @@ The timer, gauges, words and menus:
     variable refresh (or with it turned off), `on` for one with.
 - F11 or Alt+Enter: full screen on and off, as the kind chosen last (kept as `fullscreen_kind`, so the next start
   too).
+- Speed: `rate` in `mvc2.cfg`. The Naomi board runs a little slower than the Dreamcast: `rate = arcade` is the
+  board at 31 kHz (59.79 frames a second), `arcade15` at 15 kHz (59.01), `dc` the Dreamcast's 59.94 (the default),
+  or give a number from 57 to 61. The sound is made at the same rate, never stretched. With `fullscreen = exclusive`
+  and `vrr = on` on a G-Sync or FreeSync display, every frame is shown once, at that rate; a fixed 60 Hz display
+  shows one frame twice now and then (`vsync = off` tears instead).
 
 ### Unlock
 

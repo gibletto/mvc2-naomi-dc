@@ -164,8 +164,9 @@ const char* config_get(const char* key) {
     return NULL;
 }
 
-/* rate: arcade (the board at 31 kHz: 852 by 530 at 27 MHz), arcade15 (at 15 kHz: 852 by 269 at 13.5 MHz), dc (858
-   by 525 at 27 MHz, the default) or 57 to 61; MVC2_FPS, for a test, any (0 as fast as it goes) */
+/* rate: arcade (the board at 31 kHz: 852 by 530 at 27 MHz), arcade15 (at 15 kHz: 852 by 537 interlaced at 13.5 MHz,
+   a frame each field), dc (858 by 525 at 27 MHz, the default) or 57 to 61; MVC2_FPS, for a test, any (0 as fast as
+   it goes) */
 double config_rate(void) {
     const char* fps = getenv("MVC2_FPS");
     const char* r = config_get("rate");
@@ -177,7 +178,7 @@ double config_rate(void) {
         return 27000000.0 / (852.0 * 530.0);
     }
     if (r != NULL && strcmp(r, "arcade15") == 0) {
-        return 13500000.0 / (852.0 * 269.0);
+        return 2 * 13500000.0 / (852.0 * 537.0);
     }
     hz = r != NULL ? atof(r) : 0;
     return hz >= 57 && hz <= 61 ? hz : 27000000.0 / (858.0 * 525.0);

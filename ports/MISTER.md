@@ -81,7 +81,7 @@ game in 240 lines, shown without interlace. A line in `games/mvc2/env.txt` sets 
 arcade's test menu, and kept in `games/mvc2`.
 
 The game runs at 59.94 frames a second, the TV's refresh set to match. `rate` in `games/mvc2/mvc2.cfg` sets
-another: `arcade` (59.79, the arcade board at 31 kHz), `arcade15` (58.90, at 15 kHz) or 57 to 61; HDMI follows it
+another: `arcade` (59.79, the arcade board at 31 kHz), `arcade15` (59.01, at 15 kHz) or 57 to 61; HDMI follows it
 with `vsync_adjust=1` or `2` in MiSTer.ini. `vrr = on` there, for a FreeSync TV on HDMI, shows each frame as it
 comes, the game paced by its own clock; `vsync = off` paces it so without variable refresh.
 
