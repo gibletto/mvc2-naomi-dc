@@ -279,8 +279,11 @@ An effect only uses the first part of the struct, the part before `act_st`. That
 | `atck_flag`, `dm_flag`, `hit_flag`, `atck_no` | whether it can hit or be hit, whether it has, and with what |
 
 The pool is a linked list of free works. `work_get( base, list, mode )` takes one off it, clears it, and links it into
-one of 14 lists. The list's number is also the work's kind. The caller then fills in `work_func`, and from the next
-frame `work_list_move` calls that routine once a frame until the work frees itself with `work_free`.
+one of 14 lists. The list's number is also the work's kind. The caller then fills in `work_func`, and `work_list_move`
+calls that routine once a frame until the work frees itself with `work_free`. The first call can come in the frame the
+work was made. `work_list_move` walks its list from `work_top` at the moment it runs (`src/hit_work.c:60-70`), and
+`all_work_move` moves the fighters before the effect and shot lists (`src/all_move.c:18-25`). So a fireball that a
+fighter's routine makes runs its first step later in the same frame.
 
 The lists keep kinds of thing apart, so the frame can run them in a fixed order, and they have names in
 `include/hit_work.h`. Lists 1 to 4 are the fight's sprites: shots (`W_SHL`) and the fighters' effects (`W_PLS`), each
@@ -334,9 +337,23 @@ game frames for every six pictures, and turbo is five for every four.
 set, the fighters don't move. A KO sets `slow_bit` to `SLOW_HALF` (every other bit), so the last hit plays at half
 speed.
 
-**The freeze.** A hyper combo sets its fighter's `hyper_stop_flag`. While it is set, `all_work_move` runs only a few of
-the lists, the screen is at half brightness, `hit_ck0` checks no hits, the clock stands still, and `player_move` returns
-at once for the other side. The fighter who caused it keeps moving.
+**The freeze.** A hyper combo sets its fighter's `hyper_stop_flag`, and `hyper_stop_set` copies it into
+`vs_sys_work.game_stop` (`src/pl_sub.c:1372-1380`). While it is set, `all_work_move` runs only a few of the lists, the
+screen is at half brightness, `hit_ck0` checks no hits and `hit_work_set` enters nothing (`src/hit.c:37`,
+`src/hit.c:278`), the clock stands still, and `player_move` returns at once for the other side.
+
+The fighter who caused it does not run its move either. `player_move` gives every fighter of that side only
+`pl_frame_jump`, the step of the frames that carry a jump code (see "Hit stop" below), unless the fighter has
+`stop_move_flag` set (`src/pl_main.c:159-165`). Its effects keep moving, because they are in the lists `W_PLS_ST` and
+`W_SHL_ST` that run during the freeze (`src/all_move.c:27-32`). `stop_move_flag` is set for 16 frames on two
+partners that come in: the variable counter's (`src/pl_team.c:354-356`) and the delayed hyper combo's, which gets
+`team_type` 6 (`src/pl_team.c:443-446`). A character's own hyper combo can set it too, as Ryu's Shinkuu Hadouken does
+when `team_type` is 6 (`src/s_pl00.c:1491-1496`).
+
+The flash is a work in `W_PLS_ST` (`src/hyper_ef.c:15`). It counts `timer0` down from 44, and at the end it gives each
+fighter of the other side 10 frames of hit stop, unless that fighter is being thrown, and ends the freeze with
+`pl_hyper_stop_clr` (`src/hyper_ef.c:68-72`, `src/hyper_ef.c:84-101`). The freeze also ends early when its fighter
+leaves `N_SUPER` and `N_CHANGE` (`pl_hyper_stop_ck`, `src/pl_sub.c:1401`).
 
 ---
 
@@ -368,10 +385,39 @@ Each frame in the fight goes like this:
    only).
 2. `pl_wait_com_ck` runs the character's command check. This is where a finished special-move motion is noticed,
    whatever the fighter is doing.
-3. **Hit stop.** If `hit_stop` is above zero it counts down and the rest is skipped: the fighter is frozen. Buttons
-   pressed during the freeze are remembered (`pl_stop_now`), so they aren't lost.
-4. The table for `routine_1` runs, and in the normal state the table for `act_st`. Then the walls: the fighter is kept
-   on the screen and inside the stage.
+3. Slot 0 of the character's table runs, then `pl_renda_ck`, the mash check (`src/pl_main.c:244-251`).
+4. **Hit stop.** If `hit_stop` is above zero it counts down, and the timers and the move are skipped. Buttons pressed
+   during the freeze are remembered (`pl_stop_now`), so they aren't lost. The fighter is not wholly frozen: the next
+   section says what still runs (`src/pl_main.c:253-261`).
+5. The timers count down (`cancel_timer` and the rest), the table for `routine_1` runs, and in the normal state the
+   table for `act_st`. Then the walls: the fighter is kept on the screen and inside the stage (`src/pl_main.c:262-292`).
+
+### Hit stop
+
+A hit stops both fighters. `pl_damage` gives the struck fighter and the attacking work the attack row's `hit_stop`
+(`src/pl_dmg.c:176-177`), on a hit and on a guard alike, since it does so before it asks about the guard. When the
+attacking work is a shot, its player stops too only if the shot's `atck_flag` has `HIT_OWNER` (`src/pl_dmg.c:178`).
+`HIT_OWNER` also hands the player the shot's `hit_flag` and `em_w` (`src/hit.c:191-195`) and the `HR_GUARD` of a guard
+(`src/pl_dmg.c:516`). Ryu's Hadouken does not set it (`src/shl00_00.c:211`), so Ryu goes on recovering while his
+fireball and its target stop. Marrow's shot `shl16_03` sets it (`src/shl16_03.c:61`).
+
+During its hit stop a fighter still runs its input, its command check and slot 0. Three more things happen
+(`src/pl_main.c:253-261`, `src/pl_main.c:290-292`):
+
+- **The jump code.** Unless the fighter is in `PL_DAMAGE`, `pl_frame_jump` runs (`src/pl_sub.c:1410-1432`). It does
+  nothing unless the frame's `cg_prm` has its top bit (0x80). Then it steps the animation with `pl_char_move`, as a
+  free frame would. If that moved the animation to a frame with another `cg_prm`, the low bits pick where it goes
+  instead: with 0x40 clear, `cg_prm & 15` sends it back to the frame `( cg_prm & 15 ) - 1` frames before the one that
+  carried the code (0x81 plays that frame again), and 0 lets it go on. With 0x40 set it skips forward
+  `( cg_prm & 0x3f ) * 4` bytes. So an attack whose frames carry 0x80 keeps recovering through the hit stop, and the
+  hit stop does not delay those frames. A routine that uses `cg_prm` as its own signal and clears it after `pl_char_move` takes
+  the bit away. Captain Commando's standing heavy punch does this (`src/s_pl38.c:371-377`).
+- **The shake.** `dm_ko_shake` moves a fighter in `PL_DAMAGE` one dot to and fro, by the bits of 0xCCCCCCCC picked by
+  `hit_stop` (`src/pl_dmg.c:2375-2386`). Its comment speaks of a KO, but it shakes every struck fighter.
+- **The walls.** The hit stop jumps to the label `wall`, so `pl_wall_ck` and `pl_wall_wide_ck` still run.
+
+The hyper combo freeze uses the same `pl_frame_jump` for the side that caused it (see "Slow motion and the hyper combo
+freeze").
 
 ### Deciding what to do
 
@@ -434,7 +480,9 @@ A fighter never switches itself. It writes a request number into `change_req`, a
   screen and takes `team_no = 0`.
 - **Assist.** Tap an assist button: press it and let go within 16 frames (`pl_assist_ck`). The partner jumps in, lands
   and runs slot 18, the move its assist type picks. It can't be called while it is still recovering from its last visit
-  (`vital_red_wait`).
+  (`vital_red_wait`). The landing is in `act_change_assist_move` (`src/pl_main.c:1637-1655`): the partner falls by its
+  own speeds, and when it reaches the ground it stands (`Char_Stand` 0). If the point fighter is being thrown or hit by
+  then (`routine_1` at `PL_CAUGHT` or above), the partner only stands and never attacks.
 - **Snapback.** Down, down-forward, forward and an assist button, for one gauge level (`pl_snapback_ck`). If it hits,
   the fighter it struck is sent off the screen and the partner the button chose comes in instead.
 - **Variable counter.** While guarding: back, down-back, down and an assist button, for one gauge level
@@ -474,6 +522,26 @@ in a `COM_WORK`, and there is no record of past inputs anywhere:
 Each of a fighter's commands has a `COM_WORK` of its own (`com_w`, then `com_w0` to `com_w12`), so several motions can
 be part-way done at once. Other readers handle the other kinds of input: `com_tame_ck` for charge moves, `com_rot_ck`
 for full turns of the stick, `com_renda_ck` for mashing.
+
+**Charge moves.** In a charge command the first number is not a count of steps but the charge time. Guile's Sonic Boom
+is `{ 40, COM_GROUND, pl02_sp_sonic, 0, KEY_BACK, KEY_FORWARD, KEY_PUNCH }` (`src/s_pl02.c:55`): hold back for 40
+frames, then forward, then a punch. `com_tame_ck` (`src/pl_com.c:646-712`) works in steps:
+
+- `com_tame_start` and `com_tame_hold` count `com[0]` frames with the direction `com[4]` held. Letting go starts the
+  count again.
+- `com_tame_release` waits for the direction to be let go. The fighter must still face the same way, unless the charge
+  is up or down. Then `com_tame_lever` gives the direction `com[5]` 15 frames (plus the option's `COM_TIME_ADD` on the
+  Dreamcast, `src/pl_com.c:15-19`), and it is checked in the same frame as the release.
+- `com_tame_sw` gives the button `com[6]` the same time again.
+
+So the charge time is a number in the command, and it differs between moves: Cyclops's Running Neckbreaker needs 50
+frames and his Rapid Punches 60 (`src/s_pl06.c:59-60`).
+
+**One command, two moves.** A move done on the ground and in the air is often one routine with two branches on
+`routine_2`. The command check can set the branch: Morrigan's `soul_ck` sets `routine_2 = 0` and `jsoul_ck` sets
+`routine_2 = 1`, and `sp_soul` calls `sp_soul_jmp[routine_2]` (`src/s_pl03.c:152`, `src/s_pl03.c:170`,
+`src/s_pl03.c:1440-1446`). Or the routine sets it from the stance, as Doctor Doom's Plasma Beam does
+(`src/s_pl0f.c:1387-1388`).
 
 When the motion and button are in, `com_ok` asks whether the move may start now. `COM_GROUND` and `COM_AIR` are checked
 against the fighter's stance, and `sp_ok_ck` refuses during guard stun, during another special, and while being thrown
@@ -528,6 +596,62 @@ it), 3 frames back to standing. Change a number and the frame data changes.
 `pl_char_move` returns a negative number once the last line has run, and nearly every move ends the same way:
 `if( pl_char_move( pl_w ) < 0 )`, go back to standing.
 
+### How a frame line is stepped
+
+`pl_char_move` (`src/pl_char.c:97-111`) counts `cg_ctr` down, and when it reaches zero it moves on 20 bytes, one
+line. If the line that has ended had `END_OF_DATA` (the program's `CG_END`), it goes to the line that the `CG_NEXT`
+after it names, and the value it returns is the end flag, 0x80, which is negative in its `Sint8`. Lines with `ctr` 0
+are passed over in the same call. `pl_char_set` (`src/pl_char.c:116-135`) copies the first line and passes over lines
+with `ctr` 0 the same way. So:
+
+- **An animation does not stop at its end.** It goes on at its `CG_NEXT`, and only the routine that sees the negative
+  value ends the move. A `CG_NEXT` can name its own animation. Captain America's `pl0b_super_03_loop` is one line of 16
+  frames that names itself (`data/char_0b.c:2386-2388`), so it plays until his routine changes it.
+- **An animation without `END_OF_DATA` runs on into the animation stored after it.** Felicia's `pl20_special_00` has
+  two lines and no end, so it goes on into `pl20_special_28` (`data/char_20.c:1566-1576`).
+- **The first line counts from the frame of `pl_char_set`.** A routine that sets an animation and then calls the next
+  step in the same call steps it once more before the first full frame. Colossus's `swing_init` calls `swing_move`
+  (`src/s_pl32.c:1256-1257`).
+
+A routine can also change a line's length while it plays. Some step the animation only while `cg_type` is clear, and
+hold a line until their code clears it, as Marrow's `ride_rise` and Rogue's `leap_fly` do (`src/s_pl16.c:1388`,
+`src/s_pl0a.c:1305`). Amingo cuts a line short with `cg_ctr = 1` and a `pl_char_move` (`src/s_pl15.c:1094-1095`).
+Dan lengthens the first line of two hyper combos with `cg_ctr += 8` (`src/s_pl23.c:1677-1678`,
+`src/s_pl23.c:1895-1896`).
+
+### What decides how long a move lasts
+
+The script is the move's timing only when the routine ends the move at the script's end. Many routines end it on a
+count of their own:
+
+- **A timer.** Colossus's `swing_move` sets `timer0` to 10 or 20 by strength, and `swing_rush` ends the rush when it
+  runs out, whatever the animation is doing (`src/s_pl32.c:1264-1267`, `src/s_pl32.c:1289-1293`).
+- **A count of marks.** Ryu's air Tatsumaki counts the lines whose `type` is negative in `timer0`
+  (`src/s_pl00.c:1369-1375`), and Ken's Tatsumaki counts the lines with a `cg_prm` (`src/s_pl27.c:1185-1187`). The
+  number of turns is the count, not the length of the script.
+- **Mashing.** `sw_renda_ck` (`src/pl_com.c:1142-1148`) says whether an attack button was pressed this frame. A partner
+  (`team_no` not 0) never mashes, and the computer mashes by chance (`cpu_renda_ck`). SonSon's `fuusetsu_move` adds 2
+  to `timer0` for each frame with a press during its first 30 frames, and ends when `timer0` runs out
+  (`src/s_pl14.c:1392-1393`, `src/s_pl14.c:1430-1439`).
+- **A shot.** Jill's grenade throw waits in `grenade_wait` until her shot sets `grenade_end_flag`
+  (`src/s_pl11.c:1782-1789`, `src/shl11_02.c:198`). If no work was free for the shot, the flag is set at once
+  (`src/s_pl11.c:1766-1767`).
+- **A landing.** An air move usually ends when the fighter touches the ground (next section).
+
+### Air moves and landing
+
+A fighter in the air moves by `pos += spd`, then `spd += acc`, once in each call of its routine. Ryu's air Tatsumaki
+shows the usual pattern (`src/s_pl00.c:1333-1401`). `jtatsu_init` adds to `spd.x` and leaves `spd.y` and `acc.y` as
+the jump had them, so the spin keeps the jump's rise or fall. Each frame of the spin moves him and then tests
+`pos.y <= ground_y`. At the ground it puts him on it and starts the landing, `Char_Jump` 3, which then runs to its end.
+
+The jump's own landing is `pl_land_ck` and `pl_land_set` (`src/pl_act.c:949-970`, `src/pl_act.c:1003-1022`).
+`pl_land_ck` puts the fighter on `ground_y` and clears `sjump_flag` and `air_guard_cnt`, except while
+`fly_flag` is set. `pl_land_set` stops all speeds, sets `N_LAND` and plays `Char_Jump` 3, 4 or 5 for a jump straight up,
+forward or back (`jump_dir` -1, 0 or 1, `src/pl_act.c:1279-1281`). One exception makes a missed air attack cost more: in `N_NML_ATCK`, when `hit_flag` is clear
+and the opponent has not guarded (`guard_cnt` 0), the landing line is 20 dots below the ground
+(`src/pl_act.c:955-958`). The fighter falls those 20 dots before it lands.
+
 ---
 
 ## Hits, damage and gauges
@@ -560,13 +684,41 @@ side's list. `hit_ck0` (`src/hit.c`) then takes each side's attackers against th
   once. A move that hits several times clears it again (`HIT_RESET`).
 - A target needs `dm_flag` set and must not have been hit already this frame.
 - The attack box is tested against each of the target's body boxes. Boxes are mirrored for facing and scaled to the
-  screen.
+  screen: by 5/3 across and 15/7 down, times the work's `scale` (`src/hit.c:226-256`).
+- The frame's second attack box, `atck_box2`, is tested only when it is positive and the first box has missed
+  (`src/hit.c:84-96`).
+- When the attack box overlaps several body boxes, the hit is on the one it overlaps most (`src/hit.c:149-170`).
+
+A work takes part only in a frame in which its routine called `hit_work_set` (`src/hit.c:276-284`), and `hit_work_next` empties the
+lists after each check (`src/hit.c:268-273`). A shot's first frame need not call it. Ryu's Hadouken does not in its first step
+(`shl00_00_init`, `src/shl00_00.c:68-88`), so it can first hit in the frame after the one it was made in.
 
 A hit is only *recorded* here: who hit whom, and on which box. Afterwards `pl_damage` (`src/pl_dmg.c`) is called for
 each fighter that was struck, and that is where the game decides what the hit does.
 
 Throws use the same boxes differently: a throw's reach is the second attack box of the thrower's frame, tested against
 the target's `catch_box`. Fighters also push each other apart, in `pl_push_ck`.
+
+### Hitting more than once
+
+`hit_flag` holds the result of the attack. `hit_set` puts `HR_HIT` (0x80) in it on every contact, a guarded one too,
+with the kind bits of what was hit (`src/hit.c:142-147`), and `guard_set` adds `HR_GUARD` (`src/pl_dmg.c:515`). Since
+`HR_HIT` is the top bit and `hit_flag` is an `Sint8`, a routine can test `hit_flag < 0` for "it touched". Moves branch
+on it: Ken's Tatsumaki goes on to a last hit only if a spin has hit (`src/s_pl27.c:1187-1194`), and Captain America's
+Final Justice dash goes on or misses by it (`src/s_pl0b.c:2206-2216`).
+
+While `hit_flag` is set the attacker is passed over, so one attack hits once. A move hits again only when its routine
+clears it with `HIT_RESET` (`include/pl_def.h:22-26`), which also clears `atck_attr` and counts a new attack in
+`atck_cnt`. Routines do this on a signal from the script:
+
+- On `type`: Tron Bonne's standing heavy punch sets `atck_no = ATCK_STAND_HP` and resets when `cg_type` is set
+  (`src/s_pl10.c:553-559`).
+- On `flag1`: SonSon's Fuusetsu Zan resets on each line with a `cg_flag1` (`src/s_pl14.c:1425-1429`).
+
+Each reset is good for one more hit at most, at the first frame after it whose box touches. A routine often writes a
+new `atck_no` with the reset, so each hit reads its own attack row, with its own damage, hit stop and reaction. The
+routine runs in `all_work_move`, before `hit_ck0` in the same frame (`src/s_play.c:334-335`), so an attack re-armed in
+a frame can hit in that frame.
 
 ### An attack row
 
@@ -598,6 +750,12 @@ row's guard bits must allow its stance. A computer player's guard can also be a 
 frames unless the row gives its own). Specials and hyper combos do chip damage: the full damage after all the rates
 below, divided by 8, at least 1.
 
+The guard's posture is picked by the attack, not only by the stick (`guard_char_set`, `src/pl_dmg.c:573-587`). On the
+ground the fighter guards crouching (`Char_Guard` 7) against an `A_LO` attack, standing (`Char_Guard` 3) against an
+`A_HI` one, and against any other by whether down is held. Against an attacker with `fly_flag` set only the stick
+counts. In the air the guard takes the air knock-back and `Char_Air_Guard` 2
+(`src/pl_dmg.c:560-572`).
+
 **If it hit,** the damage is worked out in layers, each a table lookup and a multiply. Most rates are counted in 32nds:
 
 1. The row's `damage`. If the computer threw it, a rate for its level of play is applied (75% at the lowest level, 125%
@@ -621,6 +779,44 @@ The result is never below 1. It comes off `vital_new`, and three quarters of it 
 - **The reaction.** `dm_tbl` picks a routine from the victim's stance and the row's reaction: pushed back, knocked away,
   swept, slammed, frozen, and so on. The victim goes to `routine_1 = PL_DAMAGE`, and that routine runs until it recovers.
 - **KO.** If `vital_new` reached zero, `ko_flag` is set and both sides get 10 frames of hit stop.
+
+**The reaction is not always the row's.** The row's reaction is only the first word. `pl_damage` and `dm_data_set`
+change `dm_no` before `dm_tbl` is called:
+
+- `ATR_FREEZE` in the attacker's `atck_attr` makes it 9, frozen. A freeze on a fighter already frozen becomes 1, and so
+  does reaction 20 on a fighter already in it (`src/pl_dmg.c:341-349`). `ATR_KNOCK_AWAY` makes it 10
+  (`src/pl_dmg.c:372-375`).
+- A fighter whose `stun_cnt` has run out gets 3, dizzy, and one with a `snap_partner` gets 12, the snapback
+  (`src/pl_dmg.c:232-235`).
+- A KO makes it 2 (`src/pl_dmg.c:241-252`).
+
+Then `dm_tbl[pl_stance][dm_no]` picks the routine (`src/pl_dmg.c:142-150`, `src/pl_dmg.c:285`), and the stance
+changes it again. A fighter in the air pushed along the ground (`dm_zuri`, 0) is knocked away instead (`dm_buttobi`),
+and a sweep knocks it away too. A fighter lying down takes `dm_air` for nearly every reaction.
+
+### Push-back
+
+Pushed back along the ground, on a guard (`guard_back_set`) or on a hit with reaction 0 (`dm_zuri`, which calls the
+same routine), the fighter slides by a table of steps (`src/pl_dmg.c:700-722`, `src/pl_dmg.c:1193-1200`). The table is
+one of the five in `back_step_tbl` (`src/chrdef.c:14-19`). A row with `K_BACK_MAX` takes the longest, a row with a
+level in `K_LV_MASK` takes that level's, and any other row takes one by its `power`: the first under 5, the second from
+5, the third from 12.
+
+`dm_back_move` (`src/pl_dmg.c:872-912`) takes one step a frame, and a step is the table's number times 1.6666666. A
+guarding fighter steps every frame of `act_guard` (`src/pl_main.c:897-904`), from the first frame after the hit stop. A
+fighter hit with reaction 0 spends its first frame of `dm_zuri_move` stopping its fall, and steps from the second
+(`src/pl_dm.c:257-267`). Since the fighters move apart, a later attack box of the same move can miss.
+
+At the screen's edge the step goes to the attacker. When the pushed fighter is at the wall behind it, the row lacks
+`NO_ZU`, and the attacker is not at a wall itself, the step moves the attacker back instead
+(`src/pl_dmg.c:893-904`). The wall is `wall_flag`, which `pl_wall_ck` sets when it holds the fighter 285 units either
+side of the camera's eye (`src/pl_sub.c:912-923`).
+
+Three bits of `atck_attr` change the push-back (`include/pl_work.h:527-535`). `ATR_BACK_POS` pushes the fighter away
+from where the attacking player stands (`back_move_push`, `src/pl_dmg.c:917-930`). `ATR_BACK_WORK` pushes it away from
+the striking work, on a guard too (`src/pl_dmg.c:707-711`, `src/pl_dmg.c:886-889`). `ATR_BACK_TURN` pushes it by its
+own facing (`src/pl_dmg.c:891`). `HIT_RESET` clears `atck_attr`, so a routine that sets these bits sets them again
+after each reset.
 
 ### The clock, the win and the score
 
@@ -685,7 +881,8 @@ On the seventh frame the script's `type` shows up in `cg_type`, and the fireball
 of the script is recovery, and when it runs out Ryu stands again.
 
 **6. The fireball.** `shl00_00_set` (`src/shl00_00.c`) takes a work from the pool, into the shots' list, and sets its `work_func`
-to `shl00_00_main` and its `master_w` to Ryu. On its first frame the new work copies Ryu's picture and animation tables,
+to `shl00_00_main` and its `master_w` to Ryu. The shots' list runs after the fighters, so its first step comes later in
+the same frame. In that step the new work copies Ryu's picture and animation tables,
 so it draws from his sprites and hits with his attack rows. It gives up at once if Ryu's animation has changed since it
 was asked for (he was hit first). Then it sets Ryu's `shot_flag` and reads its row of `shl00_00_tbl`, picked by
 strength:
@@ -715,7 +912,8 @@ cancel each other out.
 
 **8. The hit.** `hit_ck0` finds the fireball's attack box over one of the opponent's body boxes and records it.
 `pl_damage` reads attack row 48 (0x30, the second row shown earlier): 14 damage, class `A_SPECIAL`, so it chips when
-guarded. The opponent reacts or guards. On its side, the fireball sees its `hit_flag`, switches to its fading animation,
+guarded. The opponent reacts or guards, and the opponent and the fireball take the row's hit stop. Ryu does not: the
+fireball's `atck_flag` lacks `HIT_OWNER`. On its side, the fireball sees its `hit_flag`, switches to its fading animation,
 clears Ryu's `shot_flag`, and frees its work when that animation ends. Ryu can throw another.
 
 The whole chain, in one block:
@@ -889,7 +1087,8 @@ it, but its network menu is switched off: `src/dc/net_menu.c` is an empty routin
 | a character | `src/s_plXX.c`, `include/plXX_def.h`, `src/shlXX_YY.c`, `src/plsXX_YY.c` |
 | animation scripts | `src/pl_char.c`, `include/char_tbl.h`, `data/char_XX.c` |
 | boxes and hits | `src/hit.c`, `data/hit_XX.c`, `data/frame_boxXX.c`, `data/hit_dtXX.c`, `include/hit_equ.h` |
-| damage, gauges, combos | `src/pl_dmg.c`, `src/chrdef.c`, `src/combo.c` |
+| damage, gauges, combos | `src/pl_dmg.c`, `src/pl_dm.c`, `src/chrdef.c`, `src/combo.c`, `include/pl_def.h` (`HIT_RESET`) |
+| hit stop, the hyper combo freeze | `src/pl_main.c` `pl_move_fight`, `src/pl_sub.c` `pl_frame_jump`, `src/hyper_ef.c` |
 | the clock and the win | `src/vs_sys.c` |
 | the computer | `src/em_play.c`, `src/em_script.c`, `src/cpu_level.c`, `include/cpu_cmd.h`, `data/taikiXX.c` |
 | sound | `src/sound.c` |
